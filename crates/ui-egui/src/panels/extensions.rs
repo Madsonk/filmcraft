@@ -214,6 +214,9 @@ pub fn menu(app: &FilmcraftApp, items: &mut Vec<MenuItem>) {
 
 /// Commands of this module (None = not mine).
 pub fn route(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, params: &Value) -> Option<Result<Value, String>> {
+    if let Some(r) = crate::panels::model_consent::route(id, params) {
+        return Some(r);
+    }
     let r = if let Some(rest) = id.strip_prefix("ext:") {
         let Some((ext, n)) = rest.rsplit_once(':') else { return Some(Err(format!("bad extension item `{id}`"))) };
         run(app, ctx, ext, &json!(n.parse::<usize>().unwrap_or(usize::MAX)), params.get("vars"), true)

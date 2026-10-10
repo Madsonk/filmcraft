@@ -1,0 +1,23 @@
+[package]
+name = "filmcraft-modelstore"
+description = "The catalogue and the on-disk store of FilmCraft's optional neural models (voice clean-up, subject detection): URL, SHA-256, size, licence, download and unpacking"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# Downloads over HTTPS (pure-Rust TLS, OS certificate verification) and unpacking of `.tar.gz` packs.
+download = ["dep:ureq", "dep:rustls", "dep:rustls-rustcrypto", "dep:sha2", "dep:flate2"]
+
+[dependencies]
+serde = { workspace = true }
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "platform-verifier"], optional = true }
+rustls = { version = "0.23", default-features = false, optional = true }
+rustls-rustcrypto = { version = "0.0.2-alpha", optional = true }
+sha2 = { version = "0.10", optional = true }
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"], optional = true }

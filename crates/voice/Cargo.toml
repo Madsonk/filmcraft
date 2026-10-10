@@ -1,0 +1,13 @@
+[package]
+name = "filmcraft-voice"
+description = "Neural voice clean-up for FilmCraft: DeepFilterNet3 (speech enhancement) running on the pure-Rust ONNX interpreter, with its STFT, ERB features and deep filtering"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+filmcraft-nn = { path = "../nn" }

@@ -26,6 +26,7 @@ pub mod metadata;
 pub mod meters;
 pub mod misc;
 pub mod mixer;
+pub mod model_consent;
 pub mod monitor;
 pub mod monitor_view;
 pub mod multicam;

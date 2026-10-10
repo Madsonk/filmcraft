@@ -1867,14 +1867,17 @@ dependencies = [
  "filmcraft-geom",
  "filmcraft-interchange",
  "filmcraft-media",
+ "filmcraft-modelstore",
  "filmcraft-mxf",
  "filmcraft-project",
+ "filmcraft-reframe",
  "filmcraft-render",
  "filmcraft-scopes",
  "filmcraft-speech",
  "filmcraft-testkit",
  "filmcraft-text",
  "filmcraft-time",
+ "filmcraft-voice",
  "image",
  "log",
  "serde",
@@ -2067,6 +2070,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "filmcraft-modelstore"
+version = "0.4.0"
+dependencies = [
+ "flate2",
+ "rustls",
+ "rustls-rustcrypto",
+ "serde",
+ "sha2",
+ "ureq",
+]
+
+[[package]]
 name = "filmcraft-mpeg2v"
 version = "0.4.0"
 dependencies = [
@@ -2089,6 +2104,10 @@ version = "0.4.0"
 dependencies = [
  "filmcraft-testkit",
 ]
+
+[[package]]
+name = "filmcraft-nn"
+version = "0.4.0"
 
 [[package]]
 name = "filmcraft-ogg"
@@ -2148,6 +2167,13 @@ dependencies = [
  "filmcraft-testkit",
  "rayon",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "filmcraft-reframe"
+version = "0.4.0"
+dependencies = [
+ "filmcraft-nn",
 ]
 
 [[package]]
@@ -2242,6 +2268,7 @@ dependencies = [
  "filmcraft-gpu",
  "filmcraft-interchange",
  "filmcraft-media",
+ "filmcraft-modelstore",
  "filmcraft-platform",
  "filmcraft-project",
  "filmcraft-render",
@@ -2258,6 +2285,13 @@ dependencies = [
  "serde_json",
  "toml 1.1.6+spec-1.1.0",
  "web-time",
+]
+
+[[package]]
+name = "filmcraft-voice"
+version = "0.4.0"
+dependencies = [
+ "filmcraft-nn",
 ]
 
 [[package]]

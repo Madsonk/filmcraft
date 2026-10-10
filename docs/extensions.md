@@ -29,7 +29,7 @@ extensions** (or `extensions.reload`) picks it up without restarting.
 The extensions in the repository's `extensions-bundled/` folder are offered on first launch of an app
 that ships them (next to the executable, or in the macOS bundle's `Resources`):
 
-* the ones that only drive FilmCraft's own commands (six of the seven) are installed once; one the user
+* the ones that only drive FilmCraft's own commands (all but one of the nine) are installed once; one the user
   removes stays removed (`.bundled-seeded.json` in the extensions folder remembers the offer);
 * **an extension that starts an external program (Storyboard Maker) is never installed silently.** A
   dialog, *Extension fournie avec FilmCraft*, names it, shows the program it would run and what that means
@@ -201,7 +201,7 @@ already runs in the background by itself).
 
 ## Bundled extensions
 
-`extensions-bundled/` holds seven extensions, in French like their menu entries:
+`extensions-bundled/` holds nine extensions, in French like their menu entries:
 
 | Extension | Entries | Built on |
 |---|---|---|
@@ -211,6 +211,8 @@ already runs in the background by itself).
 | **Beat Edit** | Marquer les beats · Marquer toutes les 4 beats · Couper sur les beats · Couper toutes les 4 beats | `sequence.markBeats` / `sequence.cutOnBeats` (below). |
 | **Copy Pasta** | Copier les attributs · Coller les attributs · Coller seulement les effets · Coller seulement mouvement et opacité · Premier clip vers les autres (tout / effets seulement) | `edit.copy` + `edit.pasteAttributes` (motion, opacity, volume, panner, time remapping, standard effects with their keyframes). The one-step entries select the first selected clip, copy it, paste on the others (`${selection_rest}`) and restore the selection. The Copier / Coller pair needs the clipboard of a session that stays open, i.e. the window. |
 | **AutoEdit** | Montage auto (français) · (français, « eux » toujours coupé) · (anglais) · Retirer les hésitations | `sequence.transcribe`, `transcript.removeFillers`, `sequence.removeSilence`: a first cut of talking footage. Each stage is its own undo step and says what it did. French list (`language:"fr"`): euh, euhh, euhhh, heu, heuh, hum, humm, hmm, hmmm, mmh, mm, mmm, hem, ben, bah, beuh; plus **« eux » only when it is a hesitation standing alone** (see below). Whisper often leaves hesitations out or mis-spells them, so only what it wrote can be cut by word; the silences are cut from the audio level whatever the transcript says. |
+| **Nettoyage de la voix** | Nettoyer la voix (léger) · (standard) · (fort) · Installer le modèle de voix (DeepFilterNet3) | `audio.denoiseVoice`, `models.install` (§ Neural tools below). Needs the 8 MB model, downloaded after you accept its licence. |
+| **Reframe vertical** | Recadrer en 9:16 · 9:16 (sous-titres) · 1:1 · 4:5 · Installer le détecteur de personnes (YOLOX-Nano) · Installer le détecteur de visages (YuNet, facultatif) | `sequence.autoReframe`, `models.install` (§ Neural tools below). Needs YOLOX-Nano (3.7 MB); YuNet (0.2 MB) is optional. |
 | **Storyboard Maker** | Exporter une image par plan · Exporter une image par marqueur · Assembler la planche (PNG + PDF) | `exec` entries running `scripts/storyboard.sh` (a Python 3 program): it reads the saved `.fcproj`, and prints `playhead.set` + `file.exportFrame` for each shot (the clips of the first video track that has clips) or marker. The stills (`<project>-storyboard/001.png…` with an `index.json`) come from the Program monitor. The sheet entry lays them out with titles and timecodes (`<project>-storyboard.png` and `.pdf`, `--var columns=4`) and needs the Pillow package. The program only plans: the sheet is built by a second entry because a program cannot read the results of commands that run after it exits. Save the project first. It is the only bundled extension that starts a program, so it is offered on first launch (a dialog) and never installed silently. |
 
 ### Beat editing: `sequence.markBeats` and `sequence.cutOnBeats`
@@ -306,6 +308,153 @@ whisper **did not write at all** (the first euh of the inline sample was swallow
 times) or wrote as another word (« bah » → « bas ») cannot be found from the text, and no acoustic detector
 of filled pauses is attempted (it would need a model of its own); and « ben » / « bah » are cut everywhere in French
 (`ben oui` loses its `ben`): remove them from the list with `fillers` if that is wrong for your speaker.
+
+## Neural tools: voice clean-up and auto-reframe
+
+Two commands run small neural networks on the CPU, in pure Rust: no ONNX runtime, no Python, no network at
+run time. The weights are **optional downloads**, never bundled and never in the repository.
+
+| Crate | Layer | Role |
+|---|---|---|
+| `filmcraft-nn` | L1 | an ONNX interpreter of our own (the file is parsed here; 30 operators: 2-D `Conv` / `ConvTranspose`, `GRU`, two-operand `Einsum`, `MatMul`, `MaxPool`, nearest `Resize`, shape operators…). No dependency. Convolutions use `im2col` and a blocked product on scoped threads. Checked against `onnxruntime` on the seven real models below: largest relative difference 2.4 × 10⁻⁵ (YOLOX-S), 1 × 10⁻⁶ for the speech model; 4 to 6 times slower than onnxruntime, which is still 30× faster than real time for the voice. Never panics on a hostile file (truncations and byte flips are tested) |
+| `filmcraft-modelstore` | L2 | the catalogue and the folder `<data dir>/models/<id>/`: URL, SHA-256, size and licence of each file; download (feature `download`, pure-Rust TLS) into `<name>.part`, SHA-256 check, rename; the `.tar.gz` pack of DeepFilterNet3 is verified, then only its three named members are unpacked, each verified again |
+| `filmcraft-voice` | L2 | DeepFilterNet3: STFT (960 points, Vorbis window, 480 hop), 32 ERB bands, exponential mean normalisation, the three graphs, deep filtering, overlap-add |
+| `filmcraft-reframe` | L2 | YOLOX and YuNet decoding, subject choice, crop path |
+
+### The models
+
+| id | for | download | licence |
+|---|---|---|---|
+| `deepfilternet3` | voice clean-up | 8.0 MB pack from `Rikorose/DeepFilterNet` tag v0.5.6; 3 ONNX graphs, 1 million weights | MIT OR Apache-2.0 |
+| `yolox-nano` (default) · `yolox-tiny` · `yolox-s` | people | 3.7 · 20 · 36 MB from `Megvii-BaseDetection/YOLOX` release 0.1.1rc0 | Apache-2.0 |
+| `yunet` | faces (optional) | 0.2 MB from `opencv/opencv_zoo` (2023 March) | MIT |
+
+* `models.list` shows each model's size, source, licence, files with SHA-256, and whether it is installed.
+* `models.install {"model": "…", "accept": true}` downloads one. **Without `accept: true` nothing is
+  downloaded**: from the CLI or the control channel the command refuses and says what it would fetch; in the
+  window the same call opens the licence dialog (*Modèle optionnel*: task, size, source link, licence link, and
+  *Accepter la licence et télécharger* / *Annuler*; ids `models.consent.accept` and `models.consent.cancel`), and
+  the download runs on its own thread with a progress bar. A file whose SHA-256 differs is deleted.
+* Needs a build with the `models` feature (the packaged app and CLI have it).
+* **Licences.** Licence is not a criterion for personal use, but no GPL, LGPL or AGPL code was read or copied:
+  the voice pipeline is written from the algorithm of libDF (MIT OR Apache-2.0), YOLOX and YuNet are decoded
+  from their own papers' conventions. Training-data licences were not re-read: the licence shown is that of the
+  code and the weights.
+
+### Voice clean-up: `audio.denoiseVoice`
+
+| Parameter | Meaning |
+|---|---|
+| `clips` | audio clips (default: the selected ones) |
+| `strength` | `light` (noise cut by at most 6 dB), `standard` (14 dB, default), `strong` (all the model finds) |
+| `amount` | 0-100, overrides `strength`: the original is mixed back into the spectrum, `1 − amount` of it, so the noise reduction is capped at `20 log₁₀(1 − amount)` dB |
+| `dir` | where the cleaned WAV is written (default: Scratch Disks ▸ Captured Audio, else the project folder, else the data folder) |
+
+What it does: reads the audio the clip plays (any rate, up to 15 min per clip; at most two channels, a duplicated
+channel is processed once), runs the model, writes `<name> (voix nettoyée).wav` (32-bit float), imports it and
+points the clip at it. Place, length, effects, keyframes, gain and links are untouched; the original stays in
+the project; **one undo step** restores the clip (the WAV stays on disk). Clips at another speed, reversed or
+remixed are refused. The result carries, per clip, the **noise floor** (10th percentile of the 20 ms levels),
+the **speech level** (90th percentile) and their difference, before and after: « bruit de fond −27,7 → −120,0
+dBFS ». The model zeroes the frames it takes for noise alone (libDF's own gate: local SNR below −10 dB), so with
+`strong` the pauses become digital silence (floor −120); `light` and `standard` keep a trace of the room.
+
+Runs on the calling thread (synchronous in the window, like the other long commands of an extension).
+
+**Measured** (a 31 s French recording made with `say` voices Thomas and Amélie, three pauses of 1.5 s, plus
+noise added at a stated SNR measured over the speech; reference = the clean recording; `speech SNR` = SNR of
+the output against the clean recording over the frames where the voice is; `pause floor` = level of the
+frames where it is silent; one run, Apple-silicon CPU):
+
+| noise | noisy: speech SNR · pause floor | cleaned (`strong`): speech SNR · pause floor | time for 31 s |
+|---|---|---|---|
+| white, 5 dB | 4.2 dB · −27.7 dBFS | **16.1 dB** · −81 dBFS | 1.1 s |
+| white, 15 dB | 14.2 dB · −37.7 dBFS | **22.0 dB** · −88 dBFS | 1.2 s |
+| ventilation (low-pass noise), 10 dB | 9.2 dB · −32.7 dBFS | **15.7 dB** · −78 dBFS | 1.1 s |
+| 50 Hz hum + harmonics, 10 dB | 9.2 dB · −32.7 dBFS | **18.2 dB** · −56 dBFS | 1.2 s |
+| kitchen (hiss + 60 clatters), 5 dB | 4.2 dB · −27.7 dBFS | **16.1 dB** · −87 dBFS | 1.2 s |
+
+Gain on the voice 6.5 to 12 dB; the clean recording through the same pipeline comes back at 29.8 dB SNR (log-
+spectral distance 1.2 dB): the voice is preserved. `strength` caps work as announced (white 5 dB: pause floor
+−41.6 dBFS at 80 %, −33.7 dBFS at 50 %, i.e. 14 and 6 dB below the noisy −27.7). Limits: synthetic speech and
+synthetic noises, no real room recording and no human listening test (SNR and spectral distance say nothing
+about artefacts a listener would hear: on the strongest setting, hum harmonics and the pause floor are the
+places to listen); DeepFilterNet is trained on 48 kHz speech, music or singing are not what it is for; the
+two-stage deep filter runs on every frame the gate lets through (libDF skips it above 20 dB local SNR; here
+that skip dropped a 14 dB recording to 8.7 dB, see `crates/voice`); no real-time preview.
+
+### Auto-reframe: `sequence.autoReframe`
+
+Re-frames the selected video clips on their main subject so a 16:9 shot fills a 9:16, 1:1 or 4:5 frame.
+It samples the clip (5 images a second), finds people with YOLOX and, when YuNet is installed, faces,
+follows one subject, plans a smooth crop, and writes it as **`Motion` Scale + Position keyframes** (Scale to
+Frame Size is turned off): one undo step, everything stays editable in Effect Controls.
+
+| Parameter | Meaning |
+|---|---|
+| `clips` | video clips (default: the selected ones) |
+| `ratio` | `9:16` (default), `1:1`, `4:5`, any `w:h` or `1080x1920` |
+| `model` | `yolox-nano` (default, 416 px) · `yolox-tiny` · `yolox-s` (640 px, 4× slower) |
+| `faces` / `subject` | use YuNet when installed (default true: the framing centres on the face of the chosen person) · `subject:"face"` keeps only people whose face is found |
+| `fps` | detections per second, 0.5-15 (default 5) |
+| `smooth` | seconds of smoothing (default 0.3; 0 follows every sample) |
+| `deadZone` | the camera holds still while the subject stays within this share of the crop width around it (default 0.03) |
+| `safeBottom` | share of the output height kept free under the subject for subtitles (0-0.6); the subject sits in the free part when `zoom` > 1; the result reports `captionOverlapPercent` |
+| `zoom` | 1-4 (default 1: the crop is the largest window of that ratio; > 1 zooms in and lets the subject move vertically too) |
+| `resizeSequence` | the sequence becomes 1080 wide (or high) at the target ratio in the same undo step. **Refused with a clear message when other video clips would be re-framed by it** (duplicate the sequence, or create one at the right ratio, or pass `true`) |
+| `apply` | `false` only plans and reports |
+
+How it works: for a picture `W × H` and a target ratio the crop window is the largest rectangle of that
+ratio inside the picture (divided by `zoom`); `Scale` = output width / crop width and `Position` moves the
+window's centre to the middle of the frame, so the window never leaves the picture. Each sample picks the
+subject (largest × most confident person at first; afterwards the one overlapping or nearest the previous
+subject, dropped only for one that ranks twice as high); the samples go through a **dead zone** (the tripod
+stays still while the subject fidgets) and an exact **smoothing spline** (acceleration penalty `λ = (smooth·fps)⁴`,
+zero phase: no lag on a steady walk). A **scene cut** (the picture changes between two samples: 24 × 14 luma
+thumbnails differ by more than 0.2) splits the path into pieces planned separately and the frame cuts with the
+picture (Hold keyframe). Keyframes are Linear, one per frame at most, minus those a straight line reproduces
+within 0.15 source pixel: Bézier interpolation in this engine eases to a stop at every keyframe (measured:
+mean jerk 40 000 px/s³ with Auto Bézier keyframes, 3 000 with Linear ones), so it would stutter a pan. The
+result per clip: `samples`, `detected`, `coveragePercent`, `faces`, `cuts`, `keyframes`, `jerkPxPerS3`
+(mean and max of the *evaluated* keyframes at the sequence frame rate, in output pixels, and the same for the
+unsmoothed detections), `maxSpeedPxPerS`, `maxDistanceToSamplesPx`, `captionOverlapPercent`.
+
+**Measured.** *Ground truth*: a real rider cut out of a motoball frame (YOLOX box, 280 × 445 px, scaled to
+640 px high) moved over a real hockey-rink frame, 1920 × 1080, 25 fps, 14 s (stand, walk right at 374 px/s
+in output pixels, pause, walk back); the centre of the pasted picture is the true position. 9:16, YOLOX-Nano,
+defaults. The re-framed sequence was rendered by the CLI (`file.exportFrame`, 1080 × 1920) every 0.5 s
+(27 frames) and the person detected again **in the rendered output**:
+
+| measure | result |
+|---|---|
+| subject found | 70 of 70 samples (100 %), 3.9 s for the 70 images including decoding |
+| centering error in the output (frame 1080 px wide) | mean 19.7 px (1.8 %), rms 24.2 px, max 62.5 px (5.8 %, when the subject stops dead) |
+| keyframes | 89 for 14 s |
+| speed of the pan | max 392 px/s (the subject's own: 374 px/s) |
+| jerk of the played path, mean (max) | **3 044 (15 315) px/s³**, against 25 612 for the unsmoothed detections (8× smoother) and 3 640 for the true path itself (its three direction changes are impulses) |
+
+The same case with the earlier defaults (`smooth` 0.45, `deadZone` 0.06) gave a mean error of 43.7 px and a
+max of 122 px: the dead zone trades centering for stillness (the subject rides on the edge of it while the
+camera trails, up to `deadZone × crop width`), `0` centres best and moves most. *Real footage*, no ground
+truth, only what the command reports: motoball crowd (13 s, 960 × 540, 24 fps, 9 people in view): subject on
+74.6 % of the samples, no false cut, jerk 6 000 against 100 500 unsmoothed (17×); a rider close-up:
+92 % and 10 400 against 174 000; an empty hockey rink: 0 % subject, the window stays centred (2 keyframes) and
+nothing breaks. Detection quality checked by eye on a crowd frame (9 people, 9 boxes).
+
+Limits, honestly: **one subject** per clip and no re-identification: in a crowd the framing can hop from one
+person to another (the real crowd clip reaches 2 700 px/s during hops); the vertical position only moves with
+`zoom` > 1; faces: YuNet found some in the crowd but its framing was not verified against a reference; no
+human viewing test of the result; sampling at 5 images/s misses very fast subjects; the command runs on the UI
+thread (14 s of 1080p footage took 3.9 s; 13 s of 960 × 540 with faces took 22 s on a busy machine); only forward-played clips, subjects as
+detected by COCO "person"; the new aspect needs the sequence at that ratio (see `resizeSequence`).
+
+### Neural tools: not done (next steps from the backlog, `infra-artcraft.md` § 7)
+
+Left for later, each is a candidate on the same `nn` interpreter or a program: Demucs voice/music separation
+(idea 19; needs a `ConvTranspose1d`/LSTM set of operators), L1-optimal stabilisation (idea 20), RIFE
+frame interpolation (idea 16), video matting with BiRefNet / SAM 2.1 (idea 18), Whisper-turbo and filler
+detection (idea 1), beat tracking with Beat This! (idea 17), and a background thread for these long commands
+(they run on the UI thread today). Not started.
 
 ## Testing
 

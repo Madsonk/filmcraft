@@ -1,0 +1,13 @@
+[package]
+name = "filmcraft-nn"
+description = "A small ONNX interpreter in pure Rust (CPU, f32): the operators of convolutional detectors and of recurrent speech-enhancement models, no dependency"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+# Intentionally dependency-free (layer L1), like `audio-dsp`.
+[dependencies]
