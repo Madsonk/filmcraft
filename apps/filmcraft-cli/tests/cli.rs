@@ -243,18 +243,18 @@ fn extensions_install_list_validate_pack_remove() {
     // a folder holding several extensions installs each of them
     let r = json_out(&cli(&["--data-dir", data_s, "extensions", "install", bundled.to_str().unwrap(), "--compact"]));
     let ids: Vec<&str> = r.as_array().unwrap().iter().map(|x| x["id"].as_str().unwrap()).collect();
-    assert_eq!(ids, ["autoedit", "beat-edit", "copy-pasta", "export-en-un-clic", "silence-remover", "sous-titres", "storyboard-maker"], "{r}");
+    assert_eq!(ids, ["autoedit", "beat-edit", "copy-pasta", "doublage-voix", "export-en-un-clic", "silence-remover", "sous-titres", "storyboard-maker"], "{r}");
     // the list is sorted by name and carries the entries
     let l = json_out(&cli(&["--data-dir", data_s, "extensions", "list"]));
     let names: Vec<&str> = l.as_array().unwrap().iter().map(|x| x["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["AutoEdit", "Beat Edit", "Copy Pasta", "Export en un clic", "Silence Remover", "Sous-titres", "Storyboard Maker"]);
+    assert_eq!(names, ["AutoEdit", "Beat Edit", "Copy Pasta", "Doublage vocal", "Export en un clic", "Silence Remover", "Sous-titres", "Storyboard Maker"]);
     let silence = l.as_array().unwrap().iter().find(|x| x["id"] == "silence-remover").unwrap();
     assert_eq!(silence["entries"].as_array().unwrap().len(), 3);
     assert_eq!(silence["entries"][0]["kind"], "commands");
     let story = l.as_array().unwrap().iter().find(|x| x["id"] == "storyboard-maker").unwrap();
     assert_eq!(story["entries"][0]["kind"], "exec");
     // every command the bundled extensions use exists in the engine
-    for id in ["silence-remover", "sous-titres", "export-en-un-clic", "beat-edit", "copy-pasta", "autoedit", "storyboard-maker"] {
+    for id in ["silence-remover", "sous-titres", "export-en-un-clic", "beat-edit", "copy-pasta", "autoedit", "storyboard-maker", "doublage-voix"] {
         let v = json_out(&cli(&["extensions", "validate", bundled.join(id).to_str().unwrap()]));
         assert_eq!(v["valid"], true, "{v}");
         assert_eq!(v["commandsUnknownToThisCli"], serde_json::json!([]), "{id}: {v}");
@@ -283,7 +283,7 @@ fn extensions_install_list_validate_pack_remove() {
     // remove
     json_out(&cli(&["--data-dir", data_s, "extensions", "remove", "sous-titres"]));
     let l = json_out(&cli(&["--data-dir", data_s, "extensions", "list"]));
-    assert_eq!(l.as_array().unwrap().len(), 6);
+    assert_eq!(l.as_array().unwrap().len(), 7);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -720,5 +720,108 @@ fn storyboard_maker_exports_a_still_per_shot_and_a_sheet() {
     } else {
         eprintln!("Pillow is not installed: skipping the contact sheet");
     }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn has_ffmpeg() -> bool {
+    Command::new("ffmpeg").arg("-version").output().map(|o| o.status.success()).unwrap_or(false) || std::path::Path::new("/opt/homebrew/bin/ffmpeg").exists()
+}
+
+/// Duration of a PCM WAV file, from its header.
+fn wav_seconds(path: &std::path::Path) -> f64 {
+    let b = std::fs::read(path).unwrap();
+    let rate = u32::from_le_bytes(b[24..28].try_into().unwrap()) as f64;
+    let align = u16::from_le_bytes(b[32..34].try_into().unwrap()) as f64;
+    // find the "data" chunk
+    let mut i = 12;
+    while i + 8 <= b.len() {
+        let len = u32::from_le_bytes(b[i + 4..i + 8].try_into().unwrap()) as usize;
+        if &b[i..i + 4] == b"data" {
+            return len as f64 / align / rate;
+        }
+        i += 8 + len + (len & 1);
+    }
+    panic!("no data chunk");
+}
+
+#[test]
+fn doublage_voix_dubs_a_clip_with_a_stand_in_for_voicebox() {
+    use std::io::{BufRead, BufReader};
+    use std::process::Stdio;
+    let dir = fresh_dir("ext-dub");
+    let data_s = dir.join("data").to_str().unwrap().to_string();
+    let data_s = data_s.as_str();
+    json_out(&cli(&["--data-dir", data_s, "extensions", "install", bundled_dir().join("doublage-voix").to_str().unwrap()]));
+    let python = Command::new("python3").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+    if !python || !has_ffmpeg() {
+        eprintln!("python3 or ffmpeg is missing: skipping the dubbing run");
+        return;
+    }
+    let (p, music_clip, _) = music_project(&dir, data_s, 0);
+    // the translated phrases (what a subtitle translation, or any .srt, provides) and their places
+    let srt = dir.join("en.srt");
+    std::fs::write(
+        &srt,
+        "1\n00:00:01,000 --> 00:00:03,000\nHello everyone.\n\n2\n00:00:05,000 --> 00:00:06,500\nToday we are cutting silences.\n\n3\n00:00:09,000 --> 00:00:09,600\nThanks a lot for watching this very long video until the end!\n",
+    )
+    .unwrap();
+    let fake = dir.join("fake_voicebox.py");
+    std::fs::write(&fake, include_str!("fake_voicebox.py")).unwrap();
+    let mut server = Command::new("python3").arg(&fake).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
+    let port = {
+        let mut line = String::new();
+        BufReader::new(server.stdout.as_mut().unwrap()).read_line(&mut line).unwrap();
+        line.trim().to_string()
+    };
+    let url = format!("http://127.0.0.1:{port}");
+    let run = |extra: &[&str]| {
+        let sel = music_clip.to_string();
+        let mut a = vec![
+            "--data-dir",
+            data_s,
+            "--project",
+            &p,
+            "--save",
+            "extensions",
+            "run",
+            "doublage-voix",
+            "Doubler en anglais",
+            "--select",
+            &sel,
+            "--var",
+            "voice=Test",
+            "--var",
+        ];
+        let v = format!("voicebox={url}");
+        a.push(&v);
+        let t = format!("translation={}", srt.to_str().unwrap());
+        a.push("--var");
+        a.push(&t);
+        a.extend_from_slice(extra);
+        cli(&a)
+    };
+    let o = run(&[]);
+    let _ = server.kill();
+    let _ = server.wait();
+    let r = json_out(&o);
+    let text = r.to_string();
+    // 3 phrases, the last one cannot fit 0.6 s (a 62-character sentence takes 4 s): flagged, not cut
+    assert!(text.contains("3 phrases doublées"), "{text}");
+    assert!(text.contains("1 dépassement"), "{text}");
+    assert!(text.contains("voix d'origine atténuée de 18 dB"), "{text}");
+    let q = sequence_of(data_s, &p);
+    let tracks = q["audio"].as_array().unwrap_or_else(|| panic!("{q}"));
+    assert_eq!(tracks.len(), 3, "a new audio track after A1 and A2: {q}");
+    let work = dir.join("beats-doublage");
+    let wavs: Vec<_> =
+        std::fs::read_dir(&work).unwrap().filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "wav")).collect();
+    assert_eq!(wavs.len(), 1, "one dubbed file: {wavs:?}");
+    let report: Value = serde_json::from_slice(&std::fs::read(wavs[0].with_extension("report.json")).unwrap()).unwrap();
+    assert_eq!(report["stats"]["n"], 3);
+    // the 62-character phrase (4 s of voice) is flagged: even at +15 % it needs more than its 0.6 s
+    assert!(report["segments"][2]["overrun"].as_f64().unwrap() > 0.5, "{report}");
+    // the audio starts at the first phrase and ends with the last one
+    let d = wav_seconds(&wavs[0]);
+    assert!(d > 8.0 && d < 13.0, "{d} s");
     let _ = std::fs::remove_dir_all(&dir);
 }

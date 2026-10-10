@@ -1,0 +1,82 @@
+{
+  "formatVersion": 1,
+  "id": "doublage-voix",
+  "name": "Doublage vocal",
+  "version": "1.0.0",
+  "description": "Dubs the selected clip: its speech (subtitle track or transcript) is translated and re-spoken by a Voicebox voice, fitted to the original timing (speed change of at most 15 %, or a shorter rewording), and laid on a new audio track while the original voice is lowered. Voicebox (local) is started if needed; the voice list comes from it. Save the project first. Needs ffmpeg; programs run with your user's permissions.",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Doubler en anglais",
+      "description": "Selected clip: translate to English, speak it with the remembered Voicebox voice (asked once), new track « Doublage EN », original voice lowered.",
+      "requires": [
+        "sequence",
+        "selection",
+        "project"
+      ],
+      "action": {
+        "exec": {
+          "program": "scripts/dub.sh",
+          "args": [
+            "dub",
+            "en"
+          ],
+          "timeoutSeconds": 3600
+        }
+      }
+    },
+    {
+      "label": "Doubler en anglais avec ma voix",
+      "description": "Same, with your own cloned voice profile in Voicebox (a profile named « Madson », or the one you pick once).",
+      "requires": [
+        "sequence",
+        "selection",
+        "project"
+      ],
+      "action": {
+        "exec": {
+          "program": "scripts/dub.sh",
+          "args": [
+            "dub",
+            "en",
+            "mine"
+          ],
+          "timeoutSeconds": 3600
+        }
+      }
+    },
+    {
+      "label": "Doubler en français",
+      "description": "Selected clip: translate to French and speak it with the remembered Voicebox voice.",
+      "requires": [
+        "sequence",
+        "selection",
+        "project"
+      ],
+      "action": {
+        "exec": {
+          "program": "scripts/dub.sh",
+          "args": [
+            "dub",
+            "fr"
+          ],
+          "timeoutSeconds": 3600
+        }
+      }
+    },
+    {
+      "label": "Choisir la voix de doublage…",
+      "description": "Starts Voicebox if needed, lists its voice profiles and remembers the one you pick for English dubs.",
+      "requires": [],
+      "action": {
+        "exec": {
+          "program": "scripts/dub.sh",
+          "args": [
+            "choose-voice"
+          ],
+          "timeoutSeconds": 3600
+        }
+      }
+    }
+  ]
+}

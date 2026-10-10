@@ -18,6 +18,7 @@ pub mod clip_ops;
 pub mod color;
 pub mod commands;
 pub mod demo;
+pub mod dub;
 pub mod essential_sound;
 pub mod export_tools;
 pub mod graphic_templates;
@@ -1044,6 +1045,8 @@ mod beats_tests;
 mod clip_ops_tests;
 #[cfg(test)]
 mod color_tests;
+#[cfg(test)]
+mod dub_tests;
 #[cfg(test)]
 mod essential_sound_tests;
 #[cfg(test)]

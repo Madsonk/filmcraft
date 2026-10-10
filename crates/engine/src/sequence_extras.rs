@@ -43,6 +43,7 @@ fn spec(
 pub(crate) fn commands() -> Vec<CommandSpec> {
     let mut v = base_commands();
     v.extend(crate::beats::commands());
+    v.extend(crate::dub::commands());
     v
 }
 
