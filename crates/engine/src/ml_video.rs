@@ -318,9 +318,9 @@ pub(crate) mod on {
         clip.offline = false;
         clip.proxy = None;
         clip.info.duration = out_dur;
-        let keep_audio = slow == 1.0 && clip.info.audio.is_some();
+        let keep_audio = slow == 1.0 && clip.info.has_audio();
         if !keep_audio {
-            clip.info.audio = None;
+            clip.info.audio_streams.clear();
         }
         if let Some(v) = clip.info.video.as_mut() {
             v.frame_rate = out_rate;
@@ -420,7 +420,7 @@ pub(crate) mod on {
             }
             Ok(to_frame(&Image { width: y.width, height: y.height, data: y.data }))
         });
-        let keep_audio = clip.info.audio.is_some();
+        let keep_audio = clip.info.has_audio();
         let virt = from_worker(t.src.clone(), clip.info.clone(), base, keep_audio, worker);
         let name = format!("{} (x{scale})", t.name);
         let out = out_path(s, p, &t.name, &format!("x{scale}"), "mov");
@@ -507,7 +507,7 @@ pub(crate) mod on {
             }
             st.done.iter().find(|(k, _)| *k == idx).map(|(_, f)| f.clone()).ok_or_else(|| MediaError::Decode("RVM: frame not produced".into()))
         });
-        let keep_audio = clip.info.audio.is_some();
+        let keep_audio = clip.info.has_audio();
         let virt = from_worker(t.src.clone(), clip.info.clone(), base, keep_audio, worker);
         let name = format!("{} ({})", t.name, if mode == "matte" { "matte" } else { "détouré" });
         let out = out_path(s, p, &t.name, if mode == "matte" { "matte" } else { "cutout" }, "mov");

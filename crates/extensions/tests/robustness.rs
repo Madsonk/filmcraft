@@ -132,13 +132,23 @@ fn the_bundled_extensions_are_valid_and_complete() {
             "autoedit",
             "beat-edit",
             "copy-pasta",
+            "doublage-voix",
             "export-en-un-clic",
+            "ml-models",
+            "nettoyage-voix",
+            "person-matte",
+            "reframe-vertical",
+            "rife-slowmo",
+            "rush-search",
             "silence-remover",
             "sous-titres",
             "sous-titres-animes",
+            "stabilizer-l1",
             "storyboard-maker",
             "tics-de-langage",
-            "traduction-sous-titres"
+            "traduction-sous-titres",
+            "upscale-video",
+            "voice-music"
         ]
     );
 }

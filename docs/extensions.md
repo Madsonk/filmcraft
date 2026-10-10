@@ -29,7 +29,7 @@ extensions** (or `extensions.reload`) picks it up without restarting.
 The extensions in the repository's `extensions-bundled/` folder are offered on first launch of an app
 that ships them (next to the executable, or in the macOS bundle's `Resources`):
 
-* the ones that only drive FilmCraft's own commands (all but one of the nine) are installed once; one the user
+* the ones that only drive FilmCraft's own commands (all but two of the twenty) are installed once; one the user
   removes stays removed (`.bundled-seeded.json` in the extensions folder remembers the offer);
 * **an extension that starts an external program (Storyboard Maker, Doublage vocal) is never installed silently.** A
   dialog, *Extension fournie avec FilmCraft*, names it, shows the program it would run and what that means
@@ -201,7 +201,7 @@ already runs in the background by itself).
 
 ## Bundled extensions
 
-`extensions-bundled/` holds ten extensions, in French like their menu entries:
+`extensions-bundled/` holds twenty extensions, in French like their menu entries (the optional neural ones are described in the sections after Hesitations):
 
 | Extension | Entries | Built on |
 |---|---|---|
@@ -217,7 +217,13 @@ already runs in the background by itself).
 | **Sous-titres animés** | Karaoké (3 mots) · Pop, un mot à la fois · (transcription existante) × 2 | `transcript.createWordCaptions` (below): graphic clips with keyframes from the word timestamps. Variables `accent`, `color`, `words`, `y`, `font`, `language`. |
 | **Traduction des sous-titres** | FR → EN · EN → FR · Transcrire, sous-titrer et traduire (EN / FR) · Exporter la piste traduite en .srt | `captions.translate` (below): offline Opus-MT, second caption track with the same timings. |
 | **Tics de langage** | Retirer les euh (turbo, français) · uh/um (turbo, anglais) · (base, français) · (transcription existante) | `sequence.transcribe {hesitations:true}` with Whisper large-v3-turbo or base, then `transcript.removeFillers`, then `sequence.removeSilence`. |
-| **Storyboard Maker** | Exporter une image par plan · Exporter une image par marqueur · Assembler la planche (PNG + PDF) | `exec` entries running `scripts/storyboard.sh` (a Python 3 program): it reads the saved `.fcproj`, and prints `playhead.set` + `file.exportFrame` for each shot (the clips of the first video track that has clips) or marker. The stills (`<project>-storyboard/001.png…` with an `index.json`) come from the Program monitor. The sheet entry lays them out with titles and timecodes (`<project>-storyboard.png` and `.pdf`, `--var columns=4`) and needs the Pillow package. The program only plans: the sheet is built by a second entry because a program cannot read the results of commands that run after it exits. Save the project first. It and Doublage vocal are the bundled extensions that start a program, so they are offered on first launch (a dialog) and never installed silently. |
+| **Modèles IA optionnels** | Liste des modèles · Installer : RIFE (ralenti, images par seconde) · Installer : SPAN x2 (agrandir la vidéo) · Installer : Beat This (beats neuronaux) · Installer : HT Demucs (voix / musique) · Installer : SigLIP 2 (recherche de rushes) · Installer : Robust Video Matting (détourage, usage personnel) | Optional neural tools (§ Optional neural tools below, build feature `ml`). |
+| **Détourage de personne (RVM)** | Matte noir et blanc · Personne sur fond uni | Optional neural tools (§ Optional neural tools below, build feature `ml`). |
+| **Ralenti et images par seconde (RIFE)** | Ralenti x2 · Ralenti x4 · Passer à 60 i/s | Optional neural tools (§ Optional neural tools below, build feature `ml`). |
+| **Recherche de rushes** | Indexer les rushes · Chercher (--var query=...) | Optional neural tools (§ Optional neural tools below, build feature `ml`). |
+| **Stabilisation L1 (trajectoire optimale)** | Stabiliser (trajectoire L1) | Optional neural tools (§ Optional neural tools below, build feature `ml`). |
+| **Agrandir la vidéo x2 (SPAN)** | Agrandir x2 | Optional neural tools (§ Optional neural tools below, build feature `ml`). |
+| **Voix et musique (HT Demucs)** | Isoler la voix · Retirer la voix (garder la musique) · Voix + sans voix · Les quatre pistes | Optional neural tools (§ Optional neural tools below, build feature `ml`). |
 | **Doublage vocal** | Doubler en anglais · Doubler en anglais avec ma voix · Doubler en français · Choisir la voix de doublage… | `exec` entries running `scripts/dub.sh` (Python 3 standard library + ffmpeg) and the engine command `sequence.placeDub`: see [Voice dubbing](#voice-dubbing-doublage-vocal) below. |
 
 ### Beat editing: `sequence.markBeats` and `sequence.cutOnBeats`
@@ -491,14 +497,6 @@ human viewing test of the result; sampling at 5 images/s misses very fast subjec
 thread (14 s of 1080p footage took 3.9 s; 13 s of 960 × 540 with faces took 22 s on a busy machine); only forward-played clips, subjects as
 detected by COCO "person"; the new aspect needs the sequence at that ratio (see `resizeSequence`).
 
-### Neural tools: not done (next steps from the backlog, `infra-artcraft.md` § 7)
-
-Left for later, each is a candidate on the same `nn` interpreter or a program: Demucs voice/music separation
-(idea 19; needs a `ConvTranspose1d`/LSTM set of operators), L1-optimal stabilisation (idea 20), RIFE
-frame interpolation (idea 16), video matting with BiRefNet / SAM 2.1 (idea 18), Whisper-turbo and filler
-detection (idea 1), beat tracking with Beat This! (idea 17), and a background thread for these long commands
-(they run on the UI thread today). Not started.
-
 ## Optional neural tools (build feature `ml`)
 
 Seven extensions (Ralenti RIFE, Agrandir x2, Voix et musique, Détourage de personne, Recherche de rushes,
@@ -540,8 +538,7 @@ export and, without the guard, corrupted SPAN tiles).
 | `sequence.markBeats` / `cutOnBeats` `model:"beat-this"` | Beat This! (log-mel at 22 050 Hz, 6 transformer blocks, windows of 30 s as the reference), `minimal` peak picking. `bpm` still picks the octave (tracked beats thinned or doubled), `downbeat:true` uses the network's downbeats. | Candle port: logits within 1.1 % RMS of PyTorch (Metal float rounding), identical beats. On the 14 generated drum / chord files of the Beat Edit tests: **no octave error, as with the DSP tracker**, right tempo and 63 of 63 beats, worst frame-snapped error 36 ms against 25 ms (the network works on 20 ms frames). **Real recording** (40 s of music in a dance studio, real footage): the DSP tracker refuses it (« pas de pulsation régulière »), Beat This finds 27 beats at 66.7 BPM (median interval 0.90 s, no ground truth to check against). |
 | *Stabilisation L1* (`effects.apply warp_stabilizer` + `result` = 3rd choice) | Warp Stabilizer's result choice « L1 Optimal Path »: the camera path minimises velocity, acceleration and jerk in L1 (Grundmann et al., CVPR 2011, re-implemented from the paper: ADMM on a banded system) inside the crop window of « Crop Less <-> Smooth More » (2-14 % of the frame). | Synthetic shake on a textured scene (known truth): high-pass jitter 23.3 px -> **6.0 px Gaussian, 6.2 px L1**; with a steady pan plus shake the deviation from the clean path is 17.3 px -> **1.5 px Gaussian, 2.5 px L1** (y: 0.74 / 0.41 px). L1 prefers a still camera inside the crop (its pan follows 37 % of the real one at default settings): it does not beat the Gaussian on faithfulness to a pan, it is a different trade. |
 
-**What is not done, and why.** *Whisper, subtitles, translation, DeepFilterNet voice, auto-reframe* belong to the other
-two agents of this mission. The LightCraft-only ideas of the list (stuck dust, grouping by person, portrait retouch,
+**What is not done, and why.** (Whisper turbo, animated captions, translation, DeepFilterNet voice and auto-reframe are in this build too: see their sections above.) The LightCraft-only ideas of the list (stuck dust, grouping by person, portrait retouch,
 faster denoising) are photo tools and were not touched. *BiRefNet / SAM 2 / MatAnyone* video matting were not attempted: RVM runs in real time on the Mac and matches its reference, MatAnyone's licence
 (S-Lab, non commercial) and weights (Google Drive / Baidu) have no checked mirror, BiRefNet and SAM 2 are per-image models
 without a temporal state. *Stabilisation from gyroscope data* (Gyroflow is GPL-3.0) is not implemented. The `dbn`

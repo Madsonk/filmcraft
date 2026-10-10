@@ -73,7 +73,7 @@ mod on {
             return Err(bad(CMD, "select a clip, or pass `clip` or `item`"));
         };
         let (mid, m, sub) = s.project.resolve_media(item).ok_or_else(|| bad(CMD, "this item is not file media"))?;
-        if m.info.audio.is_none() {
+        if !m.info.has_audio() {
             return Err(bad(CMD, "this media has no audio"));
         }
         let name = s.project.item(item).map(|i| i.name.clone()).unwrap_or_else(|| "clip".into());

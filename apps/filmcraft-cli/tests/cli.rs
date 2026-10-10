@@ -313,6 +313,30 @@ fn talk_wav(parts: &[(f64, bool)]) -> Vec<u8> {
     w
 }
 
+/// The bundled extensions of this build, by id (the folder names of `extensions-bundled/`).
+const ALL_BUNDLED: [&str; 20] = [
+    "autoedit",
+    "beat-edit",
+    "copy-pasta",
+    "doublage-voix",
+    "export-en-un-clic",
+    "ml-models",
+    "nettoyage-voix",
+    "person-matte",
+    "reframe-vertical",
+    "rife-slowmo",
+    "rush-search",
+    "silence-remover",
+    "sous-titres",
+    "sous-titres-animes",
+    "stabilizer-l1",
+    "storyboard-maker",
+    "tics-de-langage",
+    "traduction-sous-titres",
+    "upscale-video",
+    "voice-music",
+];
+
 #[test]
 fn extensions_install_list_validate_pack_remove() {
     let dir = fresh_dir("ext-manage");
@@ -328,13 +352,23 @@ fn extensions_install_list_validate_pack_remove() {
             "autoedit",
             "beat-edit",
             "copy-pasta",
+            "doublage-voix",
             "export-en-un-clic",
+            "ml-models",
+            "nettoyage-voix",
+            "person-matte",
+            "reframe-vertical",
+            "rife-slowmo",
+            "rush-search",
             "silence-remover",
             "sous-titres",
             "sous-titres-animes",
+            "stabilizer-l1",
             "storyboard-maker",
             "tics-de-langage",
-            "traduction-sous-titres"
+            "traduction-sous-titres",
+            "upscale-video",
+            "voice-music"
         ],
         "{r}"
     );
@@ -344,16 +378,26 @@ fn extensions_install_list_validate_pack_remove() {
     assert_eq!(
         names,
         [
+            "Agrandir la vidéo x2 (SPAN)",
             "AutoEdit",
             "Beat Edit",
             "Copy Pasta",
+            "Doublage vocal",
+            "Détourage de personne (RVM)",
             "Export en un clic",
+            "Modèles IA optionnels",
+            "Nettoyage de la voix",
+            "Ralenti et images par seconde (RIFE)",
+            "Recherche de rushes",
+            "Reframe vertical",
             "Silence Remover",
             "Sous-titres",
             "Sous-titres animés",
+            "Stabilisation L1 (trajectoire optimale)",
             "Storyboard Maker",
             "Tics de langage",
-            "Traduction des sous-titres"
+            "Traduction des sous-titres",
+            "Voix et musique (HT Demucs)"
         ]
     );
     let silence = l.as_array().unwrap().iter().find(|x| x["id"] == "silence-remover").unwrap();
@@ -362,18 +406,7 @@ fn extensions_install_list_validate_pack_remove() {
     let story = l.as_array().unwrap().iter().find(|x| x["id"] == "storyboard-maker").unwrap();
     assert_eq!(story["entries"][0]["kind"], "exec");
     // every command the bundled extensions use exists in the engine
-    for id in [
-        "silence-remover",
-        "sous-titres",
-        "export-en-un-clic",
-        "beat-edit",
-        "copy-pasta",
-        "autoedit",
-        "storyboard-maker",
-        "sous-titres-animes",
-        "traduction-sous-titres",
-        "tics-de-langage",
-    ] {
+    for id in ALL_BUNDLED {
         let v = json_out(&cli(&["extensions", "validate", bundled.join(id).to_str().unwrap()]));
         assert_eq!(v["valid"], true, "{v}");
         assert_eq!(v["commandsUnknownToThisCli"], serde_json::json!([]), "{id}: {v}");
@@ -402,7 +435,7 @@ fn extensions_install_list_validate_pack_remove() {
     // remove
     json_out(&cli(&["--data-dir", data_s, "extensions", "remove", "sous-titres"]));
     let l = json_out(&cli(&["--data-dir", data_s, "extensions", "list"]));
-    assert_eq!(l.as_array().unwrap().len(), 9);
+    assert_eq!(l.as_array().unwrap().len(), ALL_BUNDLED.len() - 1);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
