@@ -47,7 +47,7 @@ pub fn sequence_words(s: &Session) -> Vec<SeqWord> {
     }
 }
 
-fn has_transcript(s: &Session) -> std::result::Result<(), String> {
+pub(crate) fn has_transcript(s: &Session) -> std::result::Result<(), String> {
     has_seq(s)?;
     if sequence_words(s).is_empty() { Err("the sequence has no transcript (Transcribe first)".into()) } else { Ok(()) }
 }
@@ -210,6 +210,9 @@ pub fn begin_transcribe(s: &Session, p: &Value) -> Result<TranscribeJob> {
         },
         diarize: bool_p(p, "diarize").unwrap_or(ma.speaker_labeling != "off"),
         max_speakers: u64_p(p, "maxSpeakers").map(|n| n.clamp(1, 32) as usize).unwrap_or(Options::default().max_speakers),
+        prompt: str_p(p, "prompt").map(str::trim).filter(|t| !t.is_empty()).map(str::to_string),
+        hesitations: bool_p(p, "hesitations").unwrap_or(false),
+        hesitation_bias: f64_p(p, "hesitationBias").map(|v| v.clamp(0.0, 12.0) as f32).unwrap_or(0.0),
     };
     let sr = filmcraft_speech::SAMPLE_RATE;
     let inputs = items
@@ -628,10 +631,15 @@ fn create_captions(s: &mut Session, p: &Value) -> Result<Value> {
     let blocks = tx::caption_blocks(&words, &rules, s.sequence_rate());
     let format = str_p(p, "format").and_then(CaptionFormat::from_name).unwrap_or_default();
     let name = str_p(p, "name").unwrap_or("Transcript").to_string();
+    // the track carries the spoken language (what `captions.translate` takes as its source)
+    let language = words_language(s, &words);
     let n = blocks.len();
     let tid = s.edit_sequence("Create Captions", |q, ctx, st| {
         let tid = TrackId(ctx.alloc());
         let mut t = CaptionTrack::new(tid, name, format);
+        if let Some(l) = language {
+            t.language = l;
+        }
         t.captions = tx::blocks_to_captions(&blocks, ctx);
         q.caption_tracks.insert(0, t);
         st.caption_selection.clear();
@@ -651,6 +659,12 @@ fn models(_: &mut Session, _: &Value) -> Result<Value> {
             "license": m.license, "source": m.source, "size": m.size(),
             "installed": dir.as_ref().is_some_and(|d| filmcraft_speech::models::installed(d, m)),
         })).collect::<Vec<_>>(),
+        // offline translation models for `captions.translate`
+        "translation": filmcraft_speech::models::mt_catalogue().iter().map(|m| json!({
+            "id": m.id, "name": m.name, "description": m.description,
+            "license": m.license, "licenseUrl": m.license_url, "source": m.source, "size": m.size(),
+            "installed": dir.as_ref().is_some_and(|d| filmcraft_speech::models::installed(d, m)),
+        })).collect::<Vec<_>>(),
     }))
 }
 
@@ -658,7 +672,8 @@ fn models(_: &mut Session, _: &Value) -> Result<Value> {
 /// the size, source and licence (`transcript.models`) and ask before running this.
 fn download_model(_: &mut Session, p: &Value) -> Result<Value> {
     let id = str_p(p, "model").unwrap_or(filmcraft_speech::models::DEFAULT_MODEL);
-    let m = filmcraft_speech::models::find(id).ok_or_else(|| speech_err(SpeechError::UnknownModel(id.into())))?;
+    let m =
+        filmcraft_speech::models::find(id).or_else(|| filmcraft_speech::models::find_mt(id)).ok_or_else(|| speech_err(SpeechError::UnknownModel(id.into())))?;
     let dir = models_dir().ok_or_else(|| EngineError::Other("no data directory for speech models".into()))?;
     #[cfg(feature = "speech-download")]
     {
@@ -678,7 +693,7 @@ pub fn commands() -> Vec<CommandSpec> {
             "transcript.generate",
             "Transcribe…",
             &["Sequence", "Transcript"],
-            r#"{"items":[id]?,"model":"whisper-base"?,"language":"en|auto"?,"diarize":bool?,"maxSpeakers":n?}"#,
+            r#"{"items":[id]?,"model":"whisper-base"?,"language":"en|auto"?,"diarize":bool?,"maxSpeakers":n?,"prompt":str? (initial prompt: a text in the speaker's style, e.g. "Euh, alors, heu, hum…", read by Whisper as what was said before),"hesitations":bool=false (keep the hesitations: built-in disfluency prompt of the language, plus the filled pauses Whisper left out)}"#,
             can_transcribe,
             generate,
             true,
@@ -696,7 +711,15 @@ pub fn commands() -> Vec<CommandSpec> {
         spec("transcript.inspect", "Inspect Transcript", &[], r#"{"paragraphGapSeconds":f?}"#, always, inspect, false),
         spec("transcript.search", "Search Transcript", &[], r#"{"query":str}"#, always, search, false),
         spec("transcript.models", "List Speech Models", &[], "{}", always, models, false),
-        spec("transcript.downloadModel", "Download Speech Model", &[], r#"{"model":"whisper-base"?}"#, can_download, download_model, true),
+        spec(
+            "transcript.downloadModel",
+            "Download Speech Model",
+            &[],
+            r#"{"model":"whisper-base"|"whisper-large-v3-turbo"|"opus-mt-tc-big-fr-en"|"opus-mt-tc-big-en-fr"?}"#,
+            can_download,
+            download_model,
+            true,
+        ),
         spec("transcript.select", "Mark Selected Text", &[], r#"{"from":word,"to":word?}"#, has_transcript, select, true),
         spec("transcript.extract", "Extract Selected Text", &[], r#"{"from":word,"to":word?}"#, has_transcript, |s, p| extract_or_lift(s, p, true), true),
         spec("transcript.lift", "Lift Selected Text", &[], r#"{"from":word,"to":word?}"#, has_transcript, |s, p| extract_or_lift(s, p, false), true),

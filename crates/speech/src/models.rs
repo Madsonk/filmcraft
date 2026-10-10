@@ -55,6 +55,8 @@ macro_rules! hf {
 }
 
 const TOKENIZER_MULTI: &str = "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566";
+/// large-v3 and large-v3-turbo have one more language token (Cantonese) and 128 mel bins.
+const TOKENIZER_V3: &str = "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd";
 
 static CATALOGUE: &[ModelInfo] = &[
     ModelInfo {
@@ -177,7 +179,171 @@ static CATALOGUE: &[ModelInfo] = &[
             ),
         ],
     },
+    ModelInfo {
+        id: "whisper-large-v3-turbo",
+        name: "Whisper large-v3-turbo (multilingual)",
+        multilingual: true,
+        description: "809 M parameters (32-layer encoder, 4-layer decoder, 128 mel bins). The most accurate model here and far better than small on French; about 3 GB in memory and several times slower than small on the CPU.",
+        license: LICENSE,
+        license_url: LICENSE_URL,
+        author: AUTHOR,
+        source: "https://huggingface.co/openai/whisper-large-v3-turbo",
+        files: &[
+            hf!(
+                "whisper-large-v3-turbo",
+                "41f01f3fe87f28c78e2fbf8b568835947dd65ed9",
+                "config.json",
+                "c5b526b3e3cd64cd8940dabb45e8ba726629e22d8ed389c29b552f9140daf04a",
+                1256
+            ),
+            hf!(
+                "whisper-large-v3-turbo",
+                "41f01f3fe87f28c78e2fbf8b568835947dd65ed9",
+                "generation_config.json",
+                "cce11bfe3aaa6ae9e072ea2637caaec8795e68d9b67e655a5af16ee509681a4c",
+                3772
+            ),
+            hf!(
+                "whisper-large-v3-turbo",
+                "41f01f3fe87f28c78e2fbf8b568835947dd65ed9",
+                "tokenizer.json",
+                "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd",
+                2710337
+            ),
+            hf!(
+                "whisper-large-v3-turbo",
+                "41f01f3fe87f28c78e2fbf8b568835947dd65ed9",
+                "model.safetensors",
+                "542566a422ae4f3fd23f1ba11add198fca01bbf82e66e6a2857b3f608b1eb9d1",
+                1617824864
+            ),
+        ],
+    },
 ];
+
+// ---- machine translation (Opus-MT, used by `captions.translate`) ----
+
+const MT_LICENSE: &str = "CC-BY-4.0 (Helsinki-NLP / University of Helsinki, OPUS-MT tc-big); attribution required";
+const MT_LICENSE_URL: &str = "https://creativecommons.org/licenses/by/4.0/";
+const MT_AUTHOR: &str = "Helsinki-NLP (University of Helsinki)";
+
+macro_rules! mt {
+    ($repo:literal, $rev:literal, $name:literal, $sha:literal, $size:expr) => {
+        ModelFile { name: $name, url: concat!("https://huggingface.co/Helsinki-NLP/", $repo, "/resolve/", $rev, "/", $name), sha256: $sha, size: $size }
+    };
+}
+
+static MT_CATALOGUE: &[ModelInfo] = &[
+    ModelInfo {
+        id: "opus-mt-tc-big-fr-en",
+        name: "Opus-MT tc-big French → English",
+        multilingual: false,
+        description: "Translates subtitles from French to English, offline (Marian transformer, 230 M parameters, about 1 GB in memory).",
+        license: MT_LICENSE,
+        license_url: MT_LICENSE_URL,
+        author: MT_AUTHOR,
+        source: "https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-fr-en",
+        files: &[
+            mt!(
+                "opus-mt-tc-big-fr-en",
+                "5fa3b3c9fa3bcd65fbf31206c3ec7419c9d9cd7d",
+                "config.json",
+                "ac35de27c1645637a46d3b2f41052365ef52a7c23e169719629381f6b1fb025c",
+                1076
+            ),
+            mt!(
+                "opus-mt-tc-big-fr-en",
+                "5fa3b3c9fa3bcd65fbf31206c3ec7419c9d9cd7d",
+                "vocab.json",
+                "2994b7def69d6495d8f02369b57e3f04e2474f76ce64eda2921643e1f76fef41",
+                1332010
+            ),
+            mt!(
+                "opus-mt-tc-big-fr-en",
+                "5fa3b3c9fa3bcd65fbf31206c3ec7419c9d9cd7d",
+                "source.spm",
+                "622a0fef37ea7c6d7cd4a6530c2279d4688987c5417bba26fba9ae416f8b7758",
+                819955
+            ),
+            mt!(
+                "opus-mt-tc-big-fr-en",
+                "5fa3b3c9fa3bcd65fbf31206c3ec7419c9d9cd7d",
+                "target.spm",
+                "69e8272c2d215294ae2e19c6fcef39fc26b386fcf64cd07f376b965740c80592",
+                802408
+            ),
+            mt!(
+                "opus-mt-tc-big-fr-en",
+                "5fa3b3c9fa3bcd65fbf31206c3ec7419c9d9cd7d",
+                "model.safetensors",
+                "1e9d73c1af19660aad2e0733e12f8d06745eb54c77f48bae4831e377ccaf6d6e",
+                461429130
+            ),
+        ],
+    },
+    ModelInfo {
+        id: "opus-mt-tc-big-en-fr",
+        name: "Opus-MT tc-big English → French",
+        multilingual: false,
+        description: "Translates subtitles from English to French, offline (Marian transformer, 230 M parameters, about 1 GB in memory).",
+        license: MT_LICENSE,
+        license_url: MT_LICENSE_URL,
+        author: MT_AUTHOR,
+        source: "https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-fr",
+        files: &[
+            mt!(
+                "opus-mt-tc-big-en-fr",
+                "6e062862ced6f5622a589ab2aadc2a1d4978db78",
+                "config.json",
+                "ac35de27c1645637a46d3b2f41052365ef52a7c23e169719629381f6b1fb025c",
+                1076
+            ),
+            mt!(
+                "opus-mt-tc-big-en-fr",
+                "6e062862ced6f5622a589ab2aadc2a1d4978db78",
+                "vocab.json",
+                "2994b7def69d6495d8f02369b57e3f04e2474f76ce64eda2921643e1f76fef41",
+                1332010
+            ),
+            mt!(
+                "opus-mt-tc-big-en-fr",
+                "6e062862ced6f5622a589ab2aadc2a1d4978db78",
+                "source.spm",
+                "18bb5a422a53a0bd699b005c8086cbd58a85c4be427fd57ca687c958588edcc9",
+                802408
+            ),
+            mt!(
+                "opus-mt-tc-big-en-fr",
+                "6e062862ced6f5622a589ab2aadc2a1d4978db78",
+                "target.spm",
+                "6437b5600d2ae14888939e589773b09bc667c77e81326e20e3f57698a4078593",
+                819955
+            ),
+            mt!(
+                "opus-mt-tc-big-en-fr",
+                "6e062862ced6f5622a589ab2aadc2a1d4978db78",
+                "model.safetensors",
+                "5c88b4f7a63934b8be72372b86661e616227c20be4b75612eeee7dca96494217",
+                461429130
+            ),
+        ],
+    },
+];
+
+/// The translation models.
+pub fn mt_catalogue() -> &'static [ModelInfo] {
+    MT_CATALOGUE
+}
+
+pub fn find_mt(id: &str) -> Option<&'static ModelInfo> {
+    MT_CATALOGUE.iter().find(|m| m.id == id)
+}
+
+/// The translation model for `from` → `to` (ISO 639-1 codes; `fr`/`en` only).
+pub fn mt_for(from: &str, to: &str) -> Option<&'static ModelInfo> {
+    let id = format!("opus-mt-tc-big-{}-{}", from.to_lowercase(), to.to_lowercase());
+    find_mt(&id)
+}
 
 /// The default model.
 pub const DEFAULT_MODEL: &str = "whisper-base";
@@ -207,9 +373,14 @@ pub fn missing_bytes(models_dir: &Path, m: &ModelInfo) -> u64 {
     m.files.iter().filter(|f| !std::fs::metadata(d.join(f.name)).is_ok_and(|md| md.len() == f.size)).map(|f| f.size).sum()
 }
 
-/// The tokenizer shared by the multilingual models has one checksum.
+/// The tokenizer shared by the multilingual tiny/base/small models has one checksum.
 pub fn shared_tokenizer_sha() -> &'static str {
     TOKENIZER_MULTI
+}
+
+/// The tokenizer of the large-v3 family.
+pub fn v3_tokenizer_sha() -> &'static str {
+    TOKENIZER_V3
 }
 
 /// Download progress: `(bytes done, bytes total, file)`; return false to cancel.
@@ -301,8 +472,22 @@ mod tests {
                 assert_eq!(f.sha256.len(), 64);
                 assert!(f.sha256.bytes().all(|b| b.is_ascii_hexdigit()));
                 if f.name == "tokenizer.json" {
-                    assert_eq!(f.sha256, shared_tokenizer_sha());
+                    assert_eq!(f.sha256, if m.id.contains("large-v3") { v3_tokenizer_sha() } else { shared_tokenizer_sha() });
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn translation_catalogue_is_pinned_and_checksummed() {
+        assert!(mt_for("fr", "EN").is_some() && mt_for("en", "fr").is_some() && mt_for("fr", "de").is_none());
+        for m in mt_catalogue() {
+            assert!(m.size() > 400_000_000, "{}", m.id);
+            for f in m.files {
+                assert!(f.url.starts_with("https://huggingface.co/Helsinki-NLP/opus-mt-"), "{}", f.url);
+                assert!(f.url.contains("/resolve/") && f.url.ends_with(f.name));
+                assert_eq!(f.sha256.len(), 64);
+                assert!(f.sha256.bytes().all(|b| b.is_ascii_hexdigit()));
             }
         }
     }

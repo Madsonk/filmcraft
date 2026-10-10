@@ -1,0 +1,132 @@
+{
+  "formatVersion": 1,
+  "id": "traduction-sous-titres",
+  "name": "Traduction des sous-titres",
+  "version": "1.0.0",
+  "description": "Translates a caption track offline, French to English or English to French, into a second caption track with the same timings (Opus-MT tc-big running on the CPU; nothing leaves the computer). The model is a one-time download of about 460 MB per direction (CC-BY-4.0, source and licence shown before): transcript.downloadModel {model:opus-mt-tc-big-fr-en} or opus-mt-tc-big-en-fr, or the Speech models settings. About a second per caption.",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Traduire en anglais (FR → EN)",
+      "description": "Translate the first caption track from French to English into a new track.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "captions.translate",
+            "params": {
+              "from": "fr",
+              "to": "en",
+              "beams": "${var.beams|4}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Traduire en français (EN → FR)",
+      "description": "Translate the first caption track from English to French into a new track.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "captions.translate",
+            "params": {
+              "from": "en",
+              "to": "fr",
+              "beams": "${var.beams|4}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Transcrire, sous-titrer et traduire en anglais",
+      "description": "French speech: transcribe, caption (42 characters, 2 lines), translate to English as a second track.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.transcribe",
+            "params": {
+              "language": "fr"
+            }
+          },
+          {
+            "id": "transcript.createCaptions",
+            "params": {
+              "maxChars": 42,
+              "lines": 2,
+              "name": "Sous-titres"
+            }
+          },
+          {
+            "id": "captions.translate",
+            "params": {
+              "from": "fr",
+              "to": "en"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Transcrire, sous-titrer et traduire en français",
+      "description": "English speech: transcribe, caption, translate to French as a second track.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.transcribe",
+            "params": {
+              "language": "en"
+            }
+          },
+          {
+            "id": "transcript.createCaptions",
+            "params": {
+              "maxChars": 42,
+              "lines": 2,
+              "name": "Sous-titres"
+            }
+          },
+          {
+            "id": "captions.translate",
+            "params": {
+              "from": "en",
+              "to": "fr"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Exporter la piste traduite en .srt",
+      "description": "Write the second caption track (the translation) to <project>.<lang>.srt.",
+      "requires": [
+        "sequence",
+        "project"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "captions.export",
+            "params": {
+              "path": "${project_dir}/${project_name}.${var.lang|\"en\"}.srt",
+              "format": "srt",
+              "track": "C2"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

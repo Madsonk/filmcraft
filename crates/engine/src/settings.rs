@@ -649,8 +649,12 @@ const LANGUAGES: &[(&str, &str)] = &[
     ("ru", "Russian"),
     ("hi", "Hindi"),
 ];
-const MODELS: &[(&str, &str)] =
-    &[("whisper-tiny", "Whisper tiny (fastest)"), ("whisper-base", "Whisper base (balanced)"), ("whisper-small", "Whisper small (most accurate)")];
+const MODELS: &[(&str, &str)] = &[
+    ("whisper-tiny", "Whisper tiny (fastest)"),
+    ("whisper-base", "Whisper base (balanced)"),
+    ("whisper-small", "Whisper small (accurate)"),
+    ("whisper-large-v3-turbo", "Whisper large-v3-turbo (most accurate, 1.6 GB)"),
+];
 const CACHE_MGMT: &[(&str, &str)] = &[
     ("never", "Do not delete cache files automatically"),
     ("olderThan", "Automatically delete cache files older than"),

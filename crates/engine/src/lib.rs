@@ -14,6 +14,7 @@ pub mod aaf_omf;
 pub mod autosave;
 pub mod beats;
 pub mod captions;
+pub mod captions_translate;
 pub mod clip_ops;
 pub mod color;
 pub mod commands;
@@ -52,6 +53,7 @@ pub mod sync;
 pub mod transcript;
 pub mod trim;
 pub mod voiceover;
+pub mod word_captions;
 
 use std::sync::Arc;
 
