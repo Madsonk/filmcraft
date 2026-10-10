@@ -51,6 +51,7 @@ const LAYERS: &[(&str, u8)] = &[
     ("frame", 1),
     ("media", 1),
     ("project", 1),
+    ("extensions", 1),
     ("audio-dsp", 1),
     ("text", 1),
     ("edit", 2),

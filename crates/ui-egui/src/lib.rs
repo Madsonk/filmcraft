@@ -240,6 +240,10 @@ pub struct FilmcraftApp {
     pub workspaces: dock::WorkspacePrefs,
     /// Workspace names and the current one, as last handed to the native menu.
     menu_workspaces: (Vec<String>, String),
+    /// Extensions menu revision (`ExtensionsState::rev`) last handed to the native menu.
+    menu_extensions: u64,
+    /// The Extensions menu: installed extensions and their manager (docs/extensions.md).
+    pub extensions: panels::extensions::ExtensionsState,
 }
 
 pub struct GpuState {
@@ -374,6 +378,7 @@ impl FilmcraftApp {
         let frames = Arc::new(FrameServer::new(session.media.clone(), session.services.clone(), session.previews.clone(), FrameServer::default_workers()));
         let workspaces =
             session.prefs_path.as_ref().and_then(|p| p.parent()).map(|d| dock::WorkspacePrefs::load(&d.join(dock::WORKSPACES_FILE))).unwrap_or_default();
+        let extensions = panels::extensions::ExtensionsState::new(session.prefs_path.as_ref().and_then(|p| p.parent()).map(|d| d.join("extensions")));
         Self {
             session,
             ui: UiState::default(),
@@ -421,6 +426,8 @@ impl FilmcraftApp {
             workspace_restored: false,
             workspaces,
             menu_workspaces: Default::default(),
+            menu_extensions: 0,
+            extensions,
         }
     }
 
@@ -1030,8 +1037,9 @@ impl FilmcraftApp {
 
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         let workspaces = (dock::names(&self.workspaces), self.ui.workspace.clone());
-        if self.bindings_rev != self.session.shortcuts.revision || workspaces != self.menu_workspaces {
+        if self.bindings_rev != self.session.shortcuts.revision || workspaces != self.menu_workspaces || self.menu_extensions != self.extensions.rev {
             self.menu_workspaces = workspaces;
+            self.menu_extensions = self.extensions.rev;
             self.bindings = menus::bindings(self);
             self.bindings_rev = self.session.shortcuts.revision;
             let items = menus::menu_items(self);

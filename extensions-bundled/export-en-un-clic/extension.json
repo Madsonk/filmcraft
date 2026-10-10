@@ -1,0 +1,50 @@
+{
+  "formatVersion": 1,
+  "id": "export-en-un-clic",
+  "name": "Export en un clic",
+  "version": "1.0.0",
+  "description": "Exports the active sequence with a preset, without opening the Export panel (export.quick). The file is written next to the saved project. In the window the export runs as a background job (Window > Progress / Events); from filmcraft-cli the command waits for the file.",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Export rapide (dernier preset)",
+      "description": "The preset used last time, Match Source - Adaptive High Bitrate at first.",
+      "requires": ["sequence", "project"],
+      "action": {
+        "commands": [
+          { "id": "export.quick", "params": { "path": "${project_dir}/", "wait": "${blocking}" } }
+        ]
+      }
+    },
+    {
+      "label": "YouTube 1080p",
+      "description": "H.264, YouTube 1080p Full HD preset.",
+      "requires": ["sequence", "project"],
+      "action": {
+        "commands": [
+          { "id": "export.quick", "params": { "preset": "YouTube 1080p Full HD", "path": "${project_dir}/", "wait": "${blocking}" } }
+        ]
+      }
+    },
+    {
+      "label": "YouTube 4K",
+      "description": "H.264, YouTube 2160p 4K Ultra HD preset.",
+      "requires": ["sequence", "project"],
+      "action": {
+        "commands": [
+          { "id": "export.quick", "params": { "preset": "YouTube 2160p 4K Ultra HD", "path": "${project_dir}/", "wait": "${blocking}" } }
+        ]
+      }
+    },
+    {
+      "label": "Vimeo 1080p",
+      "description": "H.264, Vimeo 1080p Full HD preset.",
+      "requires": ["sequence", "project"],
+      "action": {
+        "commands": [
+          { "id": "export.quick", "params": { "preset": "Vimeo 1080p Full HD", "path": "${project_dir}/", "wait": "${blocking}" } }
+        ]
+      }
+    }
+  ]
+}

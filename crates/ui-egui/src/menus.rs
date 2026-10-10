@@ -152,6 +152,11 @@ pub fn panel_command_id(p: PanelKind) -> String {
 
 /// Execute a UI or engine command by id.
 pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, params: Value) -> Result<Value, String> {
+    // an extension is running in the background: it owns the project until it ends (its own commands
+    // are served with `serving` set; view and playback commands, which do not edit, stay available)
+    if app.extensions.locked() && filmcraft_engine::commands::find(id).is_some_and(|c| c.journal) && !id.starts_with("extensions.") {
+        return Err("Une extension est en cours d'exécution : attendez la fin ou annulez-la (fenêtre « Extension en cours »)".into());
+    }
     if matches!(id, "app.language.english" | "app.language.japanese" | "app.language.spanish" | "app.language.portuguese") {
         // Japanese needs the craft-fonts (built with CRAFT_FONTS_DIR) or a font installed on the system
         if id == "app.language.japanese" && !crate::i18n::install_japanese_font(ctx) {
@@ -180,6 +185,9 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, params: Val
         return Ok(Value::Null);
     }
     if let Some(r) = crate::panels::workspaces::route(app, id, &params) {
+        return r;
+    }
+    if let Some(r) = crate::panels::extensions::route(app, ctx, id, &params) {
         return r;
     }
     if let Some(t) = id.strip_prefix("tool.") {
@@ -425,9 +433,12 @@ pub struct MenuItem {
     /// Checkmark state of toggle / radio items (None = not checkable).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checked: Option<bool>,
+    /// A separator line is drawn above this item.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub separator_before: bool,
 }
 
-pub const MENUS: [&str; 9] = ["File", "Edit", "Clip", "Sequence", "Markers", "Graphics and Titles", "View", "Window", "Help"];
+pub const MENUS: [&str; 10] = ["File", "Edit", "Clip", "Sequence", "Markers", "Graphics and Titles", "View", "Window", crate::panels::extensions::MENU, "Help"];
 
 pub fn menu_items(app: &FilmcraftApp) -> Vec<MenuItem> {
     let mut v = menu_items_for(&app.session);
@@ -446,6 +457,7 @@ pub fn menu_items(app: &FilmcraftApp) -> Vec<MenuItem> {
         }
     }
     crate::panels::workspaces::menu(app, &mut v);
+    crate::panels::extensions::menu(app, &mut v);
     v
 }
 
@@ -468,6 +480,7 @@ pub fn menu_items_for(session: &filmcraft_engine::Session) -> Vec<MenuItem> {
             shortcut: session.shortcuts.primary(c.id),
             enabled: session.is_enabled(c.id),
             checked: None,
+            separator_before: false,
         });
     }
     for c in UI_COMMANDS.iter().chain(crate::panels::keyboard::COMMANDS) {
@@ -481,6 +494,7 @@ pub fn menu_items_for(session: &filmcraft_engine::Session) -> Vec<MenuItem> {
             shortcut: session.shortcuts.primary(c.id),
             enabled: true,
             checked: None,
+            separator_before: false,
         });
     }
     for p in PanelKind::ALL {
@@ -491,6 +505,7 @@ pub fn menu_items_for(session: &filmcraft_engine::Session) -> Vec<MenuItem> {
             shortcut: session.shortcuts.primary(&panel_command_id(p)),
             enabled: true,
             checked: None,
+            separator_before: false,
         });
     }
     out
@@ -614,9 +629,14 @@ fn menu_level(ui: &mut egui::Ui, items: &[&MenuItem], depth: usize, clicked: &mu
                 ui.set_min_width(220.0);
                 menu_level(ui, &inner, depth + 1, clicked);
             });
-        } else if menu_entry(ui, it) {
-            *clicked = Some(it.id.clone());
-            ui.close();
+        } else {
+            if it.separator_before {
+                ui.separator();
+            }
+            if menu_entry(ui, it) {
+                *clicked = Some(it.id.clone());
+                ui.close();
+            }
         }
     }
 }

@@ -288,7 +288,7 @@ We track two numbers ([ROADMAP.md](ROADMAP.md#honest-assessment-2026-10-05)):
 The biggest gaps today:
 
 - **Speed on big footage.** Hardware decoding works on macOS and Windows; Linux has no hardware path yet. Blend modes and the most common effects run on the GPU, but Lumetri, keys and export rendering still run on the CPU; H.264 encoding can use the hardware encoder on macOS and on Windows with an NVIDIA GPU (opt-in, Export ▸ Hardware encoding), and H.265 export is hardware-only there ([#30](https://github.com/storytold/filmcraft/issues/30)).
-- **No plugins.** No VST3 / Audio Units or OpenFX hosting.
+- **Few plugins.** No VST3 / Audio Units or OpenFX hosting, and no Adobe CEP / UXP panels. There is a small, safe **extension** system (an Extensions menu running recipes of FilmCraft commands or helper programs, [docs/extensions.md](docs/extensions.md)), with Silence Remover, Sous-titres and Export en un clic bundled.
 - **Delivery codecs.** H.264 is our only delivery-codec export; no HEVC or AV1 export yet.
 - **Real-world media and platforms.** Our decoders are bit-exact on conformance streams, but camera and phone files in the wild are less tested. Windows and Linux get far less testing than macOS.
 - **AI features.** Few so far; speech to text is optional and off by default.
@@ -302,7 +302,7 @@ A layered Cargo workspace:
 | Layer | Crates |
 |---|---|
 | Codecs and containers | `h264`, `h264enc`, `hevc`, `vp9`, `prores`, `aac`, `opus`, `isobmff`, `matroska`, `bitstream` |
-| Foundations | `time`, `geom`, `color`, `frame`, `media`, `text`, `project`, `audio-dsp` |
+| Foundations | `time`, `geom`, `color`, `frame`, `media`, `text`, `project`, `audio-dsp`, `extensions` |
 | Editing and interchange | `edit`, `codecs`, `captions`, `format` (project files), `interchange` |
 | Rendering and output | `render`, `gpu`, `export` |
 | Engine | `engine`: command registry, session, undo, jobs |

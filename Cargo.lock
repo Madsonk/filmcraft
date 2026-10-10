@@ -1778,6 +1778,7 @@ dependencies = [
  "filmcraft-automation",
  "filmcraft-codecs",
  "filmcraft-engine",
+ "filmcraft-extensions",
  "filmcraft-media",
  "filmcraft-mpegts",
  "filmcraft-mxf",
@@ -1910,6 +1911,16 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "web-time",
+]
+
+[[package]]
+name = "filmcraft-extensions"
+version = "0.4.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "zip",
 ]
 
 [[package]]
@@ -2225,6 +2236,7 @@ dependencies = [
  "filmcraft-color",
  "filmcraft-edit",
  "filmcraft-engine",
+ "filmcraft-extensions",
  "filmcraft-frame",
  "filmcraft-geom",
  "filmcraft-gpu",
@@ -2234,6 +2246,7 @@ dependencies = [
  "filmcraft-project",
  "filmcraft-render",
  "filmcraft-scopes",
+ "filmcraft-speech",
  "filmcraft-text",
  "filmcraft-time",
  "image",
@@ -7442,6 +7455,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c42e33efc22a0650c311c2ef19115ce232583abbe80850bc8b66509ebef02de0"
 dependencies = [
  "crc32fast",
+ "flate2",
  "indexmap",
  "memchr",
  "typed-path",

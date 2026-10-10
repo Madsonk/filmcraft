@@ -30,8 +30,8 @@ the control channel and MCP agents can do the same.
 | `transcript.select` | Mark In/Out around words `from..=to` (frame-snapped outward) and move the playhead there. |
 | `transcript.extract` / `transcript.lift` | Extract (ripple) or lift the words' frames on the targeted tracks. |
 | `transcript.renameSpeaker` | Rename a speaker by name (every transcript) or by index in one `item`. |
-| `transcript.removeFillers` | Ripple-delete filler words (`fillers`, default um/uh/erm/…; phrases such as "you know" allowed). |
-| `transcript.removePauses` | Ripple-delete pauses longer than `minSeconds`, keeping `keepSeconds` of air on both sides. |
+| `transcript.removeFillers` | Ripple-delete filler words. `fillers` replaces the list (phrases such as "you know" allowed); `language` (`fr`, `en`, `auto` = the transcript's) picks the default list (um/uh/erm/… or the French euh/heu/hum/hmm/ben/bah…); `also` adds words; `conditional` words (default in French: `eux`, which whisper-base writes for a spoken euh) are cut only when the sound is shorter than `isolatedMaxSeconds` (0.4) and has `isolatedPauseSeconds` (0.15) of quiet on both sides, measured on the audio, not on the word times. `apply:false` lists what would go. Returns `summary`. |
+| `transcript.removePauses` | Ripple-delete pauses longer than `minSeconds`, keeping `keepSeconds` of air on both sides. Needs a transcript; `sequence.removeSilence` finds silences from the audio itself ([extensions.md](extensions.md#bundled-extensions)). |
 | `transcript.createCaptions` | Lay the words out as captions on a new caption track (`maxChars`, `lines`, `minSeconds`, `maxSeconds`, `gapFrames`). |
 | `transcript.models` / `transcript.downloadModel` | List the speech models (size, licence, installed) / download one. |
 

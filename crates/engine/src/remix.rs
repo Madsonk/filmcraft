@@ -98,7 +98,7 @@ fn duration_p(s: &Session, p: &Value) -> Option<Tick> {
 }
 
 /// Analysis of `[source_in, source_in + dur)` of the clip's media at the sequence rate (cached).
-fn analysis(s: &Session, item: ItemId, source_in: Tick, dur: Tick) -> Result<Arc<Analysis>> {
+pub(crate) fn analysis(s: &Session, item: ItemId, source_in: Tick, dur: Tick) -> Result<Arc<Analysis>> {
     let sr = s.active_sequence().map(|q| q.settings.sample_rate).unwrap_or(48_000).max(1);
     let m0 = source_in.to_units_floor(sr as i64);
     let len = (source_in + dur).to_units_floor(sr as i64) - m0;

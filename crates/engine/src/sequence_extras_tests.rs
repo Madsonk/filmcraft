@@ -235,3 +235,70 @@ fn flash_cue_markers_round_trip() {
     s.execute("edit.undo", json!({})).unwrap();
     assert!(s.active_sequence().unwrap().markers.iter().all(|m| m.kind != MarkerKind::FlashCue));
 }
+
+/// A 6.8 s stereo recording: 1 s of tone, 2 s of room noise, 1 s of tone, a 0.3 s breath (too short
+/// to cut), 1 s of tone, 1.5 s of room noise to the end.
+fn speech_with_silences() -> Session {
+    use filmcraft_project::{SequenceSettings, TrackKind};
+    use filmcraft_time::TimeRange;
+    let sr = 48_000usize;
+    let mut seed = 12345u32;
+    let mut samples: Vec<f32> = Vec::new();
+    for (secs, loud) in [(1.0, true), (2.0, false), (1.0, true), (0.3, false), (1.0, true), (1.5, false)] {
+        for i in 0..(secs * sr as f64) as usize {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            let noise = ((seed >> 16) as f32 / 32768.0 - 1.0) * 0.0004;
+            let v = if loud { 0.3 * (i as f32 * 440.0 * std::f32::consts::TAU / sr as f32).sin() + noise } else { noise };
+            samples.extend([v, v]);
+        }
+    }
+    let dir = crate::media_test_util::tmp_dir("silence");
+    let wav = dir.join("talk.wav");
+    std::fs::write(&wav, filmcraft_media::wav::write_wav16(&samples, 2, sr as u32)).unwrap();
+    let mut s = Session::default();
+    let r = s.execute("file.import", json!({"paths": [wav.to_string_lossy()]})).unwrap();
+    let item = filmcraft_project::ItemId(r["items"][0].as_u64().unwrap());
+    let mut p = (*s.project).clone();
+    let rate = filmcraft_time::FrameRate::FPS_24;
+    let seq = p.new_sequence("Talk", SequenceSettings { frame_rate: rate, ..Default::default() }, 1, 1, None);
+    let range = TimeRange::new(Tick::ZERO, p.item(item).unwrap().duration());
+    let a = p.make_track_item(item, TrackKind::Audio, Tick::ZERO, range, rate).unwrap();
+    p.sequence_mut(seq).unwrap().audio_tracks[0].items.push(a);
+    s.project = Arc::new(p);
+    s.state.active_sequence = Some(seq);
+    s.state.open_sequences = vec![seq];
+    s
+}
+
+#[test]
+fn remove_silence_cuts_the_quiet_stretches_and_keeps_the_speech() {
+    let mut s = speech_with_silences();
+    let before = s.active_sequence().unwrap().duration().seconds();
+    assert!((before - 6.8).abs() < 0.05, "{before}");
+    // detect only: nothing changes
+    let d = s.execute("sequence.removeSilence", json!({"apply": false})).unwrap();
+    assert_eq!(d["silences"], 2, "{d}");
+    assert_eq!(s.active_sequence().unwrap().duration().seconds(), before);
+    let r0 = &d["ranges"][0];
+    assert!((r0["start"].as_f64().unwrap() - 1.1).abs() < 0.1 && (r0["end"].as_f64().unwrap() - 2.9).abs() < 0.1, "{d}");
+    // apply: the 2 s and 1.5 s silences go (1.8 s + 1.4 s with the 0.1 s of air kept), the 0.3 s breath stays
+    let n_undo = s.history.undo.len();
+    let r = s.execute("sequence.removeSilence", json!({})).unwrap();
+    assert_eq!(s.history.undo.len(), n_undo + 1, "one undo step");
+    assert_eq!(r["removed"], 2, "{r}");
+    let after = s.active_sequence().unwrap().duration().seconds();
+    assert!((before - after - 3.2).abs() < 0.15, "{before} -> {after}: {r}");
+    assert!((r["seconds"].as_f64().unwrap() - (before - after)).abs() < 1e-6);
+    // a second pass finds nothing more to cut
+    assert_eq!(s.execute("sequence.removeSilence", json!({"apply": false})).unwrap()["silences"], 0);
+    s.execute("edit.undo", json!({})).unwrap();
+    assert!((s.active_sequence().unwrap().duration().seconds() - before).abs() < 1e-9);
+    // a longer minimum leaves the 1.5 s tail alone; bad numbers are refused
+    assert_eq!(s.execute("sequence.removeSilence", json!({"apply": false, "minSeconds": 1.8})).unwrap()["silences"], 1);
+    for bad in [json!({"minSeconds": 0.0}), json!({"keepSeconds": 0.4}), json!({"keepSeconds": -1.0}), json!({"thresholdDb": 5.0})] {
+        assert!(s.execute("sequence.removeSilence", bad.clone()).is_err(), "{bad}");
+    }
+    // no audio: disabled
+    s.execute("file.newSequence", json!({"name": "Empty"})).unwrap();
+    assert!(!s.is_enabled("sequence.removeSilence"));
+}
