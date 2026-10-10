@@ -31,7 +31,7 @@ that ships them (next to the executable, or in the macOS bundle's `Resources`):
 
 * the ones that only drive FilmCraft's own commands (all but one of the nine) are installed once; one the user
   removes stays removed (`.bundled-seeded.json` in the extensions folder remembers the offer);
-* **an extension that starts an external program (Storyboard Maker) is never installed silently.** A
+* **an extension that starts an external program (Storyboard Maker, Doublage vocal) is never installed silently.** A
   dialog, *Extension fournie avec FilmCraft*, names it, shows the program it would run and what that means
   (it runs with your user's permissions), and installs nothing until you press *Installer*. *Plus tard*
   closes the question until the next launch (the status bar says where to find it); *Ne plus proposer*
@@ -217,6 +217,8 @@ already runs in the background by itself).
 | **Sous-titres animés** | Karaoké (3 mots) · Pop, un mot à la fois · (transcription existante) × 2 | `transcript.createWordCaptions` (below): graphic clips with keyframes from the word timestamps. Variables `accent`, `color`, `words`, `y`, `font`, `language`. |
 | **Traduction des sous-titres** | FR → EN · EN → FR · Transcrire, sous-titrer et traduire (EN / FR) · Exporter la piste traduite en .srt | `captions.translate` (below): offline Opus-MT, second caption track with the same timings. |
 | **Tics de langage** | Retirer les euh (turbo, français) · uh/um (turbo, anglais) · (base, français) · (transcription existante) | `sequence.transcribe {hesitations:true}` with Whisper large-v3-turbo or base, then `transcript.removeFillers`, then `sequence.removeSilence`. |
+| **Storyboard Maker** | Exporter une image par plan · Exporter une image par marqueur · Assembler la planche (PNG + PDF) | `exec` entries running `scripts/storyboard.sh` (a Python 3 program): it reads the saved `.fcproj`, and prints `playhead.set` + `file.exportFrame` for each shot (the clips of the first video track that has clips) or marker. The stills (`<project>-storyboard/001.png…` with an `index.json`) come from the Program monitor. The sheet entry lays them out with titles and timecodes (`<project>-storyboard.png` and `.pdf`, `--var columns=4`) and needs the Pillow package. The program only plans: the sheet is built by a second entry because a program cannot read the results of commands that run after it exits. Save the project first. It and Doublage vocal are the bundled extensions that start a program, so they are offered on first launch (a dialog) and never installed silently. |
+| **Doublage vocal** | Doubler en anglais · Doubler en anglais avec ma voix · Doubler en français · Choisir la voix de doublage… | `exec` entries running `scripts/dub.sh` (Python 3 standard library + ffmpeg) and the engine command `sequence.placeDub`: see [Voice dubbing](#voice-dubbing-doublage-vocal) below. |
 
 ### Beat editing: `sequence.markBeats` and `sequence.cutOnBeats`
 
@@ -545,6 +547,76 @@ faster denoising) are photo tools and were not touched. *BiRefNet / SAM 2 / MatA
 without a temporal state. *Stabilisation from gyroscope data* (Gyroflow is GPL-3.0) is not implemented. The `dbn`
 post-processing of Beat This (madmom) is not implemented. `media.rushSearch` reloads the model on every call (2 s warm,
 about 20 s the first time); one result per moment is kept (hits within three index steps of a better one are dropped).
+### Voice dubbing (Doublage vocal)
+
+*Extensions ▸ Doublage vocal* dubs the selected clip: its speech is translated and spoken again by a
+[Voicebox](https://github.com/jamiepine/voicebox) voice (local text-to-speech with zero-shot voice cloning), fitted to the
+timing of the original phrases and laid on a **new audio track** while the original voice is lowered. Entries: *Doubler en
+anglais*, *Doubler en anglais avec ma voix*, *Doubler en français*, *Choisir la voix de doublage…*. The program is
+`scripts/dub.py` (Python 3 standard library) and needs **ffmpeg**; it is an `exec` extension, so it is offered with the
+dialog, never installed silently. Save the project first (it reads the `.fcproj`).
+
+**Where the phrases come from** (first match): `--var segments=<.srt|.json>` / `--var translation=<.srt|.json>` (sequence seconds;
+this is how any translated subtitle file is plugged in) · a caption track of the sequence already in the target language
+(a translated track, such as the one `captions.translate` writes) · the transcript of the selected clip, cut into sentences at
+punctuation or a pause of 0.8 s · a caption track in another language. The language of a track is guessed from its text, not
+from its label (the Sous-titres entries label a French track `en`). Subtitles are cut by length, not by sense, so cues are
+joined until the text ends a sentence and a group holding several sentences is split again (time shared by characters); the
+transcript is preferred when it exists because its word times give true boundaries. Hesitations (« euh », « uh ») are dropped
+before translation. **Translation**: when nothing is translated yet, `scripts/mt.py` runs the Opus-MT model
+(`<data dir>/models/opus-mt-tc-big-<from>-<to>`, installed by `transcript.downloadModel`; any pair that has such a model) in a
+Python that has torch, transformers and sentencepiece (`--var python=…`, `--var mt_model=…`). Translations are cached in
+`<project>-doublage/translations-*.json`.
+
+**Voice.** Voicebox is started when it does not answer (`~/Applications/Voicebox.app`, `/Applications`, or
+`--var voicebox_server=`; data folder `~/Library/Application Support/sh.voicebox.app`; waits up to `start_timeout`=240 s, says
+where the log is if it never answers, and stops it afterwards unless it was already running or `keep_server=1`). The voice is
+`--var voice=<name or id>`, else the one chosen with *Choisir la voix…* (a macOS list of the profiles Voicebox returns;
+remembered per language in `<data dir>/extension-data/doublage-voix/config.json`). *Avec ma voix* takes the profile
+remembered as « my voice », or the only profile whose name contains « madson », else asks once. No Voicebox profile is
+created, changed or deleted.
+
+**Time fit.** Each phrase has a slot (its original start to end) and a room (the slot plus up to 0.5 s of the pause that follows,
+never into the next phrase). The synthesised phrase is trimmed of its silences and measured. Longer than the room: sped up
+(`atempo`, pitch unchanged) by at most `max_stretch`=15 %. Shorter than the slot: slowed by at most half of that. Between the two:
+left alone. A phrase that still does not fit at +15 % is **reworded shorter** (English contractions and filler words; Opus-MT
+n-best candidates when the translator is available) and synthesised again (`shorten=off` disables it); what still overruns is
+kept, **not cut**, and reported (« Phrase 3 dépasse de 0,8 s… »). Synthesis stops after `budget_seconds`=3300 s and the
+phrases already done stay cached, so running the entry again continues.
+
+**Mix and undo.** The phrases are mixed (ffmpeg, 8 ms fades, limiter) into one file `<project>-doublage/doublage-<lang>-<voice>-<hash>.wav`
+that starts at the first phrase, with a `.report.json` (per phrase: slot, room, natural length, speed factor, final length,
+overrun, text spoken). One command, `sequence.placeDub {path, time|seconds, name, track?, duck?, note?}`, imports it, adds the
+track, places it and writes the volume automation of the original track (`duck`: 120 ms down, 250 ms up around each dubbed stretch,
+`original=duck|cut|keep`, `duck_db`=−18) as **one undo step**; any failing step undoes the others. The status bar shows
+« 6 phrases doublées (EN, voix Bao EN-US), 0 raccourcie, 6 accélérées/ralenties, 0 dépassement · voix d'origine atténuée de 18 dB ».
+The automation is on the **track** of the selected clip: music on the same track is lowered too.
+
+**Measured** (packaged CLI, Voicebox 0.5.0 on a Mac M4, profile *Bao EN-US*, a cloned Qwen voice; `say -v Thomas` French
+recordings transcribed by whisper-base; FR→EN by Opus-MT tc-big; the English output re-transcribed phrase by phrase with
+Whisper large-v3-turbo and compared with the text that was spoken):
+
+| | 27.4 s recording, 6 phrases (rate 215) | 17.9 s recording, 5 phrases |
+|---|---|---|
+| natural English length longer than the slot / than the room, before fitting | 2 of 6 / 2 of 6 | 1 of 5 (by 0.01 s) / 0 of 5 |
+| after fitting: overruns | 0 | 0 |
+| speed factors | 0.925 ×3, 0.957, 1.074, 1.094 | 1.0, 0.925 ×4 |
+| length of the dub | 27.29 s (original 27.4 s) | 17.6 s |
+| word error rate of the spoken English | 2.2 % (2 / 90) | 3.7 % (1 / 27) |
+| translation of the first run (CPU, model load included) | 164 s | |
+
+The errors counted are an apostrophe and a word bled in from the neighbouring phrase. A first measure on the whole file gave
+18.5 % on the short recording: Whisper dropped the last phrase, which is in the audio (checked with `silencedetect`); hence the
+phrase-by-phrase measure. Nobody listened to the result: the numbers say the text is intelligible and the timing fits, not that
+the voice sounds good. Transcription errors travel into the dub (« reches » became « tasks », « publier » became « public »).
+
+**Limits.** No lip-sync (only phrase-level timing). The emotion and intonation are those of the Voicebox model: the cloned Qwen
+voice has no emotion control and the voice is not the speaker's unless you clone them (*ma voix* needs a profile; none named
+Madson existed on this machine). Proper names and numbers are spoken as the model reads them. One voice per dub: speakers are
+not told apart (a diarised transcript is not used). The first launch of Voicebox takes about 45 s, longer on a loaded Mac, and
+a cloned-voice phrase can take from seconds to minutes. `atempo` is not a studio time-stretch: beyond ±15 % it is audible,
+which is why the limit exists. `ffmpeg` is required. Tests: `cargo test -p filmcraft-engine dub_tests` (undo step, rollback),
+`cargo test -p filmcraft-cli --test cli doublage` (the whole entry against a stand-in HTTP server for Voicebox).
 
 ## Testing
 

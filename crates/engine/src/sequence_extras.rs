@@ -49,6 +49,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
     v.extend(crate::ml_video::commands());
     v.extend(crate::ml_rush::commands());
     v.extend(crate::ml_audio::commands());
+    v.extend(crate::dub::commands());
     v
 }
 

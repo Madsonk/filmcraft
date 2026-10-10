@@ -80,6 +80,7 @@ pub(crate) fn logged(id: &str) -> bool {
     matches!(
         id,
         "sequence.markBeats"
+            | "sequence.placeDub"
             | "sequence.cutOnBeats"
             | "sequence.removeSilence"
             | "transcript.removePauses"
