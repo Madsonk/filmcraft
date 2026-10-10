@@ -201,7 +201,7 @@ already runs in the background by itself).
 
 ## Bundled extensions
 
-`extensions-bundled/` holds seven extensions, in French like their menu entries:
+`extensions-bundled/` holds ten extensions, in French like their menu entries:
 
 | Extension | Entries | Built on |
 |---|---|---|
@@ -212,6 +212,9 @@ already runs in the background by itself).
 | **Copy Pasta** | Copier les attributs · Coller les attributs · Coller seulement les effets · Coller seulement mouvement et opacité · Premier clip vers les autres (tout / effets seulement) | `edit.copy` + `edit.pasteAttributes` (motion, opacity, volume, panner, time remapping, standard effects with their keyframes). The one-step entries select the first selected clip, copy it, paste on the others (`${selection_rest}`) and restore the selection. The Copier / Coller pair needs the clipboard of a session that stays open, i.e. the window. |
 | **AutoEdit** | Montage auto (français) · (français, « eux » toujours coupé) · (anglais) · Retirer les hésitations | `sequence.transcribe`, `transcript.removeFillers`, `sequence.removeSilence`: a first cut of talking footage. Each stage is its own undo step and says what it did. French list (`language:"fr"`): euh, euhh, euhhh, heu, heuh, hum, humm, hmm, hmmm, mmh, mm, mmm, hem, ben, bah, beuh; plus **« eux » only when it is a hesitation standing alone** (see below). Whisper often leaves hesitations out or mis-spells them, so only what it wrote can be cut by word; the silences are cut from the audio level whatever the transcript says. |
 | **Storyboard Maker** | Exporter une image par plan · Exporter une image par marqueur · Assembler la planche (PNG + PDF) | `exec` entries running `scripts/storyboard.sh` (a Python 3 program): it reads the saved `.fcproj`, and prints `playhead.set` + `file.exportFrame` for each shot (the clips of the first video track that has clips) or marker. The stills (`<project>-storyboard/001.png…` with an `index.json`) come from the Program monitor. The sheet entry lays them out with titles and timecodes (`<project>-storyboard.png` and `.pdf`, `--var columns=4`) and needs the Pillow package. The program only plans: the sheet is built by a second entry because a program cannot read the results of commands that run after it exits. Save the project first. It is the only bundled extension that starts a program, so it is offered on first launch (a dialog) and never installed silently. |
+| **Sous-titres animés** | Karaoké (3 mots) · Pop, un mot à la fois · (transcription existante) × 2 | `transcript.createWordCaptions` (below): graphic clips with keyframes from the word timestamps. Variables `accent`, `color`, `words`, `y`, `font`, `language`. |
+| **Traduction des sous-titres** | FR → EN · EN → FR · Transcrire, sous-titrer et traduire (EN / FR) · Exporter la piste traduite en .srt | `captions.translate` (below): offline Opus-MT, second caption track with the same timings. |
+| **Tics de langage** | Retirer les euh (turbo, français) · uh/um (turbo, anglais) · (base, français) · (transcription existante) | `sequence.transcribe {hesitations:true}` with Whisper large-v3-turbo or base, then `transcript.removeFillers`, then `sequence.removeSilence`. |
 
 ### Beat editing: `sequence.markBeats` and `sequence.cutOnBeats`
 
@@ -307,6 +310,44 @@ times) or wrote as another word (« bah » → « bas ») cannot be found from t
 of filled pauses is attempted (it would need a model of its own); and « ben » / « bah » are cut everywhere in French
 (`ben oui` loses its `ben`): remove them from the list with `fillers` if that is wrong for your speaker.
 
+### Whisper large-v3-turbo and keeping the « euh »
+
+* **Model.** `whisper-large-v3-turbo` (OpenAI, MIT; 809 M parameters, 32-layer encoder, 4-layer decoder, 128 mel bins, 1.6 GB of safetensors pinned to revision `41f01f3f`, SHA-256 checked, downloaded after the usual dialog) is in the catalogue and in Settings ▸ Media Analysis. The existing candle Whisper implementation already supports its architecture (the config gives the layer counts, the 128 mel bins and the alignment heads; no code change was needed for the network). It needs about 3 GB of memory (the weights are converted to f32) and loads in 15-50 s the first time; transcription ran at about 2× real time on this Mac's CPU (48 s of French in 23 s). `whisper-large-v3` itself (3 GB, 32 decoder layers) was not added: the decoder is eight times heavier for little gain here.
+* **Why « euh » is missing.** Whisper was trained on cleaned transcripts and writes « eux », « homme » or nothing for a spoken « euh »; the large models clean more than the small ones (turbo alone found 10 of 27 hesitations below, base 15).
+* **What is in the engine.** `sequence.transcribe` / `transcript.generate` take `hesitations: true`, `prompt: "…"` and `hesitationBias: x`. The *initial prompt* is the text Whisper reads as what was said just before the audio: `hesitations:true` uses « Euh, alors, heu, je pense que, hum, ben, c'est, euh, bah, voilà. » in French (an English one for `en`; `prompt` overrides it with a text in your own speaker's style). The prompt needs a tokenizer that *encodes*: `Tokenizer::encode` (GPT-2 byte-level BPE, written for this) was added next to the decoder. `hesitationBias` adds a logit bias (2 when `hesitations` is on) to the hesitation spellings that are a single token (um, uh, hum, hmm, ben, bah… — « euh » and « heu » are several tokens in the multilingual vocabulary, so for them the prompt does the work). A detector of filled pauses on the audio was tried and abandoned: the `say` voice's « euh » lasts 0.22 s and « heu » 0.13 s, which is an ordinary syllable, so no acoustic rule tells them apart.
+* **Measured** (CLI, French, `say -v Thomas`; 3 recordings, 27 spoken hesitations with exact times for the 48 s synthetic one, 3 real « eux » (« pour eux ») among them; `transcript.removeFillers` with the French list and the isolated « eux » rule; a hesitation counts when a cut falls within 0.25 s of it):
+
+| | hesitations cut | other cuts |
+|---|---|---|
+| 0.4.0-ext (whisper-base, default) | 15 / 27 | 0 |
+| base + `hesitations` | 20 / 27 | 2 (outside the 0.25 s window of any spoken hesitation; no real word cut) |
+| turbo, plain | 10 / 27 | 0 |
+| **turbo + `hesitations`** | **27 / 27** | **0** (the 3 real « eux » kept) |
+
+  Prompt-only and bias values were swept with the `transcribe` example, whose scorer counts every « eux » as a cut (so its totals are not the table's: turbo: prompt 26 / 27 with one extra cut, + bias 2 27 / 27, + bias 4 27 / 27 with two extra cuts; base: prompt 24 / 27, bias alone worse). **Limits:** one synthetic voice, so the figures say the mechanism works, not how often it holds on real speech (a prompt can also make Whisper invent a « euh »; not measured on human voices). A transcription with the prompt costs the same time. The Extension *Tics de langage* wires it up.
+
+### Animated word captions: `transcript.createWordCaptions`
+
+The words of the sequence transcript become graphic clips on a new video track « Sous-titres animés » (one undo step, ordinary editable clips: text layers with keyframes).
+
+| Parameter | |
+|---|---|
+| `style` | `karaoke` (the group stays on screen, the word being spoken takes the accent colour) or `pop` (one word at a time, scale 70 → 112 → 100 %) |
+| `wordsPerGroup` | 1-6 (default 3; pop 1); groups also end at a sentence end, a pause (`pauseSeconds`, 0.6), a speaker change or `maxChars` (18) |
+| `color` `accent` `outline` | `#rrggbb` (white, #ffd400, black) |
+| `font` `fontStyle` `size` `y` `caps` | Inter Bold, ~9.5 % of the frame height, baseline at 74 % of the height, capitals |
+| `holdSeconds` | how long a group stays after its last word (0.12), never into the next clip |
+
+How: the clip of a group lasts from its first word to its last. For karaoke a second text layer with the same text sits over the first; all its characters but the active word's have a transparent fill (per-character runs), and its fill alpha is keyframed with *hold* interpolation, so the two layers lay out identically without measuring the text. Every layer pops in with scale and opacity keyframes. Rendered through the normal graphics pipeline (checked on frames of a 1280×720 test project: the colour follows « Alors, on commence par le début » word by word). Limits: the outline is a property of a whole layer, so a progressive « words appear one by one » style was left out; a sentence longer than `maxChars` per word group is split, not wrapped; the font must exist on the machine (Inter is the engine default).
+
+### Offline translation: `captions.translate`
+
+`captions.translate {track?, to:"en"|"fr", from?, name?, beams=4, maxChars=42}` copies a caption track into a new one (right after it, language tag set, same timings and speakers) with every caption translated; a two-line caption is translated as one sentence and wrapped again in two balanced lines. `from` defaults to the track's language, which `transcript.createCaptions` now sets from the transcript.
+
+* **Models.** Opus-MT *tc-big* (Helsinki-NLP, CC-BY-4.0: credit the source), one per direction, 230 M parameters, 464 MB each, pinned to a revision and SHA-256 checked: `opus-mt-tc-big-fr-en`, `opus-mt-tc-big-en-fr`. They are listed with size, source and licence under `translation` in `transcript.models` and downloaded with `transcript.downloadModel {model}`; the command refuses, saying so, when the model is not there. The smaller `opus-mt-fr-en` has no safetensors on the Hub and `opus-mt-en-fr` neither; NLLB-200 (CC-BY-NC) and M2M100 need other architectures and were not attempted.
+* **Implementation.** Pure Rust on candle, no new dependency: `crates/speech/src/mt/`: `marian.rs` (the Marian network written from the architecture: post-LayerNorm transformer, scaled embeddings, sinusoidal positions, tied output with `final_logits_bias`, beam search with a key/value cache per beam), `spm.rs` (a SentencePiece *unigram* reader — the `.spm` protobuf — with Viterbi segmentation; the `nmt_nfkc` normaliser is approximated by the few substitutions that matter in subtitles, so rare compatibility characters can come out as `<unk>`). Behind the `translate` feature (enabled by the engine's `whisper` feature, so the app builds that have speech have translation).
+* **Measured** (this Mac, CPU, 4 beams): the model loads in 13 s; « Bonjour à tous, aujourd'hui on va parler de montage vidéo. » → « Hello everyone, today we are going to talk about video editing. » in 1.0 s; « Je ne sais pas trop, mais c'est une bonne idée de commencer par là. » → « I don't know, but it's a good idea to start there. » in 1.2 s; English → French « Hello everyone, today we are going to talk about video editing. » → « Bonjour à tous, Aujourd'hui, nous allons parler du montage vidéo. ». On a transcribed 4-caption track: 4 s for the four, the SRT of the second track written with `captions.export {track:"C2"}`. No BLEU score was computed (no reference set); the quality is whatever tc-big gives on a few sentences, and the English output keeps « Uh » when the transcript has « Heu » (remove the hesitations first). The command runs on the calling thread: about a second per caption, the window waits.
+
 ## Testing
 
 `cargo test -p filmcraft-extensions` (manifest, store including the shipped-extension offers, archives,
@@ -317,5 +358,5 @@ run / install / remove / reload, the manager dialog by automation id: `extension
 shipped program extension: `extensions.offer.*`, a transcription run in the background with progress, the locked
 sequence and Cancel, a program entry that does not block the window; `FILMCRAFT_TEST_SHOT_DIR=<dir>` also
 saves PNGs of the dialogs), `cargo test -p filmcraft-audio-dsp beatgrid` (tempo octave, bar start, refusals),
-`cargo test -p filmcraft-engine sequence_extras`, `beats_tests` and `transcript_tests` (`sequence.removeSilence`,
+`cargo test -p filmcraft-engine sequence_extras`, `beats_tests`, `word_captions` and `transcript_tests`; `cargo test -p filmcraft-speech --features whisper,translate` (tokenizer encoding, SentencePiece, catalogue) (`sequence.removeSilence`,
 beat commands and their messages, French hesitations).

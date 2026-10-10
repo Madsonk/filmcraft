@@ -43,6 +43,8 @@ fn spec(
 pub(crate) fn commands() -> Vec<CommandSpec> {
     let mut v = base_commands();
     v.extend(crate::beats::commands());
+    v.extend(crate::word_captions::commands());
+    v.extend(crate::captions_translate::commands());
     v
 }
 
@@ -395,7 +397,7 @@ pub(crate) fn transcribe_params(s: &Session, p: &Value) -> Result<Value> {
         return Err(EngineError::Other("there are no audio clips to transcribe".into()));
     }
     let mut params = json!({"items": items});
-    for k in ["language", "diarize", "maxSpeakers", "model"] {
+    for k in ["language", "diarize", "maxSpeakers", "model", "prompt", "hesitations", "hesitationBias"] {
         if let Some(v) = p.get(k) {
             params[k] = v.clone();
         }

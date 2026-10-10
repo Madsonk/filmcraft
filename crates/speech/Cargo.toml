@@ -13,6 +13,8 @@ workspace = true
 default = []
 # Whisper inference on the CPU via candle (pure Rust). Off by default (and in wasm builds).
 whisper = ["dep:candle-core", "dep:candle-nn"]
+# Offline subtitle translation (Opus-MT / Marian) on the CPU via candle. Off by default (and in wasm builds).
+translate = ["dep:candle-core", "dep:candle-nn"]
 # Model downloads over HTTPS (pure-Rust TLS: rustls + RustCrypto, OS certificate verification).
 download = ["dep:ureq", "dep:rustls", "dep:rustls-rustcrypto", "dep:sha2"]
 
@@ -33,3 +35,7 @@ sha2 = { version = "0.10", optional = true }
 [[example]]
 name = "transcribe"
 required-features = ["whisper"]
+
+[[example]]
+name = "translate"
+required-features = ["translate"]

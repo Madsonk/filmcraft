@@ -69,6 +69,7 @@ revision of OpenAI's Hugging Face repositories and checked against its SHA-256:
 | `whisper-tiny` | multilingual | MIT (OpenAI); HF conversion Apache-2.0 |
 | `whisper-base` (default) | multilingual | MIT (OpenAI); HF conversion Apache-2.0 |
 | `whisper-small` | multilingual | MIT (OpenAI); HF conversion Apache-2.0 |
+| `whisper-large-v3-turbo` | multilingual | MIT (OpenAI) |
 
 ### Testing
 

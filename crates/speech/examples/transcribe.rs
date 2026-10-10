@@ -17,16 +17,22 @@ fn main() {
     let mut show_words = false;
     let mut diarize = false;
     let mut language = None;
+    let mut prompt: Option<String> = None;
+    let mut hesitations = false;
+    let mut bias = 0f32;
     let (mut errs, mut words, mut audio_s, mut cpu_s) = (0.0, 0usize, 0.0, 0.0);
     for a in args {
         match a.as_str() {
             "--words" => show_words = true,
             "--diarize" => diarize = true,
             l if l.starts_with("--lang=") => language = Some(l[7..].to_string()),
+            l if l.starts_with("--prompt=") => prompt = Some(l[9..].to_string()),
+            "--hes" => hesitations = true,
+            l if l.starts_with("--bias=") => bias = l[7..].parse().unwrap_or(0.0),
             p => {
                 let audio: Vec<f32> = std::fs::read(p).expect("read").as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect();
                 let t1 = std::time::Instant::now();
-                let opts = Options { language: language.clone(), diarize, ..Default::default() };
+                let opts = Options { language: language.clone(), diarize, prompt: prompt.clone(), hesitations, hesitation_bias: bias, ..Default::default() };
                 let t = w.transcribe(&audio, &opts, &mut |_, _| true).expect("transcribe");
                 let secs = t1.elapsed().as_secs_f64();
                 audio_s += audio.len() as f64 / 16_000.0;

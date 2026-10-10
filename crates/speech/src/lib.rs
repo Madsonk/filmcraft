@@ -17,8 +17,10 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 
 pub mod diarize;
+pub mod hesitation;
 pub mod mel;
 pub mod models;
+pub mod mt;
 pub mod vad;
 #[cfg(feature = "whisper")]
 pub mod whisper;
@@ -75,11 +77,19 @@ pub struct Options {
     pub diarize: bool,
     /// Upper bound for the number of speakers found.
     pub max_speakers: usize,
+    /// Initial prompt: text Whisper reads as what was said just before the audio. A prompt that
+    /// contains hesitations ("Euh, alors, heu, hum…") makes it write them instead of cleaning them up.
+    pub prompt: Option<String>,
+    /// Keep hesitations: use the built-in disfluency prompt of the language when `prompt` is empty,
+    /// and add the filled pauses that Whisper left out ([`hesitation`]).
+    pub hesitations: bool,
+    /// Added to the logit of single-token hesitation spellings (" euh", " um"…) while decoding; 0 = off.
+    pub hesitation_bias: f32,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { language: None, diarize: true, max_speakers: 6 }
+        Self { language: None, diarize: true, max_speakers: 6, prompt: None, hesitations: false, hesitation_bias: 0.0 }
     }
 }
 

@@ -126,5 +126,19 @@ fn the_bundled_extensions_are_valid_and_complete() {
         seen.push(m.id);
     }
     seen.sort();
-    assert_eq!(seen, ["autoedit", "beat-edit", "copy-pasta", "export-en-un-clic", "silence-remover", "sous-titres", "storyboard-maker"]);
+    assert_eq!(
+        seen,
+        [
+            "autoedit",
+            "beat-edit",
+            "copy-pasta",
+            "export-en-un-clic",
+            "silence-remover",
+            "sous-titres",
+            "sous-titres-animes",
+            "storyboard-maker",
+            "tics-de-langage",
+            "traduction-sous-titres"
+        ]
+    );
 }

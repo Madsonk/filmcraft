@@ -12,7 +12,7 @@ workspace = true
 [features]
 default = []
 # Speech-to-text with Whisper (candle, CPU). Off by default and in wasm builds.
-whisper = ["filmcraft-speech/whisper"]
+whisper = ["filmcraft-speech/whisper", "filmcraft-speech/translate"]
 # Speech-model downloads over HTTPS.
 speech-download = ["filmcraft-speech/download"]
 
