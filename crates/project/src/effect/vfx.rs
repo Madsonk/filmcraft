@@ -372,7 +372,7 @@ pub(super) fn defs() -> Vec<EffectDef> {
             "Warp Stabilizer",
             DISTORT,
             vec![
-                grp(ch("result", "Result", &["Smooth Motion", "No Motion"], 0), "Stabilization"),
+                grp(ch("result", "Result", &["Smooth Motion", "No Motion", "L1 Optimal Path"], 0), "Stabilization"),
                 grp(fs("smoothness", "Smoothness", 50.0, (0.0, 1000.0), (0.0, 200.0), "%", 0), "Stabilization"),
                 grp(ch("method", "Method", &["Position", "Position, Scale, Rotation", "Perspective", "Subspace Warp"], 1), "Stabilization"),
                 grp(b("preserve_scale", "Preserve Scale", false), "Stabilization"),

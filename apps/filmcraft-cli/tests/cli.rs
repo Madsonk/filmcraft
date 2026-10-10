@@ -243,18 +243,55 @@ fn extensions_install_list_validate_pack_remove() {
     // a folder holding several extensions installs each of them
     let r = json_out(&cli(&["--data-dir", data_s, "extensions", "install", bundled.to_str().unwrap(), "--compact"]));
     let ids: Vec<&str> = r.as_array().unwrap().iter().map(|x| x["id"].as_str().unwrap()).collect();
-    assert_eq!(ids, ["autoedit", "beat-edit", "copy-pasta", "export-en-un-clic", "silence-remover", "sous-titres", "storyboard-maker"], "{r}");
+    assert_eq!(
+        ids,
+        [
+            "autoedit",
+            "beat-edit",
+            "copy-pasta",
+            "export-en-un-clic",
+            "ml-models",
+            "person-matte",
+            "rife-slowmo",
+            "rush-search",
+            "silence-remover",
+            "sous-titres",
+            "stabilizer-l1",
+            "storyboard-maker",
+            "upscale-video",
+            "voice-music"
+        ],
+        "{r}"
+    );
     // the list is sorted by name and carries the entries
     let l = json_out(&cli(&["--data-dir", data_s, "extensions", "list"]));
     let names: Vec<&str> = l.as_array().unwrap().iter().map(|x| x["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["AutoEdit", "Beat Edit", "Copy Pasta", "Export en un clic", "Silence Remover", "Sous-titres", "Storyboard Maker"]);
+    assert_eq!(
+        names,
+        [
+            "Agrandir la vidéo x2 (SPAN)",
+            "AutoEdit",
+            "Beat Edit",
+            "Copy Pasta",
+            "Détourage de personne (RVM)",
+            "Export en un clic",
+            "Modèles IA optionnels",
+            "Ralenti et images par seconde (RIFE)",
+            "Recherche de rushes",
+            "Silence Remover",
+            "Sous-titres",
+            "Stabilisation L1 (trajectoire optimale)",
+            "Storyboard Maker",
+            "Voix et musique (HT Demucs)"
+        ]
+    );
     let silence = l.as_array().unwrap().iter().find(|x| x["id"] == "silence-remover").unwrap();
     assert_eq!(silence["entries"].as_array().unwrap().len(), 3);
     assert_eq!(silence["entries"][0]["kind"], "commands");
     let story = l.as_array().unwrap().iter().find(|x| x["id"] == "storyboard-maker").unwrap();
     assert_eq!(story["entries"][0]["kind"], "exec");
     // every command the bundled extensions use exists in the engine
-    for id in ["silence-remover", "sous-titres", "export-en-un-clic", "beat-edit", "copy-pasta", "autoedit", "storyboard-maker"] {
+    for id in ids.iter().copied() {
         let v = json_out(&cli(&["extensions", "validate", bundled.join(id).to_str().unwrap()]));
         assert_eq!(v["valid"], true, "{v}");
         assert_eq!(v["commandsUnknownToThisCli"], serde_json::json!([]), "{id}: {v}");
@@ -283,7 +320,7 @@ fn extensions_install_list_validate_pack_remove() {
     // remove
     json_out(&cli(&["--data-dir", data_s, "extensions", "remove", "sous-titres"]));
     let l = json_out(&cli(&["--data-dir", data_s, "extensions", "list"]));
-    assert_eq!(l.as_array().unwrap().len(), 6);
+    assert_eq!(l.as_array().unwrap().len(), 13);
     let _ = std::fs::remove_dir_all(&dir);
 }
 

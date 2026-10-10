@@ -16,6 +16,8 @@ path = "src/main.rs"
 default = []
 # Speech-to-text (Text panel ▸ Transcribe) with Whisper on the CPU, and model downloads.
 whisper = ["filmcraft-engine/whisper", "filmcraft-engine/speech-download"]
+# Optional neural tools (RIFE, Beat This, rush search, super-resolution…): see docs/extensions.md.
+ml = ["filmcraft-engine/ml"]
 
 [dependencies]
 filmcraft-engine = { workspace = true }

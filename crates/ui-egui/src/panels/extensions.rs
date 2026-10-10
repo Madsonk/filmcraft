@@ -62,6 +62,9 @@ pub struct ExtensionsState {
     running: Option<Running>,
     /// An extension's own command is being served: edits are allowed (they are the extension's).
     serving: bool,
+    /// An optional neural model whose licence must be accepted before it is downloaded (id, text):
+    /// set when an entry's `ml.install` was refused for lack of `acceptLicense`.
+    ml_licence: Option<(String, String)>,
 }
 
 /// What the worker thread running an entry asks of the window, and its end.
@@ -324,6 +327,9 @@ fn run(app: &mut FilmcraftApp, ctx: &egui::Context, ext_id: &str, entry: &Value,
     let value = serde_json::to_value(&report).unwrap_or_default();
     // the caller gets the full reason (step number and command), the status bar the short line
     let failure = report.error.as_ref().map(|e| format!("{}: {e}", report.entry));
+    if let Some(e) = &failure {
+        capture_licence(app, e);
+    }
     app.extensions.last = Some(report);
     match failure {
         Some(e) => Err(e),
@@ -526,9 +532,62 @@ fn finish(app: &mut FilmcraftApp, res: Result<RunReport, String>) {
     match res {
         Ok(report) => {
             app.ui.status = report.summary();
+            if let Some(e) = report.error.clone() {
+                capture_licence(app, &e);
+            }
             app.extensions.last = Some(report);
         }
         Err(e) => app.ui.status = format!("{}: {e}", run.entry),
+    }
+}
+
+/// An `ml.install` refused without `acceptLicense` carries `ML_LICENCE[<model id>] <text>`: remember it so the
+/// window can ask.
+fn capture_licence(app: &mut FilmcraftApp, error: &str) {
+    if let Some(i) = error.find("ML_LICENCE[") {
+        let rest = &error[i + "ML_LICENCE[".len()..];
+        if let Some((id, text)) = rest.split_once(']') {
+            app.extensions.ml_licence = Some((id.to_string(), text.trim().to_string()));
+        }
+    }
+}
+
+/// The licence of an optional neural model, asked before its download (automation ids `ml.licence.*`).
+pub fn licence_dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
+    let Some((id, text)) = app.extensions.ml_licence.clone() else { return };
+    let mut elems: Vec<(String, egui::Rect, String)> = Vec::new();
+    let mut accept = false;
+    let mut cancel = false;
+    egui::Window::new("Modèle optionnel : licence")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .default_width(520.0)
+        .show(ctx, |ui| {
+            ui.strong("Ce modèle n'est pas fourni avec FilmCraft : il est téléchargé depuis son éditeur, vérifié (SHA-256), puis utilisé hors ligne.");
+            ui.add_space(4.0);
+            ui.label(&text);
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                let r = ui.button("J'ai lu la licence : télécharger");
+                elems.push((format!("ml.licence.accept.{id}"), r.rect, "Accept".into()));
+                accept = r.clicked();
+                let r = ui.button("Annuler");
+                elems.push(("ml.licence.cancel".into(), r.rect, "Cancel".into()));
+                cancel = r.clicked();
+            });
+        });
+    for (eid, r, l) in elems {
+        app.auto.add(&eid, r, &l);
+    }
+    if accept {
+        app.extensions.ml_licence = None;
+        match invoke(app, ctx, "ml.install", json!({"model": id, "acceptLicense": true, "wait": false})) {
+            Ok(v) => app.ui.status = v["summary"].as_str().unwrap_or("téléchargement lancé").to_string(),
+            Err(e) => app.ui.status = e,
+        }
+    } else if cancel {
+        app.extensions.ml_licence = None;
     }
 }
 

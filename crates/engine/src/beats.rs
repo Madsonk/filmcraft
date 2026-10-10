@@ -53,7 +53,7 @@ struct Beats {
     detected: usize,
 }
 
-type GridKey = (u64, i64, i64, u32, u64, bool);
+type GridKey = (u64, i64, i64, u32, u64, bool, bool);
 
 fn grid_cache() -> &'static Mutex<Vec<(GridKey, Arc<Grid>)>> {
     static C: OnceLock<Mutex<Vec<(GridKey, Arc<Grid>)>>> = OnceLock::new();
@@ -61,13 +61,23 @@ fn grid_cache() -> &'static Mutex<Vec<(GridKey, Arc<Grid>)>> {
 }
 
 /// The beat grid of `[source_in, source_in + dur)` of the item's media (cached per range, rate and options).
-fn grid(s: &Session, item: ItemId, source_in: Tick, dur: Tick, opts: GridOptions, cmd: &str) -> Result<Arc<Grid>> {
+fn grid(s: &Session, item: ItemId, source_in: Tick, dur: Tick, opts: GridOptions, neural: bool, cmd: &str) -> Result<Arc<Grid>> {
     let sr = s.active_sequence().map(|q| q.settings.sample_rate).unwrap_or(48_000).max(1);
     let m0 = source_in.to_units_floor(sr as i64);
     let len = (source_in + dur).to_units_floor(sr as i64) - m0;
-    let key: GridKey = (item.0, m0, len, sr, opts.tempo_hint.map_or(0, f64::to_bits), opts.downbeat);
+    let key: GridKey = (item.0, m0, len, sr, opts.tempo_hint.map_or(0, f64::to_bits), opts.downbeat, neural);
     if let Some((_, g)) = grid_cache().lock().unwrap_or_else(|e| e.into_inner()).iter().find(|(k, _)| *k == key) {
         return Ok(g.clone());
+    }
+    if neural {
+        // Beat This! (optional model, build feature `ml`): see `ml_tools`
+        let g = Arc::new(crate::ml_tools::neural_grid(s, item, source_in, dur, opts, cmd)?);
+        let mut c = grid_cache().lock().unwrap_or_else(|e| e.into_inner());
+        c.push((key, g.clone()));
+        if c.len() > 8 {
+            c.remove(0);
+        }
+        return Ok(g);
     }
     let provider = s.media.provider(s.project.clone(), s.services.clone());
     let src = filmcraft_render::SourceProvider::source(&provider, item).ok_or_else(|| bad(cmd, "le média du clip est hors ligne"))?;
@@ -148,6 +158,11 @@ fn find_beats(s: &Session, p: &Value, cmd: &str) -> Result<Beats> {
         },
     };
     let downbeat = bool_p(p, "downbeat").unwrap_or(false);
+    let neural = match str_p(p, "model") {
+        None | Some("") | Some("dsp") => false,
+        Some("beat-this") => true,
+        Some(other) => return Err(bad(cmd, format!("unknown beat model `{other}` (`dsp`, the default, or `beat-this`)"))),
+    };
     let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
     let (_, it) = q.find_item(c).ok_or_else(|| bad(cmd, "no such clip"))?;
     if filmcraft_render::remix::is_remixed(it) {
@@ -159,7 +174,7 @@ fn find_beats(s: &Session, p: &Value, cmd: &str) -> Result<Beats> {
     let sr = q.settings.sample_rate.max(1);
     let rate = q.settings.frame_rate;
     let (start, end, dur) = (it.start, it.end(), it.duration);
-    let g = grid(s, it.item, it.source_in, dur, GridOptions { tempo_hint: hint, downbeat }, cmd)?;
+    let g = grid(s, it.item, it.source_in, dur, GridOptions { tempo_hint: hint, downbeat }, neural, cmd)?;
     // `subdivide` n puts n - 1 evenly spaced beats between the detected ones, for a tracker that settled on
     // half the real tempo
     let mut line: Vec<i64> = Vec::with_capacity(g.beats.len() * subdivide);
@@ -349,7 +364,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             label: "Mark Beats…",
             menu: &[],
             shortcut: None,
-            params: r#"{"clip":id? (audio clip; default: the selected one, else the first of the sequence),"every":n=1,"offset":n=0,"subdivide":n=1,"bpm":n? (30-300, 0 = automatic: the tempo octave to use),"downbeat":bool=false (start at the first beat of a bar),"name":str="Beat","color":label=Green,"snap":bool=true,"apply":bool=true}"#,
+            params: r#"{"clip":id? (audio clip; default: the selected one, else the first of the sequence),"every":n=1,"offset":n=0,"subdivide":n=1,"bpm":n? (30-300, 0 = automatic: the tempo octave to use),"downbeat":bool=false (start at the first beat of a bar),"model":"dsp"|"beat-this"="dsp" (beat-this = neural tracker, needs ml.install),"name":str="Beat","color":label=Green,"snap":bool=true,"apply":bool=true}"#,
             enabled: has_beat_source,
             run: mark_beats,
             journal: true,
@@ -359,7 +374,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             label: "Cut on Beats…",
             menu: &[],
             shortcut: None,
-            params: r#"{"beatClip":id? (audio clip that gives the beats),"clips":[id]? (default: the selection),"every":n=1,"offset":n=0,"subdivide":n=1,"bpm":n? (30-300, 0 = automatic),"downbeat":bool=false,"snap":bool=true,"apply":bool=true}"#,
+            params: r#"{"beatClip":id? (audio clip that gives the beats),"clips":[id]? (default: the selection),"every":n=1,"offset":n=0,"subdivide":n=1,"bpm":n? (30-300, 0 = automatic),"downbeat":bool=false,"model":"dsp"|"beat-this"="dsp","snap":bool=true,"apply":bool=true}"#,
             enabled: has_beat_source,
             run: cut_on_beats,
             journal: true,

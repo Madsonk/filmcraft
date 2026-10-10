@@ -201,7 +201,7 @@ already runs in the background by itself).
 
 ## Bundled extensions
 
-`extensions-bundled/` holds seven extensions, in French like their menu entries:
+`extensions-bundled/` holds fourteen extensions, in French like their menu entries (the seven below, then the optional neural tools described after Beat editing and Hesitations):
 
 | Extension | Entries | Built on |
 |---|---|---|
@@ -306,6 +306,55 @@ whisper **did not write at all** (the first euh of the inline sample was swallow
 times) or wrote as another word (« bah » → « bas ») cannot be found from the text, and no acoustic detector
 of filled pauses is attempted (it would need a model of its own); and « ben » / « bah » are cut everywhere in French
 (`ben oui` loses its `ben`): remove them from the list with `fillers` if that is wrong for your speaker.
+
+## Optional neural tools (build feature `ml`)
+
+Seven extensions (Ralenti RIFE, Agrandir x2, Voix et musique, Détourage de personne, Recherche de rushes,
+Stabilisation L1, Modèles IA optionnels) and the « Beat This » entries of Beat Edit drive commands of the engine that run
+neural networks in **pure Rust on candle** (Metal on macOS, else the CPU; `FILMCRAFT_ML_DEVICE=cpu` forces the CPU).
+Without `--features ml` the commands exist and answer « this build has no neural tools ». **No model is part
+of FilmCraft**: each is downloaded on request from its publisher, **after its licence was shown and accepted**,
+checked against a pinned size and SHA-256 (a file that fails is deleted), and kept in `FILMCRAFT_ML_MODELS_DIR` or
+`<data folder>/models/ml/<id>/` with a `LICENSE.txt`. In the window, an entry whose model is missing opens a
+dialog with the licence (`ml.licence.accept.<id>` / `ml.licence.cancel`); in a script, `ml.install {model,
+acceptLicense:true}` (without `acceptLicense` it only says what the licence is). Models are used offline.
+`ml.models` lists them. `crates/ml` is MIT OR Apache-2.0; `mlfetch`, `mlrestore`, `mlsearch` come from LightCraft
+(same authors, Apache-2.0). No GPL / AGPL / LGPL code is in the repository.
+
+| Model id | Size | Licence of the weights | Used by |
+|---|---|---|---|
+| `rife-v4` | 12 MB | MIT (Megvii, ECCV2022-RIFE; safetensors re-host) | `clip.interpolate` |
+| `span-2x` | 4.5 MB | CC BY 4.0 (Phips) / network Apache-2.0 | `clip.upscale` |
+| `beat-this-final0` | 81 MB | MIT (CPJKU/beat_this); the authors warn that part of the training data is under limited licences | `sequence.markBeats` / `cutOnBeats` with `model:"beat-this"` |
+| `htdemucs` | 84 MB | MIT (Meta, official `955717e8` checkpoint) | `audio.separate` |
+| `siglip2-base-224` | 1.5 GB | Apache-2.0 (Google); the tokenizer is Gemma's: check its terms before redistributing | `media.rushIndex` / `media.rushSearch` |
+| `rvm-mobilenetv3` | 15 MB | **GPL-3.0: personal use only** (the dialog says so); never redistributed with FilmCraft | `clip.matte` |
+
+Video and audio tools never touch the original: they write a **new file** (ProRes 422 LT by default, `preset`
+`prores_hq` / `h264`; audio: 32-bit float WAV) in `<project folder>/ML/` (or `out`) and import it. Parameters
+shared by the video tools: `clip` (the used range of a timeline clip, default the selected one) or `item` (a media
+item), `out`, `preset`, `wait` (extensions pass `${blocking}`; otherwise a background job, `job.list`). A frame
+worker thread of its own makes the frames (the export asks for them from several threads, and a network that needs
+them in order or one at a time on the GPU must not be waited on from a work-stealing pool: measured, it hung the
+export and, without the guard, corrupted SPAN tiles).
+
+| Command | What it does | Measured (Apple silicon, Metal, 24-30 fps test clips, 720p unless said) |
+|---|---|---|
+| `clip.interpolate {fps, slow, depth, scale}` | RIFE v4 midpoint network on a binary tree of midpoints (rounded to 1/2^depth of a frame; `depth` 3 = 1/8). `fps:60` converts the frame rate, `slow:4` is a four times slower clip at the same rate (audio dropped). `scale` 0.5 estimates the flow on half the pixels per side. | Candle port equals PyTorch to **95.5 dB** (one level of 255 at worst). Real 30 -> 60 fps test, 9 interpolated frames of a dance clip against the real in-between frames: **45.50 dB** (frame blend 41.02, repeating the previous frame 38.00). Speed: 3.5 s per interpolated frame at scale 1 (482 s for 240 frames), 1.2 s at scale 0.5, **the default above 640x360**: 240 frames in **117 s** instead of 482 s for **45.42 dB** instead of 45.50. Candle's Metal convolution is about 230 GFLOPS here, far from the GPU's peak: real-time is out of reach. |
+| `clip.upscale {keepTone}` | SPAN 2x on every frame (tile 1024). `keepTone` (default) puts each channel's mean back: the network darkens the picture (-5.7 grey levels measured). | Clean test (a 1080p clip shrunk with Lanczos, enlarged back, compared with the real 1080p frames): **44.61 dB** for SPAN, **45.72 dB** for Lanczos, so **no measurable fidelity gain on this undegraded input** (SPAN sharpens; PSNR does not reward it) and no flicker (the error changes by 1.64 grey levels between frames against 1.53 for Lanczos). Without `keepTone` the same run gave 32 dB. 4.2 s per 960x540 frame (378 s for 90 frames). Its use is on degraded or generated 1K clips, which were not available to test. |
+| `audio.separate {stems}` | HT Demucs: `vocals`, `rest` (everything but the voice), `drums`, `bass`, `other`; 44.1 kHz stereo, segments of 7.8 s with 25 % overlap as `demucs.apply`. | Candle port equals the PyTorch reference to **95-122 dB SNR** on 20 s of a real recording. 2.25x real time on Metal. Voice + music mix made of a voice recording and generated music: voice **3.6 -> 23.4 dB SDR**, music **-3.6 -> 20.0 dB**. 20.4 s for the 18 s test file, model load included. |
+| `clip.matte {mode, background, ratio}` | Robust Video Matting: `matte` = white person on black, `cutout` = the person over a flat colour (green by default); the recurrent state keeps the matte stable. Network on the frame reduced to 512 px (long side), deep guided filter back to full size. | Alpha equals the reference PyTorch model to **+-1 of 255** on 3 consecutive 1024x576 frames, with and without the refiner. 144 frames of 720p in 66 s (0.46 s per frame). Hair and a sheer dress are kept (see below). `foreground` colours are only meaningful where alpha > 0. |
+| `media.rushIndex {every}` / `media.rushSearch {query, top, markers}` | SigLIP 2 embeds one frame every `every` seconds (default 2) of the project's video media (index file per media, reused while the file is unchanged); a French or English sentence is ranked by cosine similarity; `markers:true` puts a marker on the media at each hit. | 81 frames of four clips (a 73 s explainer, a 12 s one, a dance clip, colour bars) indexed in 34 s, 0.7 s when up to date. 8 queries (4 English, the same 4 in French: a character holding a light bulb, an employment form, a woman dancing, colour bars): the **right clip is first in all 8**, at the right moment for the two explainers (checked on the frames). Scores 0.12-0.18 for a match, 0.05-0.07 for the rest. |
+| `sequence.markBeats` / `cutOnBeats` `model:"beat-this"` | Beat This! (log-mel at 22 050 Hz, 6 transformer blocks, windows of 30 s as the reference), `minimal` peak picking. `bpm` still picks the octave (tracked beats thinned or doubled), `downbeat:true` uses the network's downbeats. | Candle port: logits within 1.1 % RMS of PyTorch (Metal float rounding), identical beats. On the 14 generated drum / chord files of the Beat Edit tests: **no octave error, as with the DSP tracker**, right tempo and 63 of 63 beats, worst frame-snapped error 36 ms against 25 ms (the network works on 20 ms frames). **Real recording** (40 s of music in a dance studio, real footage): the DSP tracker refuses it (« pas de pulsation régulière »), Beat This finds 27 beats at 66.7 BPM (median interval 0.90 s, no ground truth to check against). |
+| *Stabilisation L1* (`effects.apply warp_stabilizer` + `result` = 3rd choice) | Warp Stabilizer's result choice « L1 Optimal Path »: the camera path minimises velocity, acceleration and jerk in L1 (Grundmann et al., CVPR 2011, re-implemented from the paper: ADMM on a banded system) inside the crop window of « Crop Less <-> Smooth More » (2-14 % of the frame). | Synthetic shake on a textured scene (known truth): high-pass jitter 23.3 px -> **6.0 px Gaussian, 6.2 px L1**; with a steady pan plus shake the deviation from the clean path is 17.3 px -> **1.5 px Gaussian, 2.5 px L1** (y: 0.74 / 0.41 px). L1 prefers a still camera inside the crop (its pan follows 37 % of the real one at default settings): it does not beat the Gaussian on faithfulness to a pan, it is a different trade. |
+
+**What is not done, and why.** *Whisper, subtitles, translation, DeepFilterNet voice, auto-reframe* belong to the other
+two agents of this mission. The LightCraft-only ideas of the list (stuck dust, grouping by person, portrait retouch,
+faster denoising) are photo tools and were not touched. *BiRefNet / SAM 2 / MatAnyone* video matting were not attempted: RVM runs in real time on the Mac and matches its reference, MatAnyone's licence
+(S-Lab, non commercial) and weights (Google Drive / Baidu) have no checked mirror, BiRefNet and SAM 2 are per-image models
+without a temporal state. *Stabilisation from gyroscope data* (Gyroflow is GPL-3.0) is not implemented. The `dbn`
+post-processing of Beat This (madmom) is not implemented. `media.rushSearch` reloads the model on every call (2 s warm,
+about 20 s the first time); one result per moment is kept (hits within three index steps of a better one are dropped).
 
 ## Testing
 
