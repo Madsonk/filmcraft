@@ -188,6 +188,16 @@ fn main() -> eframe::Result {
                 app.dialog = None;
             }
             app.integrated_titlebar = cfg!(target_os = "macos");
+            // the extensions shipped with the app are offered once (Extensions menu, docs/extensions.md)
+            if let Some(dir) = bundled_extensions_dir() {
+                let (installed, problems) = app.extensions.seed_bundled(&dir);
+                if !installed.is_empty() {
+                    log::info!("installed the bundled extensions {installed:?}");
+                }
+                for p in problems {
+                    eprintln!("filmcraft: bundled extension: {p}");
+                }
+            }
             if let Some(rs) = cc.wgpu_render_state.clone()
                 && std::env::var_os("FILMCRAFT_CPU_COMPOSITE").is_none()
             {
@@ -291,6 +301,21 @@ fn open_path(path: &str, reveal: bool) -> Result<(), String> {
         c
     };
     cmd.spawn().map(|_| ()).map_err(|e| format!("can't open {path}: {e}"))
+}
+
+/// Where the extensions shipped with the app are: `FILMCRAFT_BUNDLED_EXTENSIONS`, else
+/// `extensions-bundled` next to the executable, in the macOS bundle's `Resources`, or at the root of
+/// the source tree when run from `target/<profile>`.
+fn bundled_extensions_dir() -> Option<std::path::PathBuf> {
+    if let Some(d) = std::env::var_os("FILMCRAFT_BUNDLED_EXTENSIONS").filter(|d| !d.is_empty()) {
+        return Some(d.into());
+    }
+    let exe = std::env::current_exe().ok()?;
+    let here = exe.parent()?;
+    ["extensions-bundled", "../Resources/extensions-bundled", "../../extensions-bundled", "../../../extensions-bundled"]
+        .iter()
+        .map(|r| here.join(r))
+        .find(|p| p.is_dir())
 }
 
 /// Put the OS hardware video decoders in front of our own. Registered in a statement of its own:

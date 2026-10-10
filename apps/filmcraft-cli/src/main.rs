@@ -31,6 +31,7 @@ macro_rules! out {
 }
 
 mod args;
+mod ext;
 mod probe;
 
 use args::{Args, parse_value};
@@ -91,6 +92,8 @@ SUBCOMMANDS
                                 media info as JSON, with MXF / Ogg / BWF details; with
                                 --image-sequence <media> is the first numbered still of a sequence
   bench-decode <media> [--frames N]
+  extensions <list|install|remove|run|validate|pack> ...
+                                manage and run extensions (see EXTENSIONS below)
   mcp                           MCP server on stdio (headless, or --bridge to the live app)
   help                          this text
   --version                     print the version
@@ -114,6 +117,9 @@ VALUES
 EXIT STATUS
   0 success · 1 a command failed · 2 usage error
 ";
+
+/// `help` prints this too.
+const HELP_EXT: &str = ext::HELP;
 
 fn usage(msg: impl std::fmt::Display) -> ! {
     eprintln!("filmcraft-cli: {msg}\nRun `filmcraft-cli help` for usage.");
@@ -225,7 +231,8 @@ async fn cli() {
     let a = Args::parse(std::env::args().skip(1));
     let Some(cmd) = a.pos(0) else { usage("missing subcommand") };
     match cmd {
-        "help" | "--help" | "-h" => out!("{HELP}"),
+        "help" | "--help" | "-h" => out!("{HELP}\n{HELP_EXT}"),
+        "extensions" => ext::main(&a).await,
         "version" => outln!("filmcraft-cli {}", env!("CARGO_PKG_VERSION")),
         "probe" => {
             let path = a.pos(1).unwrap_or_else(|| usage("probe <media> [--image-sequence]"));

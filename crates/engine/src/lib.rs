@@ -12,6 +12,7 @@
 
 pub mod aaf_omf;
 pub mod autosave;
+pub mod beats;
 pub mod captions;
 pub mod clip_ops;
 pub mod color;
@@ -46,6 +47,7 @@ pub mod settings;
 pub mod shortcut_presets;
 pub mod shortcuts;
 pub mod source_monitor;
+mod summaries;
 pub mod sync;
 pub mod transcript;
 pub mod trim;
@@ -371,6 +373,9 @@ pub struct Session {
     /// Speech recogniser for `transcript.generate` (None = the Whisper model named by the command,
     /// feature `whisper`). Hosts and tests install one here.
     pub transcriber: Option<Arc<dyn filmcraft_speech::Transcriber>>,
+    /// Speech recognised off the UI thread for the next `transcript.generate` (see
+    /// [`transcript::begin_transcribe`]); consumed by that command, dropped if it is for other items.
+    pub finished_transcription: Option<transcript::TranscribeOutput>,
     /// The Events panel log: failed commands, job results, auto-save errors, messages.
     pub log: panels::EventLog,
     /// Media Browser navigation (directory, back / forward history, selected files).
@@ -461,6 +466,7 @@ impl Session {
             export_queue: Default::default(),
             stepped: Vec::new(),
             transcriber: None,
+            finished_transcription: None,
             log: Default::default(),
             browser: Default::default(),
             exec_depth: 0,
@@ -641,6 +647,15 @@ impl Session {
             && let Err(e) = &r
         {
             self.log.push(panels::Level::Error, id, e.to_string());
+        }
+        // a readable line for the status bar and the log (top-level calls only)
+        let mut r = r;
+        if let Ok(v) = &mut r
+            && let Some(line) = summaries::add(id, v)
+            && self.exec_depth == 0
+            && summaries::logged(id)
+        {
+            self.log.push(panels::Level::Info, id, line);
         }
         self.sync_persistence();
         // playback reads the newest snapshot (mixer moves, mutes… are heard while playing)
@@ -1026,6 +1041,8 @@ mod audio_effects_tests;
 mod audio_placement_tests;
 #[cfg(test)]
 mod autosave_tests;
+#[cfg(test)]
+mod beats_tests;
 #[cfg(test)]
 mod clip_ops_tests;
 #[cfg(test)]

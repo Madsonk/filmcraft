@@ -10,6 +10,7 @@ pub mod effects;
 pub mod essential_sound;
 pub mod events;
 pub mod export_mode;
+pub mod extensions;
 pub mod file_dialogs;
 pub mod frame_export;
 pub mod graphics;

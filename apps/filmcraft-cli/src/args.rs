@@ -19,6 +19,8 @@ const VALUED: &[&str] = &[
     "--end",
     "--data-dir",
     "--settings",
+    "--var",
+    "--select",
 ];
 
 #[derive(Debug, Default)]
@@ -54,6 +56,11 @@ impl Args {
 
     pub fn opt(&self, k: &str) -> Option<&str> {
         self.opts.iter().rev().find(|(n, _)| n == k).and_then(|(_, v)| v.as_deref())
+    }
+
+    /// Every value of a repeatable option (`--var a=1 --var b=2`).
+    pub fn all(&self, k: &str) -> Vec<&str> {
+        self.opts.iter().filter(|(n, _)| n == k).filter_map(|(_, v)| v.as_deref()).collect()
     }
 
     pub fn flag(&self, k: &str) -> bool {
@@ -133,6 +140,15 @@ mod tests {
     fn json_params() {
         let a = Args::parse(["exec".into(), "x".into(), r#"{"a": {"b": [1]}}"#.into()]);
         assert_eq!(a.params_from(2).unwrap(), json!({"a": {"b": [1]}}));
+    }
+
+    #[test]
+    fn repeatable_options_keep_every_value() {
+        let a = args("extensions run x --var a=1 --var b=two --data-dir d");
+        assert_eq!(a.all("--var"), ["a=1", "b=two"]);
+        assert_eq!(a.opt("--var"), Some("b=two"));
+        assert_eq!(a.positionals, ["extensions", "run", "x"]);
+        assert!(a.all("--nope").is_empty());
     }
 
     #[test]

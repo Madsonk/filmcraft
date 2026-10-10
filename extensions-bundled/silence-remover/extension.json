@@ -1,0 +1,40 @@
+{
+  "formatVersion": 1,
+  "id": "silence-remover",
+  "name": "Silence Remover",
+  "version": "1.0.0",
+  "description": "Cuts the silences out of the active sequence. The mix is measured in 10 ms windows (sequence.removeSilence), the quiet/loud threshold comes from the recording's own noise floor, and the quiet stretches are ripple-deleted on every unlocked track. No transcript or speech model is needed. One undo step.",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Couper les silences",
+      "description": "Silences of 0.5 s or more are cut, keeping 0.1 s of air next to the speech.",
+      "requires": ["sequence"],
+      "action": {
+        "commands": [
+          { "id": "sequence.removeSilence", "params": { "minSeconds": "${var.min_silence|0.5}", "keepSeconds": "${var.keep|0.1}" } }
+        ]
+      }
+    },
+    {
+      "label": "Couper les silences (serré)",
+      "description": "Silences of 0.25 s or more are cut, keeping 0.05 s of air.",
+      "requires": ["sequence"],
+      "action": {
+        "commands": [
+          { "id": "sequence.removeSilence", "params": { "minSeconds": 0.25, "keepSeconds": 0.05 } }
+        ]
+      }
+    },
+    {
+      "label": "Couper les silences (doux)",
+      "description": "Only pauses of 1 s or more are cut, keeping 0.2 s of air.",
+      "requires": ["sequence"],
+      "action": {
+        "commands": [
+          { "id": "sequence.removeSilence", "params": { "minSeconds": 1.0, "keepSeconds": 0.2 } }
+        ]
+      }
+    }
+  ]
+}

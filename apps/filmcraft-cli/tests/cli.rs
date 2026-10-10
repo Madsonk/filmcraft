@@ -263,5 +263,541 @@ fn closed_stdout_still_runs_the_script_and_saves() {
         b"{\"id\":\"no.such.command\"}\n{\"id\":\"file.newBin\",\"params\":{\"name\":\"x\"}}\n",
     );
     assert_eq!(out.status.code(), Some(1));
+}
+
+// ---------------------------------------------------------------------------------------------------
+// extensions (docs/extensions.md)
+// ---------------------------------------------------------------------------------------------------
+
+fn bundled_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../extensions-bundled")
+}
+
+fn fresh_dir(tag: &str) -> std::path::PathBuf {
+    let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/cli-tests").join(format!("{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    d
+}
+
+/// 16-bit stereo 48 kHz WAV: (seconds, loud) stretches of a 440 Hz tone or faint room noise.
+fn talk_wav(parts: &[(f64, bool)]) -> Vec<u8> {
+    let sr = 48_000u32;
+    let mut pcm: Vec<u8> = Vec::new();
+    let mut seed = 7u32;
+    for (secs, loud) in parts {
+        for i in 0..(secs * sr as f64) as usize {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            let noise = ((seed >> 16) as f32 / 32768.0 - 1.0) * 0.0004;
+            let v = if *loud { 0.3 * (i as f32 * 440.0 * std::f32::consts::TAU / sr as f32).sin() + noise } else { noise };
+            let s = (v * 32767.0) as i16;
+            for _ in 0..2 {
+                pcm.extend(s.to_le_bytes());
+            }
+        }
+    }
+    let mut w = Vec::new();
+    w.extend(b"RIFF");
+    w.extend((36 + pcm.len() as u32).to_le_bytes());
+    w.extend(b"WAVEfmt ");
+    w.extend(16u32.to_le_bytes());
+    w.extend(1u16.to_le_bytes());
+    w.extend(2u16.to_le_bytes());
+    w.extend(sr.to_le_bytes());
+    w.extend((sr * 4).to_le_bytes());
+    w.extend(4u16.to_le_bytes());
+    w.extend(16u16.to_le_bytes());
+    w.extend(b"data");
+    w.extend((pcm.len() as u32).to_le_bytes());
+    w.extend(pcm);
+    w
+}
+
+#[test]
+fn extensions_install_list_validate_pack_remove() {
+    let dir = fresh_dir("ext-manage");
+    let data = dir.join("data");
+    let data_s = data.to_str().unwrap();
+    let bundled = bundled_dir();
+    // a folder holding several extensions installs each of them
+    let r = json_out(&cli(&["--data-dir", data_s, "extensions", "install", bundled.to_str().unwrap(), "--compact"]));
+    let ids: Vec<&str> = r.as_array().unwrap().iter().map(|x| x["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["autoedit", "beat-edit", "copy-pasta", "export-en-un-clic", "silence-remover", "sous-titres", "storyboard-maker"], "{r}");
+    // the list is sorted by name and carries the entries
+    let l = json_out(&cli(&["--data-dir", data_s, "extensions", "list"]));
+    let names: Vec<&str> = l.as_array().unwrap().iter().map(|x| x["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["AutoEdit", "Beat Edit", "Copy Pasta", "Export en un clic", "Silence Remover", "Sous-titres", "Storyboard Maker"]);
+    let silence = l.as_array().unwrap().iter().find(|x| x["id"] == "silence-remover").unwrap();
+    assert_eq!(silence["entries"].as_array().unwrap().len(), 3);
+    assert_eq!(silence["entries"][0]["kind"], "commands");
+    let story = l.as_array().unwrap().iter().find(|x| x["id"] == "storyboard-maker").unwrap();
+    assert_eq!(story["entries"][0]["kind"], "exec");
+    // every command the bundled extensions use exists in the engine
+    for id in ["silence-remover", "sous-titres", "export-en-un-clic", "beat-edit", "copy-pasta", "autoedit", "storyboard-maker"] {
+        let v = json_out(&cli(&["extensions", "validate", bundled.join(id).to_str().unwrap()]));
+        assert_eq!(v["valid"], true, "{v}");
+        assert_eq!(v["commandsUnknownToThisCli"], serde_json::json!([]), "{id}: {v}");
+    }
+    // pack an extension, install the archive somewhere else, update in place
+    let archive = dir.join("silence.fcext");
+    let p = json_out(&cli(&["extensions", "pack", bundled.join("silence-remover").to_str().unwrap(), archive.to_str().unwrap()]));
+    assert_eq!(p["packed"], "silence-remover");
+    let data2 = dir.join("data2");
+    let r = json_out(&cli(&["--data-dir", data2.to_str().unwrap(), "extensions", "install", archive.to_str().unwrap()]));
+    assert_eq!((r["id"].as_str(), r["replaced"].is_null()), (Some("silence-remover"), true));
+    let r = json_out(&cli(&["--data-dir", data2.to_str().unwrap(), "extensions", "install", archive.to_str().unwrap()]));
+    assert_eq!(r["replaced"], "1.0.0");
+    // errors are readable and exit 1; usage errors exit 2
+    let bad = cli(&["--data-dir", data_s, "extensions", "install", dir.join("nothing-here").to_str().unwrap()]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("does not exist"), "{}", String::from_utf8_lossy(&bad.stderr));
+    std::fs::write(dir.join("junk.fcext"), b"not a zip").unwrap();
+    let bad = cli(&["--data-dir", data_s, "extensions", "install", dir.join("junk.fcext").to_str().unwrap()]);
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("not a valid archive"));
+    let bad = cli(&["--data-dir", data_s, "extensions", "remove", "../data"]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(data.exists(), "a hostile id deleted nothing");
+    assert_eq!(cli(&["extensions"]).status.code(), Some(2));
+    assert_eq!(cli(&["extensions", "frobnicate"]).status.code(), Some(2));
+    // remove
+    json_out(&cli(&["--data-dir", data_s, "extensions", "remove", "sous-titres"]));
+    let l = json_out(&cli(&["--data-dir", data_s, "extensions", "list"]));
+    assert_eq!(l.as_array().unwrap().len(), 6);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn the_silence_remover_cuts_a_real_recording() {
+    let dir = fresh_dir("ext-silence");
+    let data = dir.join("data");
+    let data_s = data.to_str().unwrap();
+    json_out(&cli(&["--data-dir", data_s, "extensions", "install", bundled_dir().join("silence-remover").to_str().unwrap()]));
+    // 1 s speech, 2 s silence, 1 s speech, 0.3 s breath, 1 s speech, 1.5 s silence: 6.8 s
+    let wav = dir.join("talk.wav");
+    std::fs::write(&wav, talk_wav(&[(1.0, true), (2.0, false), (1.0, true), (0.3, false), (1.0, true), (1.5, false)])).unwrap();
+    let proj = dir.join("talk.fcproj");
+    let p = proj.to_str().unwrap();
+    let imported = json_out(&cli(&["--data-dir", data_s, "--demo", "exec", "file.import", &format!("paths=[{:?}]", wav.to_str().unwrap()), "--save-as", p]));
+    let item = imported["items"][0].as_u64().unwrap();
+    json_out(&cli(&["--data-dir", data_s, "--project", p, "--save", "exec", "file.newSequence", "name=Talk", "video=1", "audio=1"]));
+    json_out(&cli(&["--data-dir", data_s, "--project", p, "--save", "exec", "timeline.place", &format!("item={item}"), "track=A1", "seconds=0"]));
+    let duration = |p: &str| -> f64 {
+        let v = json_out(&cli(&["--data-dir", data_s, "--project", p, "inspect", "sequence", "--compact"]));
+        v["duration"].as_f64().unwrap_or_else(|| panic!("no duration in {v}")) / 254_016_000_000.0
+    };
+    let before = duration(p);
+    assert!((before - 6.8).abs() < 0.1, "{before}");
+    // run the default entry on the saved project, in place
+    let r = json_out(&cli(&["--data-dir", data_s, "--project", p, "--save", "extensions", "run", "silence-remover"]));
+    assert_eq!(r["extension"], "silence-remover");
+    assert_eq!(r["steps"][0]["ok"], true, "{r}");
+    assert_eq!(r["steps"][0]["result"]["silences"], 2, "{r}");
+    let after = duration(p);
+    assert!((before - after - 3.2).abs() < 0.2, "{before} -> {after}: {r}");
+    // an entry by label, with a variable replacing the 0.5 s default: nothing is left to cut
+    let r = json_out(&cli(&["--data-dir", data_s, "--project", p, "extensions", "run", "silence-remover", "couper les silences", "--var", "min_silence=5"]));
+    assert_eq!(r["steps"][0]["result"]["silences"], 0, "{r}");
+    // errors: unknown entry, unknown extension, unmet requirement (no sequence in an empty project)
+    let bad = cli(&["--data-dir", data_s, "--project", p, "extensions", "run", "silence-remover", "no such entry"]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("no entry"), "{}", String::from_utf8_lossy(&bad.stderr));
+    let bad = cli(&["--data-dir", data_s, "extensions", "run", "silence-remover"]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("open a sequence first"), "{}", String::from_utf8_lossy(&bad.stderr));
+    let bad = cli(&["--data-dir", data_s, "extensions", "run", "ghost"]);
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("not installed"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A binary without a speech recogniser: Sous-titres says so instead of pretending.
+#[cfg(not(feature = "whisper"))]
+#[test]
+fn the_subtitles_extension_reports_a_build_without_speech_to_text() {
+    let dir = fresh_dir("ext-subs");
+    let data = dir.join("data");
+    let data_s = data.to_str().unwrap();
+    json_out(&cli(&["--data-dir", data_s, "extensions", "install", bundled_dir().join("sous-titres").to_str().unwrap()]));
+    let o = cli(&["--data-dir", data_s, "--demo", "extensions", "run", "sous-titres", "0"]);
+    assert_eq!(o.status.code(), Some(1));
+    let all = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    assert!(all.contains("speech-to-text is not available"), "{all}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A program extension: gets the context on stdin, its printed commands run in the session.
+#[cfg(unix)]
+#[test]
+fn a_program_extension_hands_commands_back() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = fresh_dir("ext-exec");
+    let src = dir.join("src/marker-script");
+    std::fs::create_dir_all(src.join("bin")).unwrap();
+    std::fs::write(
+        src.join("extension.json"),
+        r#"{"id":"marker-script","name":"Marker Script","version":"0.1.0","entries":[{"label":"Mark","requires":["sequence"],"action":{"exec":{"program":"bin/mark.sh","args":["${var.label|\"Script marker\"}"],"timeoutSeconds":20}}}]}"#,
+    )
+    .unwrap();
+    std::fs::write(src.join("bin/mark.sh"), "#!/bin/sh\ncat > \"$FILMCRAFT_EXTENSION_DIR/context.json\"\necho \"{\\\"log\\\": \\\"marking\\\"}\"\necho \"{\\\"id\\\": \\\"markers.add\\\", \\\"params\\\": {\\\"name\\\": \\\"$1\\\"}}\"\n").unwrap();
+    std::fs::set_permissions(src.join("bin/mark.sh"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let data = dir.join("data");
+    let data_s = data.to_str().unwrap();
+    let r = json_out(&cli(&["--data-dir", data_s, "extensions", "install", src.to_str().unwrap()]));
+    assert_eq!(r["runsPrograms"], true);
+    let r = json_out(&cli(&["--data-dir", data_s, "--demo", "extensions", "run", "marker-script", "--var", "label=Hello"]));
+    assert_eq!(r["steps"][0]["id"], "markers.add");
+    assert_eq!(r["log"][0], "marking");
+    let ctx: Value = serde_json::from_slice(&std::fs::read(data.join("extensions/marker-script/context.json")).unwrap()).unwrap();
+    assert_eq!(ctx["host"], "cli");
+    assert_eq!(ctx["hasSequence"], true);
+    assert_eq!(ctx["vars"]["label"], "Hello");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The caption half of Sous-titres (the steps after the transcription) on an imported transcript:
+/// a caption track is built from the words and written next to the project as .srt.
+#[test]
+fn captions_from_a_transcript_are_written_next_to_the_project() {
+    let dir = fresh_dir("ext-srt");
+    let data = dir.join("data");
+    let data_s = data.to_str().unwrap();
+    let wav = dir.join("talk.wav");
+    std::fs::write(&wav, talk_wav(&[(3.0, true)])).unwrap();
+    let proj = dir.join("Interview.fcproj");
+    let p = proj.to_str().unwrap();
+    let imported = json_out(&cli(&["--data-dir", data_s, "--demo", "exec", "file.import", &format!("paths=[{:?}]", wav.to_str().unwrap()), "--save-as", p]));
+    let item = imported["items"][0].as_u64().unwrap();
+    json_out(&cli(&["--data-dir", data_s, "--project", p, "--save", "exec", "file.newSequence", "name=Talk", "video=1", "audio=1"]));
+    json_out(&cli(&["--data-dir", data_s, "--project", p, "--save", "exec", "timeline.place", &format!("item={item}"), "track=A1", "seconds=0"]));
+    let t = |s: f64| (s * 254_016_000_000.0) as i64;
+    let words = serde_json::json!([
+        {"text": "Bonjour", "start": t(0.2), "end": t(0.6)},
+        {"text": "tout", "start": t(0.7), "end": t(0.9)},
+        {"text": "le", "start": t(0.95), "end": t(1.05)},
+        {"text": "monde", "start": t(1.1), "end": t(1.6)}
+    ]);
+    let transcript = serde_json::json!({"language": "fr", "speakers": [{"name": "Speaker 1"}], "words": words});
+    json_out(&cli(&[
+        "--data-dir",
+        data_s,
+        "--project",
+        p,
+        "--save",
+        "exec",
+        "transcript.set",
+        &serde_json::json!({"item": item, "transcript": transcript}).to_string(),
+    ]));
+    // the second half of the bundled "Générer et exporter en .srt" entry, as an extension of its own
+    let src = dir.join("src/srt-only");
+    std::fs::create_dir_all(&src).unwrap();
+    let manifest = std::fs::read_to_string(bundled_dir().join("sous-titres/extension.json")).unwrap();
+    let mut m: Value = serde_json::from_str(&manifest).unwrap();
+    let steps = m["entries"][1]["action"]["commands"].as_array().unwrap().iter().skip(1).cloned().collect::<Vec<_>>();
+    m["id"] = "srt-only".into();
+    m["entries"] = serde_json::json!([{"label": "Go", "requires": ["sequence", "project"], "action": {"commands": steps}}]);
+    std::fs::write(src.join("extension.json"), m.to_string()).unwrap();
+    json_out(&cli(&["--data-dir", data_s, "extensions", "install", src.to_str().unwrap()]));
+    let r = json_out(&cli(&["--data-dir", data_s, "--project", p, "--save", "extensions", "run", "srt-only"]));
+    assert_eq!(r["steps"].as_array().unwrap().len(), 2, "{r}");
+    let srt = std::fs::read_to_string(dir.join("Interview.srt")).unwrap();
+    assert!(srt.contains("Bonjour tout le monde") || (srt.contains("Bonjour") && srt.contains("monde")), "{srt}");
+    assert!(srt.contains("-->"), "{srt}");
+    // an unsaved project has no place to write the file: a clear message, nothing written
+    let bad = cli(&["--data-dir", data_s, "--demo", "extensions", "run", "srt-only"]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("save the project"), "{}", String::from_utf8_lossy(&bad.stderr));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Export en un clic writes next to the project, also when the project is named by a relative path
+/// (the engine's own default would have fallen back to ~/Movies).
+#[test]
+fn export_en_un_clic_writes_next_to_the_project() {
+    let dir = fresh_dir("ext-export");
+    let data = dir.join("data");
+    let data_s = data.to_str().unwrap();
+    json_out(&cli(&["--data-dir", data_s, "extensions", "install", bundled_dir().join("export-en-un-clic").to_str().unwrap()]));
+    let wav = dir.join("talk.wav");
+    std::fs::write(&wav, talk_wav(&[(1.0, true), (0.5, false)])).unwrap();
+    let proj = dir.join("talk.fcproj");
+    let p = proj.to_str().unwrap();
+    let imported = json_out(&cli(&["--data-dir", data_s, "--demo", "exec", "file.import", &format!("paths=[{:?}]", wav.to_str().unwrap()), "--save-as", p]));
+    let item = imported["items"][0].as_u64().unwrap();
+    json_out(&cli(&["--data-dir", data_s, "--project", p, "--save", "exec", "file.newSequence", "name=Cut", "video=1", "audio=1"]));
+    json_out(&cli(&["--data-dir", data_s, "--project", p, "--save", "exec", "timeline.place", &format!("item={item}"), "track=A1", "seconds=0"]));
+    // run from inside the project folder with a relative project path
+    let out = Command::new(env!("CARGO_BIN_EXE_filmcraft-cli"))
+        .current_dir(&dir)
+        .args(["--data-dir", data_s, "--project", "talk.fcproj", "extensions", "run", "export-en-un-clic", "YouTube 1080p", "--compact"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let v = json_out(&out);
+    assert_eq!(v["steps"][0]["result"]["preset"], "YouTube 1080p Full HD", "{v}");
+    let written = v["steps"][0]["result"]["path"].as_str().unwrap();
+    assert!(written.starts_with(dir.to_str().unwrap()) || written.contains("cli-tests"), "{written}");
+    let file = dir.join("Cut.mp4");
+    assert!(std::fs::metadata(&file).map(|m| m.len() > 1000).unwrap_or(false), "{written}");
+    // an unsaved project has no folder to write to
+    let bad = cli(&["--data-dir", data_s, "--demo", "extensions", "run", "export-en-un-clic", "0"]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("save the project first"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 16-bit stereo 48 kHz WAV of drums at `bpm`: a kick on beats 1 and 3, a noise snare on 2 and 4,
+/// hi-hats on the eighths, a bass note on every beat (the true beats sit at k * 60 / bpm seconds).
+fn beat_wav(bpm: f64, bars: usize) -> Vec<u8> {
+    let sr = 48_000u32;
+    let beat = sr as f64 * 60.0 / bpm;
+    let n = (bars as f64 * 4.0 * beat) as usize;
+    let mut x = vec![0f32; n];
+    let mut seed = 5u32;
+    for k in 0..bars * 4 {
+        let start = (k as f64 * beat).round() as usize;
+        for i in 0..((beat * 0.9) as usize).min(n - start) {
+            let t = i as f32 / sr as f32;
+            if k % 2 == 0 {
+                let f = 50.0 + 90.0 * (-t * 25.0).exp();
+                x[start + i] += 0.8 * (-t * 9.0).exp() * (t * f * std::f32::consts::TAU).sin();
+            } else if t < 0.2 {
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                x[start + i] += 0.35 * (-t * 22.0).exp() * ((seed >> 16) as f32 / 32768.0 - 1.0);
+            }
+            x[start + i] += 0.15 * (-t * 3.0).exp() * (t * 110.0 * std::f32::consts::TAU).sin();
+        }
+        // hi-hats on the eighths: without them the tracker may settle on half the tempo
+        for h in 0..2 {
+            let hs = start + (h as f64 * beat / 2.0) as usize;
+            for i in 0..(sr as usize / 25).min(n.saturating_sub(hs)) {
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                x[hs + i] += 0.08 * (-(i as f32 / sr as f32) * 120.0).exp() * ((seed >> 16) as f32 / 32768.0 - 1.0);
+            }
+        }
+    }
+    let mut pcm: Vec<u8> = Vec::new();
+    for v in x {
+        let s = (v * 0.8 * 32767.0) as i16;
+        for _ in 0..2 {
+            pcm.extend(s.to_le_bytes());
+        }
+    }
+    let mut w = Vec::new();
+    w.extend(b"RIFF");
+    w.extend((36 + pcm.len() as u32).to_le_bytes());
+    w.extend(b"WAVEfmt ");
+    w.extend(16u32.to_le_bytes());
+    w.extend(1u16.to_le_bytes());
+    w.extend(2u16.to_le_bytes());
+    w.extend(sr.to_le_bytes());
+    w.extend((sr * 4).to_le_bytes());
+    w.extend(4u16.to_le_bytes());
+    w.extend(16u16.to_le_bytes());
+    w.extend(b"data");
+    w.extend((pcm.len() as u32).to_le_bytes());
+    w.extend(pcm);
+    w
+}
+
+/// A saved project with a sequence (video 2, audio 2) named `Cut`, and the ids of `n_media` black
+/// videos of 2 s (`file.newBlackVideo`) placed one after the other on V1 plus a music clip (music
+/// WAV of 120 BPM) on A1 at 0 s. Returns (project path, music clip id, video clip ids).
+fn music_project(dir: &std::path::Path, data_s: &str, n_media: usize) -> (String, u64, Vec<u64>) {
+    let wav = dir.join("music.wav");
+    std::fs::write(&wav, beat_wav(120.0, 8)).unwrap();
+    let proj = dir.join("beats.fcproj");
+    let p = proj.to_str().unwrap().to_string();
+    let imported = json_out(&cli(&["--data-dir", data_s, "--demo", "exec", "file.import", &format!("paths=[{:?}]", wav.to_str().unwrap()), "--save-as", &p]));
+    let music = imported["items"][0].as_u64().unwrap();
+    json_out(&cli(&["--data-dir", data_s, "--project", &p, "--save", "exec", "file.newSequence", "name=Cut", "video=2", "audio=2", "fps=24"]));
+    let placed =
+        json_out(&cli(&["--data-dir", data_s, "--project", &p, "--save", "exec", "timeline.place", &format!("item={music}"), "track=A1", "seconds=0"]));
+    let music_clip = placed["clips"][0].as_u64().unwrap();
+    let mut videos = Vec::new();
+    for i in 0..n_media {
+        let b = json_out(&cli(&["--data-dir", data_s, "--project", &p, "--save", "exec", "file.newBlackVideo", "seconds=2"]));
+        let item = b["item"].as_u64().or_else(|| b["items"][0].as_u64()).unwrap_or_else(|| panic!("no item in {b}"));
+        let r = json_out(&cli(&[
+            "--data-dir",
+            data_s,
+            "--project",
+            &p,
+            "--save",
+            "exec",
+            "timeline.place",
+            &format!("item={item}"),
+            "track=V1",
+            &format!("seconds={}", i * 2),
+        ]));
+        videos.push(r["clips"][0].as_u64().unwrap());
+    }
+    (p, music_clip, videos)
+}
+
+fn sequence_of(data_s: &str, p: &str) -> Value {
+    json_out(&cli(&["--data-dir", data_s, "--project", p, "inspect", "sequence", "--compact"]))
+}
+
+#[test]
+fn beat_edit_marks_and_cuts_on_the_beats_of_generated_music() {
+    let dir = fresh_dir("ext-beats");
+    let data_s = dir.join("data").to_str().unwrap().to_string();
+    let data_s = data_s.as_str();
+    json_out(&cli(&["--data-dir", data_s, "extensions", "install", bundled_dir().join("beat-edit").to_str().unwrap()]));
+    let (p, music, videos) = music_project(&dir, data_s, 2);
+    let tick = 254_016_000_000.0;
+    // every beat: 120 BPM music of 16 s, the true beats every 0.5 s (a beat at the very start is not reported)
+    let r = json_out(&cli(&["--data-dir", data_s, "--project", &p, "--save", "extensions", "run", "beat-edit", "Marquer les beats"]));
+    assert_eq!(r["steps"][0]["ok"], true, "{r}");
+    let bpm = r["steps"][0]["result"]["bpm"].as_f64().unwrap();
+    assert!((bpm - 120.0).abs() < 2.0, "{r}");
+    let markers = sequence_of(data_s, &p)["markers"].as_array().unwrap().clone();
+    assert!((30..=32).contains(&markers.len()), "{} markers", markers.len());
+    for m in &markers {
+        let t = m["start"].as_f64().unwrap() / tick;
+        assert!((t / 0.5 - (t / 0.5).round()).abs() * 0.5 < 0.025, "marker at {t} s is off the 0.5 s grid");
+    }
+    // every fourth beat (a separate name, so nothing is deduplicated)
+    let out = cli(&["--data-dir", data_s, "--project", &p, "--save", "extensions", "run", "beat-edit", "Marquer toutes les 4 beats"]);
+    let r = json_out(&out);
+    let markers = sequence_of(data_s, &p)["markers"].as_array().unwrap().clone();
+    // 32 beats of 0.5 s: 8 bars, one fewer when the first beat of the clip is not reported and is the bar start
+    let bars = markers.iter().filter(|m| m["name"].as_str().unwrap().starts_with("Mesure")).count();
+    assert!((7..=8).contains(&bars), "{bars} bars: {markers:?}");
+    // what it did is said in words, in the report and on stderr
+    let line = r["steps"][0]["result"]["summary"].as_str().unwrap();
+    assert!(line.contains("marqueurs posés") && line.contains("BPM"), "{line}");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("Marquer toutes les 4 beats: ") && err.contains("marqueurs posés"), "{err}");
+    // an entry that needs a selection says so; with --select the video clips (2 x 2 s) are cut on the beats
+    let bad = cli(&["--data-dir", data_s, "--project", &p, "extensions", "run", "beat-edit", "Couper sur les beats"]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("select clips"), "{}", String::from_utf8_lossy(&bad.stderr));
+    let sel = format!("{music},{},{}", videos[0], videos[1]);
+    let r = json_out(&cli(&["--data-dir", data_s, "--project", &p, "--save", "extensions", "run", "beat-edit", "Couper sur les beats", "--select", &sel]));
+    assert_eq!(r["steps"][0]["ok"], true, "{r}");
+    let q = sequence_of(data_s, &p);
+    let v1 = q["video"][0]["items"].as_array().unwrap();
+    // 2 s clips on a 0.5 s grid: 4 pieces each
+    assert_eq!(v1.len(), 8, "{v1:?}");
+    assert_eq!(q["audio"][0]["items"].as_array().unwrap().len(), 1, "the music is the beat source, not a target");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn copy_pasta_pastes_the_first_clips_attributes_on_the_others() {
+    let dir = fresh_dir("ext-pasta");
+    let data_s = dir.join("data").to_str().unwrap().to_string();
+    let data_s = data_s.as_str();
+    json_out(&cli(&["--data-dir", data_s, "extensions", "install", bundled_dir().join("copy-pasta").to_str().unwrap()]));
+    let (p, _, videos) = music_project(&dir, data_s, 3);
+    json_out(&cli(&[
+        "--data-dir",
+        data_s,
+        "--project",
+        &p,
+        "--save",
+        "exec",
+        "effects.setParam",
+        &format!("clip={}", videos[0]),
+        "effect=motion",
+        "param=scale",
+        "value=150",
+    ]));
+    json_out(&cli(&[
+        "--data-dir",
+        data_s,
+        "--project",
+        &p,
+        "--save",
+        "exec",
+        "effects.setParam",
+        &format!("clip={}", videos[0]),
+        "effect=opacity",
+        "param=opacity",
+        "value=40",
+    ]));
+    let scale_opacity = |q: &Value, clip: u64| -> (String, String) {
+        let it = q["video"][0]["items"].as_array().unwrap().iter().find(|i| i["clip"] == clip).unwrap().clone();
+        let get = |eff: &str, param: &str| it["effects"].as_array().unwrap().iter().find(|e| e["effect"] == eff).unwrap()["params"][param]["value"].to_string();
+        (get("motion", "scale"), get("opacity", "opacity"))
+    };
+    let q = sequence_of(data_s, &p);
+    assert!(scale_opacity(&q, videos[1]).0.contains("100"), "{:?}", scale_opacity(&q, videos[1]));
+    let sel = videos.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
+    // only motion and opacity are copied by the other one-step entry; here, everything
+    let r = json_out(&cli(&[
+        "--data-dir",
+        data_s,
+        "--project",
+        &p,
+        "--save",
+        "extensions",
+        "run",
+        "copy-pasta",
+        "Premier clip vers les autres (tout)",
+        "--select",
+        &sel,
+    ]));
+    assert_eq!(r["steps"][2]["result"]["clips"], 2, "{r}");
+    let q = sequence_of(data_s, &p);
+    for c in &videos[1..] {
+        let (scale, opacity) = scale_opacity(&q, *c);
+        assert!(scale.contains("150"), "clip {c}: {scale}");
+        assert!(opacity.contains("40"), "clip {c}: {opacity}");
+    }
+    // one clip selected: nothing to paste on, said plainly
+    let bad = cli(&[
+        "--data-dir",
+        data_s,
+        "--project",
+        &p,
+        "extensions",
+        "run",
+        "copy-pasta",
+        "Premier clip vers les autres (tout)",
+        "--select",
+        &videos[0].to_string(),
+    ]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("at least two clips") || String::from_utf8_lossy(&bad.stdout).contains("at least two clips"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn has_python_with_pillow() -> bool {
+    Command::new("python3").args(["-c", "import PIL"]).output().map(|o| o.status.success()).unwrap_or(false)
+}
+
+#[test]
+fn storyboard_maker_exports_a_still_per_shot_and_a_sheet() {
+    let dir = fresh_dir("ext-story");
+    let data_s = dir.join("data").to_str().unwrap().to_string();
+    let data_s = data_s.as_str();
+    json_out(&cli(&["--data-dir", data_s, "extensions", "install", bundled_dir().join("storyboard-maker").to_str().unwrap()]));
+    let python = Command::new("python3").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+    if !python {
+        eprintln!("python3 is not installed: skipping the storyboard run");
+        return;
+    }
+    let (p, _, _) = music_project(&dir, data_s, 3);
+    json_out(&cli(&["--data-dir", data_s, "--project", &p, "--save", "exec", "markers.add", "seconds=1", "name=Premier", "comment=idee"]));
+    let r = json_out(&cli(&["--data-dir", data_s, "--project", &p, "extensions", "run", "storyboard-maker", "Exporter une image par plan"]));
+    assert_eq!(r["steps"].as_array().unwrap().len(), 6, "{r}");
+    let folder = dir.join("beats-storyboard");
+    for n in ["001.png", "002.png", "003.png", "index.json"] {
+        assert!(std::fs::metadata(folder.join(n)).map(|m| m.len() > 50).unwrap_or(false), "{n} in {r}");
+    }
+    let r = json_out(&cli(&["--data-dir", data_s, "--project", &p, "extensions", "run", "storyboard-maker", "Exporter une image par marqueur"]));
+    assert_eq!(r["steps"].as_array().unwrap().len(), 2, "{r}");
+    let index: Value = serde_json::from_slice(&std::fs::read(folder.join("index.json")).unwrap()).unwrap();
+    assert_eq!(index["frames"][0]["title"], "Premier - idee");
+    assert!(!folder.join("002.png").exists(), "the stills of the previous run are replaced");
+    if has_python_with_pillow() {
+        json_out(&cli(&["--data-dir", data_s, "--project", &p, "extensions", "run", "storyboard-maker", "Assembler la planche (PNG + PDF)"]));
+        let pdf = std::fs::read(dir.join("beats-storyboard.pdf")).unwrap();
+        assert!(pdf.starts_with(b"%PDF"), "a PDF");
+        assert!(std::fs::metadata(dir.join("beats-storyboard.png")).map(|m| m.len() > 500).unwrap_or(false));
+    } else {
+        eprintln!("Pillow is not installed: skipping the contact sheet");
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -288,7 +288,7 @@ We track two numbers ([ROADMAP.md](ROADMAP.md#honest-assessment-2026-10-05)):
 The biggest gaps today:
 
 - **Speed on big footage.** Hardware decoding works on macOS and Windows, and for H.264 and HEVC on Linux (VA-API; VP9 and AV1 decode in software there). Blend modes and the most common effects run on the GPU, but Lumetri, keys and export rendering still run on the CPU; H.264 encoding can use the hardware encoder on macOS and on Windows and Linux with an NVIDIA GPU (opt-in, Export ▸ Hardware encoding), and H.265 export is hardware-only on both (HDR sequences export Main 10 PQ / HLG with NVENC; VideoToolbox writes 8-bit SDR) ([#30](https://github.com/storytold/filmcraft/issues/30)).
-- **No plugins.** No VST3 / Audio Units or OpenFX hosting.
+- **Few plugins.** No VST3 / Audio Units or OpenFX hosting, and no Adobe CEP / UXP panels. There is a small, safe **extension** system (an Extensions menu running recipes of FilmCraft commands or helper programs, [docs/extensions.md](docs/extensions.md)), with 20 extensions bundled in this build.
 - **Delivery codecs.** H.264 is our only software delivery-codec export; H.265 exports only through a hardware encoder (NVIDIA on Windows: Main 8-bit SDR and Main 10 HDR PQ / HLG; VideoToolbox on macOS: 8-bit Main, SDR); no AV1 export yet.
 - **Real-world media and platforms.** Our decoders are bit-exact on conformance streams, but camera and phone files in the wild are less tested. Windows and Linux get far less testing than macOS.
 - **AI features.** Few so far; speech to text is optional and off by default.
@@ -302,7 +302,7 @@ A layered Cargo workspace:
 | Layer | Crates |
 |---|---|
 | Codecs and containers | `h264`, `h264enc`, `hevc`, `vp9`, `prores`, `aac`, `opus`, `isobmff`, `matroska`, `bitstream` |
-| Foundations | `time`, `geom`, `color`, `frame`, `media`, `text`, `project`, `audio-dsp` |
+| Foundations | `time`, `geom`, `color`, `frame`, `media`, `text`, `project`, `audio-dsp`, `extensions` |
 | Editing and interchange | `edit`, `codecs`, `captions`, `format` (project files), `interchange` |
 | Rendering and output | `render`, `gpu`, `export` |
 | Engine | `engine`: command registry, session, undo, jobs |

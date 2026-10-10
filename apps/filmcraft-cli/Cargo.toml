@@ -27,5 +27,6 @@ filmcraft-mpegts = { workspace = true }
 filmcraft-ogg = { workspace = true }
 filmcraft-time = { workspace = true }
 filmcraft-automation = { workspace = true }
+filmcraft-extensions = { workspace = true }
 serde_json = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

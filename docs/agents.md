@@ -183,6 +183,8 @@ filmcraft-cli export --list-presets prores       # built-in + user presets (--da
 filmcraft-cli --project p.fcproj exec export.queue.add preset="Apple ProRes 422 HQ" path=renders/ start=true wait=true
 echo '{"id":"file.newBin","params":{"name":"Selects"}}' | filmcraft-cli --project p.fcproj --save run -
 filmcraft-cli --bridge 127.0.0.1:9876 exec window.workspace.color   # the running app
+filmcraft-cli extensions list                    # extensions installed for this user (docs/extensions.md)
+filmcraft-cli --project p.fcproj --save extensions run silence-remover   # run an extension entry headless
 ```
 
 `key=value` values are parsed as JSON when they can be (`3.5`, `true`, `[1,2]`), otherwise taken as

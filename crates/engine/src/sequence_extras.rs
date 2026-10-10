@@ -4,6 +4,8 @@
 //! |---|---|---|
 //! | `sequence.applyDefaultTransitionsToSelection` | Sequence ▸ Apply Default Transitions to Selection (⇧D) | selected clips' edges; selected edit points |
 //! | `sequence.normalizeMixTrack` | Sequence ▸ Normalize Mix Track… | Mix fader so the mix peaks at the target |
+//! | `sequence.removeSilence` | (none; Extensions ▸ Silence Remover) | ripple-delete the quiet stretches of the mix, no transcript needed |
+//! | `sequence.markBeats` / `sequence.cutOnBeats` | (none; Extensions ▸ Beat Edit) | markers / cuts on the beats of an audio clip, see `beats` |
 //! | `sequence.transcribe` | Sequence ▸ Transcribe Sequence… | `transcript.generate` on the sequence's audio clips |
 //! | `sequence.simplify` | Sequence ▸ Simplify Sequence… | a simplified copy of the sequence |
 //! | `captions.showActiveOnly` | Sequence ▸ Captions ▸ Show Active Caption Tracks Only | |
@@ -39,6 +41,12 @@ fn spec(
 }
 
 pub(crate) fn commands() -> Vec<CommandSpec> {
+    let mut v = base_commands();
+    v.extend(crate::beats::commands());
+    v
+}
+
+fn base_commands() -> Vec<CommandSpec> {
     vec![
         spec(
             "sequence.applyDefaultTransitionsToSelection",
@@ -51,6 +59,16 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             apply_default_transitions,
         ),
         spec("sequence.normalizeMixTrack", "Normalize Mix Track…", &["Sequence"], None, r#"{"db":f64=0}"#, has_audio_clips, normalize_mix),
+        // No menu entry: it is the engine behind the Silence Remover extension (docs/extensions.md)
+        spec(
+            "sequence.removeSilence",
+            "Remove Silences…",
+            &[],
+            None,
+            r#"{"thresholdDb":db? (default: from the mix's noise floor),"minSeconds":f64=0.5,"keepSeconds":f64=0.1,"apply":bool=true}"#,
+            has_audio_clips,
+            remove_silence,
+        ),
         spec(
             "sequence.transcribe",
             "Transcribe Sequence…",
@@ -222,12 +240,143 @@ fn normalize_mix(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Remove Silences
+// ---------------------------------------------------------------------------------------------
+
+/// Length of the level windows the mix is measured in.
+pub(crate) const SILENCE_WINDOW_SECONDS: f64 = 0.01;
+
+/// The level of the whole mix of the active sequence in dBFS RMS over all channels, one value per
+/// [`SILENCE_WINDOW_SECONDS`] window (the mixer graph renders it, as for playback and export).
+pub(crate) fn mix_levels(s: &Session) -> Result<Vec<f32>> {
+    let seq_id = s.state.active_sequence.ok_or(EngineError::NoSequence)?;
+    let q = s.project.sequence(seq_id).ok_or(EngineError::NoSequence)?;
+    let sr = q.settings.sample_rate.max(1);
+    let total = q.duration().to_units_floor(sr as i64).max(0);
+    let window = ((sr as f64 * SILENCE_WINDOW_SECONDS).round() as usize).max(1);
+    let provider = s.media.full_res_provider(s.project.clone(), s.services.clone());
+    let mut db: Vec<f32> = Vec::new();
+    let mut pos = 0i64;
+    let block = (window * 100) as i64;
+    while pos < total {
+        let n = (total - pos).min(block) as usize;
+        let b = filmcraft_render::audio::mix_sequence(&s.project, q, pos, n, &provider);
+        let channels = b.channels.len().max(1);
+        for w in 0..n.div_ceil(window) {
+            let (from, to) = (w * window, ((w + 1) * window).min(n));
+            let mut e = 0f64;
+            for ch in &b.channels {
+                e += ch.get(from..to).unwrap_or_default().iter().map(|v| (*v as f64) * (*v as f64)).sum::<f64>();
+            }
+            let count = ((to - from) * channels).max(1) as f64;
+            db.push((10.0 * (e / count + 1e-12).log10()) as f32);
+        }
+        pos += n as i64;
+    }
+    Ok(db)
+}
+
+/// Find the stretches of the sequence mix that stay quiet for `minSeconds` or more and, unless
+/// `apply` is false, ripple-delete them on every unlocked track (one undo step), keeping
+/// `keepSeconds` of air next to the speech on both sides. A silence at the very start or end of the
+/// sequence is removed up to the sound (no air is kept against the edge).
+///
+/// The mix is rendered through the mixer graph, like playback and export, and measured in 10 ms RMS
+/// windows. The quiet/loud threshold is `thresholdDb`, or by default the one speech tightening uses
+/// (`filmcraft_speech::vad::threshold`: 30 % of the way from the recording's noise floor to its
+/// speech level, at least 6 dB above the floor). No transcript or speech model is needed.
+fn remove_silence(s: &mut Session, p: &Value) -> Result<Value> {
+    const CMD: &str = "sequence.removeSilence";
+    let min = f64_p(p, "minSeconds").unwrap_or(0.5);
+    let keep = f64_p(p, "keepSeconds").unwrap_or(0.1);
+    let apply = bool_p(p, "apply").unwrap_or(true);
+    let manual = f64_p(p, "thresholdDb");
+    if !(0.05..=3600.0).contains(&min) {
+        return Err(bad(CMD, "`minSeconds` must be between 0.05 and 3600"));
+    }
+    if !(0.0..=min / 2.0).contains(&keep) {
+        return Err(bad(CMD, "`keepSeconds` must be between 0 and half of `minSeconds`"));
+    }
+    if manual.is_some_and(|t| !(-100.0..=0.0).contains(&t)) {
+        return Err(bad(CMD, "`thresholdDb` must be between -100 and 0"));
+    }
+    let db = mix_levels(s)?;
+    let seq_id = s.state.active_sequence.ok_or(EngineError::NoSequence)?;
+    let q = s.project.sequence(seq_id).ok_or(EngineError::NoSequence)?;
+    let threshold = manual.map(|t| t as f32).unwrap_or_else(|| filmcraft_speech::vad::threshold(&db));
+    let rate = q.settings.frame_rate;
+    let end_of_sequence = q.duration();
+    let at = |frames: usize| Tick::from_seconds_f64(frames as f64 * SILENCE_WINDOW_SECONDS);
+    let mut ranges: Vec<TimeRange> = Vec::new();
+    let mut i = 0usize;
+    while i < db.len() {
+        if db.get(i).copied().unwrap_or(0.0) >= threshold {
+            i += 1;
+            continue;
+        }
+        let a = i;
+        while db.get(i).is_some_and(|v| *v < threshold) {
+            i += 1;
+        }
+        let b = i;
+        if (b - a) as f64 * SILENCE_WINDOW_SECONDS < min {
+            continue;
+        }
+        let start = if a == 0 { Tick::ZERO } else { at(a) + Tick::from_seconds_f64(keep) };
+        let end = if b >= db.len() { end_of_sequence } else { at(b) - Tick::from_seconds_f64(keep) };
+        // snap inward to frames, as pauses are
+        let mut s2 = rate.snap(start);
+        if s2 < start {
+            s2 += rate.frame_duration();
+        }
+        let e2 = rate.snap(end);
+        if e2 > s2 {
+            ranges.push(TimeRange::from_bounds(s2, e2));
+        }
+    }
+    let silences: Vec<Value> = ranges.iter().map(|r| json!({"start": r.start.seconds(), "end": r.end().seconds()})).collect();
+    let mut out = json!({"silences": silences.len(), "thresholdDb": threshold, "ranges": silences, "removed": 0, "seconds": 0.0});
+    let found = ranges.len();
+    let planned: f64 = ranges.iter().map(|r| r.duration.seconds()).sum();
+    let thr = format!("{threshold:.0}").replace('-', "−");
+    let min_text = format!("{min}").replace('.', ",");
+    if apply && !ranges.is_empty() {
+        let r = crate::transcript::remove_ranges(s, "Remove Silences", ranges)?;
+        out["removed"] = r["removed"].clone();
+        out["seconds"] = r["seconds"].clone();
+    }
+    out["summary"] = json!(if found == 0 {
+        format!(
+            "Aucun silence de {min_text} s ou plus (seuil {thr} dB) : rien à supprimer. Essayez une durée plus courte (minSeconds) ou un seuil plus haut (thresholdDb)."
+        )
+    } else if !apply {
+        format!(
+            "{found} silence{} de {min_text} s ou plus trouvé{}, {planned:.1} s à retirer (seuil {thr} dB), rien supprimé",
+            if found == 1 { "" } else { "s" },
+            if found == 1 { "" } else { "s" }
+        )
+        .replace('.', ",")
+    } else {
+        format!("{found} silence{} supprimé{}, {planned:.1} s retirées (seuil {thr} dB)", if found == 1 { "" } else { "s" }, if found == 1 { "" } else { "s" })
+            .replace('.', ",")
+    });
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------------------------
 // Transcribe Sequence
 // ---------------------------------------------------------------------------------------------
 
 /// Sequence ▸ Transcribe Sequence…: transcribe the media of the sequence's audio clips (all audio
 /// tracks — "Mix" — or one track) with `transcript.generate`.
 fn transcribe(s: &mut Session, p: &Value) -> Result<Value> {
+    let params = transcribe_params(s, p)?;
+    s.execute("transcript.generate", params)
+}
+
+/// The `transcript.generate` parameters of `sequence.transcribe`: the media of the audio clips of the
+/// sequence (all tracks, or one) and the options passed on.
+pub(crate) fn transcribe_params(s: &Session, p: &Value) -> Result<Value> {
     let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
     let track = match p.get("track") {
         None => None,
@@ -251,7 +400,7 @@ fn transcribe(s: &mut Session, p: &Value) -> Result<Value> {
             params[k] = v.clone();
         }
     }
-    s.execute("transcript.generate", params)
+    Ok(params)
 }
 
 // ---------------------------------------------------------------------------------------------

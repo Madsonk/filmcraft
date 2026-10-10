@@ -1,0 +1,17 @@
+[package]
+name = "filmcraft-extensions"
+description = "FilmCraft extensions: extension.json manifests, the extensions folder (install, remove, list) and the runner (command lists and external programs)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+# .fcext / .zip packages (deflate through flate2's pure-Rust zlib-rs backend, already in the lock file)
+zip = { version = "7", default-features = false, features = ["deflate-flate2-zlib-rs"] }
