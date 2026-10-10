@@ -74,6 +74,8 @@ pub enum OnDone {
     AttachProxies,
     /// Point the clips at the outputs (ingest transcode).
     ReplaceMedia,
+    /// Import the outputs as new media (neural video tools: the outputs are new files).
+    Import,
     /// Nothing (the job's own result is the product, e.g. Project Manager).
     Nothing,
 }
@@ -272,6 +274,7 @@ pub fn poll(s: &mut Session) {
         let r = match pj.on_done {
             OnDone::AttachProxies => attach(s, &outs, false).map(|_| ()),
             OnDone::ReplaceMedia => replace_media(s, &outs),
+            OnDone::Import => outs.iter().try_for_each(|(_, path)| crate::commands::import_streamed(s, path, None).map(|_| ())),
             OnDone::Nothing => Ok(()),
         };
         if let Err(e) = r {

@@ -1,0 +1,33 @@
+{
+  "formatVersion": 1,
+  "id": "voice-music",
+  "name": "Voix et musique (HT Demucs)",
+  "version": "1.0.0",
+  "description": "Splits the sound of the selected clip with the HT Demucs network (optional model htdemucs, 84 MB, MIT): the voice alone, or everything but the voice (the music without the voice), or the four stems (drums, bass, other, vocals). The results are new 32-bit float WAV files imported into the project; the original is not touched. About 2x real time on Metal. Variables: --var stems=vocals,rest,drums,bass,other.",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Isoler la voix",
+      "description": "A new audio file with the voice only (music, drums and noise removed as far as the network can).",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [ { "id": "audio.separate", "params": { "stems": ["vocals"], "wait": "${blocking}" } } ] }
+    },
+    {
+      "label": "Retirer la voix (garder la musique)",
+      "description": "A new audio file with everything except the voice.",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [ { "id": "audio.separate", "params": { "stems": ["rest"], "wait": "${blocking}" } } ] }
+    },
+    {
+      "label": "Voix + sans voix",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [ { "id": "audio.separate", "params": { "stems": ["vocals", "rest"], "wait": "${blocking}" } } ] }
+    },
+    {
+      "label": "Les quatre pistes",
+      "description": "Drums, bass, other and vocals as four files.",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [ { "id": "audio.separate", "params": { "stems": ["vocals", "drums", "bass", "other"], "wait": "${blocking}" } } ] }
+    }
+  ]
+}

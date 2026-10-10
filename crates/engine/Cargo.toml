@@ -17,6 +17,8 @@ whisper = ["filmcraft-speech/whisper", "filmcraft-speech/translate"]
 speech-download = ["filmcraft-speech/download"]
 # Downloads of the optional neural models (voice clean-up, auto-reframe) over HTTPS.
 model-download = ["filmcraft-modelstore/download"]
+# Optional neural tools (RIFE interpolation, Beat This beats, rush search, super-resolution…) on candle.
+ml = ["dep:rayon", "dep:filmcraft-ml", "dep:filmcraft-mlsearch", "dep:filmcraft-mlrestore", "dep:filmcraft-mlfetch"]
 
 [dependencies]
 filmcraft-time = { workspace = true }
@@ -45,6 +47,11 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 web-time = "1"
+rayon = { workspace = true, optional = true }
+filmcraft-ml = { path = "../ml", optional = true }
+filmcraft-mlsearch = { path = "../mlsearch", optional = true }
+filmcraft-mlrestore = { path = "../mlrestore", optional = true }
+filmcraft-mlfetch = { path = "../mlfetch", optional = true }
 
 [dev-dependencies]
 filmcraft-testkit = { workspace = true }

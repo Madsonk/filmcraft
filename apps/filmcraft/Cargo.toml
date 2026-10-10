@@ -16,6 +16,8 @@ default = []
 whisper = ["filmcraft-engine/whisper", "filmcraft-engine/speech-download"]
 # Downloads of the optional neural models (voice clean-up, auto-reframe).
 models = ["filmcraft-engine/model-download"]
+# Optional neural tools (RIFE, Beat This, rush search, super-resolution…): see docs/extensions.md.
+ml = ["filmcraft-engine/ml"]
 
 [dependencies]
 filmcraft-engine = { workspace = true }

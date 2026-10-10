@@ -24,9 +24,10 @@ Design principles:
  L5  ui-egui · automation · platform
  L4  engine
  L3  render · gpu · export · golden (test-only)
- L2  edit · codecs · interchange · captions · speech · modelstore · voice · reframe
- L1  frame · media · project · audio-dsp · text · extensions · nn
+ L2  edit · codecs · interchange · captions · speech · modelstore · voice · reframe · ml
+ L1  frame · media · project · audio-dsp · text · extensions · nn · mlrestore · mlsearch
  L0  foundation: time · geom · color · bitstream · testkit (dev-dependency only)
+     optional-model download: mlfetch
      codecs/containers: isobmff · matroska · mxf · cfb · mpegts · ogg · h264 · h264enc · hevc · vp9 · av1 · mpeg2v · prores · dnx · apv · aac · ac3 · opus
 ```
 
@@ -66,6 +67,10 @@ and `filmcraft-cli`.
 | `modelstore` | L2 | catalogue and on-disk store of the optional neural models (DeepFilterNet3, YOLOX, YuNet): URL, SHA-256, size, licence; verified download and `.tar.gz` unpacking (feature `download`) |
 | `voice` | L2 | voice clean-up: DeepFilterNet3 pipeline (STFT, ERB features, deep filtering) on `nn` ([extensions.md](extensions.md) § Neural tools) |
 | `reframe` | L2 | auto-reframe: YOLOX / YuNet detection on `nn`, subject tracking, smooth crop path (dead zone + smoothing spline) |
+| `ml` | L2 | optional neural tools on candle (Metal on macOS, else CPU), none bundled: RIFE v4 frame interpolation, Beat This! beat tracking, HT Demucs source separation, Robust Video Matting, the model catalogue (pinned URLs, sizes, SHA-256, licences) and `catalogue::download`; used by the engine under feature `ml` ([extensions.md](extensions.md) § Optional neural tools) |
+| `mlfetch` | L0 | verified model downloads: mirrors, resume, pinned SHA-256, HTTPS in pure Rust (from LightCraft's `lightcraft-fetch`, same authors) |
+| `mlrestore` | L1 | SPAN 2x super-resolution and SCUNet denoising on candle, tiled, plus a PyTorch checkpoint reader (from LightCraft's `lightcraft-restore`) |
+| `mlsearch` | L1 | SigLIP image and text embeddings on candle and a vector index, for semantic search of footage (from LightCraft's `lightcraft-search`) |
 | `codecs` | L2 | container + codec hub: MP4/MOV, MKV, MXF, Ogg and MPEG TS / PS / video elementary stream sources, GOP-aware seeking, decoder registry, audio decoding |
 | `extensions` | L1 | the extension host: `extension.json` manifests, the extensions folder (install from a folder / `.zip` / `.fcext`, remove, list), and the runner for command lists and external programs. Knows nothing of the engine: the front end passes a closure that runs one command ([extensions.md](extensions.md)) |
 | `interchange` | L2 | EDL, FCP7 XML, FCPXML, OTIO, AAF (on `cfb`) and OMF 2.0 import/export (no file I/O; the engine supplies rendered audio essence) ([README](../crates/interchange/README.md)) |

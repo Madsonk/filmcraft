@@ -16,6 +16,7 @@ mod color;
 pub(crate) use color::cdl;
 mod distort;
 mod immersive;
+pub mod l1path;
 mod lights;
 mod stylize;
 mod temporal;

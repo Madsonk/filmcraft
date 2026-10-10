@@ -1,0 +1,15 @@
+{
+  "formatVersion": 1,
+  "id": "upscale-video",
+  "name": "Agrandir la vidéo x2 (SPAN)",
+  "version": "1.0.0",
+  "description": "Creates a new media file with every frame of the selected clip enlarged twice by the SPAN super-resolution network (optional model span-2x, 4 MB, CC BY 4.0): clips generated at 1K, old rushes. The original is not touched; the result (ProRes 422 LT) is imported into the project. Variables: --var preset=prores_hq|h264.",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Agrandir x2",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [ { "id": "clip.upscale", "params": { "preset": "${var.preset|\"prores_lt\"}", "wait": "${blocking}" } } ] }
+    }
+  ]
+}

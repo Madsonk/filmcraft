@@ -20,6 +20,7 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
     crate::panels::extensions::running_window(app, ctx);
     crate::panels::extensions::offers_dialog(app, ctx);
     crate::panels::model_consent::dialog(app, ctx);
+    crate::panels::extensions::licence_dialog(app, ctx);
     crate::panels::extensions::dialog(app, ctx);
     crate::panels::voiceover::show(app, ctx);
     crate::panels::remix::show(app, ctx);
