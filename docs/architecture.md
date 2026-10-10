@@ -24,8 +24,8 @@ Design principles:
  L5  ui-egui · automation · platform
  L4  engine
  L3  render · gpu · export · golden (test-only)
- L2  edit · codecs · interchange · captions · speech
- L1  frame · media · project · audio-dsp · text · extensions
+ L2  edit · codecs · interchange · captions · speech · modelstore · voice · reframe
+ L1  frame · media · project · audio-dsp · text · extensions · nn
  L0  foundation: time · geom · color · bitstream · testkit (dev-dependency only)
      codecs/containers: isobmff · matroska · mxf · cfb · mpegts · ogg · h264 · h264enc · hevc · vp9 · av1 · mpeg2v · prores · dnx · apv · aac · ac3 · opus
 ```
@@ -60,8 +60,12 @@ and `filmcraft-cli`.
 | `project` | L1 | document model, effect definitions, keyframes |
 | `audio-dsp` | L1 | loudness metering (BS.1770 / R128), audio effects, channel layouts (BS.775 up/downmix, 5.1 panner), music remix analysis; no dependencies |
 | `text` | L1 | text engine: font database (bundled OFL fonts + system fonts), shaping (harfrust), bidi, line breaking, paragraph layout, glyph/path rasteriser, strokes ([crates/text/README.md](../crates/text/README.md)) |
+| `nn` | L1 | a small ONNX interpreter in pure Rust (CPU, `f32`; convolutions, GRU, einsum, resize…): runs the neural models below; no dependency, hostile-file safe ([extensions.md](extensions.md) § Neural tools) |
 | `edit` | L2 | pure edit algebra (insert, overwrite, razor, ripple, roll, slip, slide, rate stretch…; text-based editing: `edit::transcript`) |
 | `speech` | L2 | speech-to-text: `Transcriber` trait, Whisper model catalogue + verified downloader (feature `download`), pure-Rust Whisper inference on candle with word timestamps (feature `whisper`), speaker labelling ([transcripts.md](transcripts.md)) |
+| `modelstore` | L2 | catalogue and on-disk store of the optional neural models (DeepFilterNet3, YOLOX, YuNet): URL, SHA-256, size, licence; verified download and `.tar.gz` unpacking (feature `download`) |
+| `voice` | L2 | voice clean-up: DeepFilterNet3 pipeline (STFT, ERB features, deep filtering) on `nn` ([extensions.md](extensions.md) § Neural tools) |
+| `reframe` | L2 | auto-reframe: YOLOX / YuNet detection on `nn`, subject tracking, smooth crop path (dead zone + smoothing spline) |
 | `codecs` | L2 | container + codec hub: MP4/MOV, MKV, MXF, Ogg and MPEG TS / PS / video elementary stream sources, GOP-aware seeking, decoder registry, audio decoding |
 | `extensions` | L1 | the extension host: `extension.json` manifests, the extensions folder (install from a folder / `.zip` / `.fcext`, remove, list), and the runner for command lists and external programs. Knows nothing of the engine: the front end passes a closure that runs one command ([extensions.md](extensions.md)) |
 | `interchange` | L2 | EDL, FCP7 XML, FCPXML, OTIO, AAF (on `cfb`) and OMF 2.0 import/export (no file I/O; the engine supplies rendered audio essence) ([README](../crates/interchange/README.md)) |
@@ -489,9 +493,10 @@ essentialSound.generateDucking   trigger clips' summed level (10 ms hops) → ac
 - **Presets** (our own names and values) per type; user presets are saved in preferences
   (`essentialSound.userPresets`). Music remixing to a duration is Clip ▸ Remix (§5.1.3).
 - **Enhance Speech** is a DSP chain (high-pass, de-mud, presence and air EQ, expander, compressor), not a
-  model: no speech-enhancement model with an open licence that we could ship and verify is bundled.
-  DeepFilterNet (MIT/Apache-2.0, Rust inference via tract) is the candidate for a future optional
-  integration behind a trait.
+  model. The neural option is `audio.denoiseVoice` (crate `voice`): DeepFilterNet3 (MIT OR Apache-2.0),
+  an optional download verified by SHA-256 (`modelstore`), run on `nn`, a small ONNX interpreter of our
+  own (no ONNX runtime, no tract). It bakes a cleaned WAV and re-points the clip, so playback and export
+  stay as cheap as before ([extensions.md](extensions.md) § Neural tools).
 
 ### 5.3 Masks
 

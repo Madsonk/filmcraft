@@ -11,6 +11,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 
 pub mod aaf_omf;
+pub mod auto_reframe;
 pub mod autosave;
 pub mod beats;
 pub mod captions;
@@ -52,6 +53,7 @@ mod summaries;
 pub mod sync;
 pub mod transcript;
 pub mod trim;
+pub mod voice_clean;
 pub mod voiceover;
 pub mod word_captions;
 
@@ -1042,6 +1044,8 @@ mod audio_effects_tests;
 #[cfg(test)]
 mod audio_placement_tests;
 #[cfg(test)]
+mod auto_reframe_tests;
+#[cfg(test)]
 mod autosave_tests;
 #[cfg(test)]
 mod beats_tests;
@@ -1125,6 +1129,8 @@ mod transcript_tests;
 mod trim_tests;
 #[cfg(test)]
 mod vfx_tests;
+#[cfg(test)]
+mod voice_clean_tests;
 #[cfg(test)]
 mod voiceover_tests;
 
