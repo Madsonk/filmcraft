@@ -10,6 +10,8 @@
 //! `acceptLicense:true` and says what the licence is, how big the download is and where it comes from.
 //! Models live in `FILMCRAFT_ML_MODELS_DIR`, else `<data dir>/models/ml/<id>/`.
 
+#![cfg_attr(not(feature = "ml"), allow(unused_imports, dead_code))] // without `ml` only the command stubs are compiled
+
 use std::path::PathBuf;
 
 use filmcraft_audio_dsp::beatgrid::Grid;
@@ -160,7 +162,7 @@ mod on {
         let out: Arc<Mutex<Option<Value>>> = Arc::default();
         let out2 = out.clone();
         let run = move || {
-            let t0 = std::time::Instant::now();
+            let t0 = web_time::Instant::now();
             let r = work(&prog);
             let secs = t0.elapsed().as_secs_f64();
             let r = match r {
@@ -236,7 +238,7 @@ mod on {
             job.progress.total.store(m.size(), Ordering::Relaxed);
             let (prog, res) = (job.progress.clone(), job.result.clone());
             let run = move || {
-                let t0 = std::time::Instant::now();
+                let t0 = web_time::Instant::now();
                 let r = catalogue::download(m, &dir, &prog.cancel, &mut |pr| {
                     prog.total.store(pr.total, Ordering::Relaxed);
                     prog.done.store(pr.done, Ordering::Relaxed);
@@ -275,7 +277,7 @@ mod on {
             );
         }
         let cancel = std::sync::atomic::AtomicBool::new(false);
-        let t0 = std::time::Instant::now();
+        let t0 = web_time::Instant::now();
         catalogue::download(m, &dir, &cancel, &mut |_| {}).map_err(|e| EngineError::Other(format!("{}: {e}", m.title)))?;
         let dest = m.dir(&dir);
         let _ = std::fs::write(dest.join("LICENSE.txt"), licence_note);

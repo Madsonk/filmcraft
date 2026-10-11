@@ -499,6 +499,8 @@ detected by COCO "person"; the new aspect needs the sequence at that ratio (see 
 
 ## Optional neural tools (build feature `ml`)
 
+> Two model stores coexist in this build, by origin: `models.list` / `models.install` (feature `models`, folder `<data folder>/models/<id>/`) serve the voice clean-up and auto-reframe models of the section above; `ml.models` / `ml.install` (feature `ml`, folder `<data folder>/models/ml/<id>/`) serve the tools below. Both ask for the licence before downloading and check a pinned SHA-256; they were written separately and have not been merged into one catalogue.
+
 Seven extensions (Ralenti RIFE, Agrandir x2, Voix et musique, Détourage de personne, Recherche de rushes,
 Stabilisation L1, Modèles IA optionnels) and the « Beat This » entries of Beat Edit drive commands of the engine that run
 neural networks in **pure Rust on candle** (Metal on macOS, else the CPU; `FILMCRAFT_ML_DEVICE=cpu` forces the CPU).

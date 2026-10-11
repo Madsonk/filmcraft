@@ -150,7 +150,7 @@ mod on {
         let wait = bool_p(p, "wait").unwrap_or(true);
         crate::ml_tools::run_job(s, "Index rushes".into(), total, wait, move |prog| {
             use std::sync::atomic::Ordering;
-            let t0 = std::time::Instant::now();
+            let t0 = web_time::Instant::now();
             let (mut done, mut reused, mut frames_total) = (0, 0, 0usize);
             let mut report = Vec::new();
             for (id, name, path, src) in work {

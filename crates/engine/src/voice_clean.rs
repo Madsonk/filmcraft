@@ -274,12 +274,12 @@ fn denoise_voice(s: &mut Session, p: &Value) -> Result<Value> {
     let provider = s.media.provider(s.project.clone(), s.services.clone());
     let dir = out_dir(s, p);
     let n0 = s.history.undo.len();
-    let t_all = std::time::Instant::now();
+    let t_all = web_time::Instant::now();
     let mut report = Vec::new();
     let mut lines = Vec::new();
     let mut taken: std::collections::HashSet<String> = s.project.items.values().map(|i| i.name.clone()).collect();
     for job in &jobs {
-        let t0 = std::time::Instant::now();
+        let t0 = web_time::Instant::now();
         let m0 = job.source_in.to_units_floor(i64::from(sr));
         let len = (job.source_in + job.duration).to_units_floor(i64::from(sr)) - m0 + 1;
         let src = filmcraft_render::SourceProvider::source(&provider, job.item).ok_or_else(|| bad(CMD, "le média du clip est hors ligne"))?;

@@ -125,7 +125,7 @@ fn translate(s: &mut Session, p: &Value) -> Result<Value> {
         let tr = translator(model, &dir)?;
         let beams = u64_p(p, "beams").map(|n| n.clamp(1, 8) as usize).unwrap_or(4);
         let max_chars = u64_p(p, "maxChars").map(|n| n.clamp(10, 100) as usize).unwrap_or(42);
-        let clock = std::time::Instant::now();
+        let clock = web_time::Instant::now();
         let mut out: Vec<(ClipId, String)> = Vec::with_capacity(todo.len());
         for (id, text) in &todo {
             let t = tr.translate(text, beams).map_err(|e| EngineError::Other(format!("translation failed: {e}")))?;

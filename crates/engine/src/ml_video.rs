@@ -234,7 +234,7 @@ pub(crate) mod on {
                     let _ = std::fs::create_dir_all(d);
                 }
             }
-            let t0 = std::time::Instant::now();
+            let t0 = web_time::Instant::now();
             let r = work(&prog, &outs);
             let secs = t0.elapsed().as_secs_f64();
             let r = match r {

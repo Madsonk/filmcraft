@@ -222,7 +222,7 @@ fn plan_clip(s: &Session, job: &Job, p: &Value, out: (u32, u32), root: &std::pat
     let mut prev: Option<Subject> = None;
     let mut samples: Vec<(f64, Option<Subject>, bool)> = Vec::with_capacity(n);
     let mut prev_thumb: Option<Vec<f32>> = None;
-    let t_all = std::time::Instant::now();
+    let t_all = web_time::Instant::now();
     for k in 0..n {
         let rel = (k as f64 / det_fps).min((dur - 0.04).max(0.0));
         let media_t = job.source_in + Tick::from_seconds_f64(rel * job.speed);
