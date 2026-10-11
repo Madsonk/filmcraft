@@ -34,14 +34,16 @@ pub enum Language {
     /// Persisted as `pt-br` (the blanket `rename_all` would produce `ptbr`).
     #[serde(rename = "pt-br")]
     PtBr,
+    Fr,
 }
 
 static JAPANESE: OnceLock<Catalog> = OnceLock::new();
 static SPANISH: OnceLock<Catalog> = OnceLock::new();
 static PORTUGUESE: OnceLock<Catalog> = OnceLock::new();
+static FRENCH: OnceLock<Catalog> = OnceLock::new();
 
 impl Language {
-    pub const ALL: [Self; 4] = [Self::En, Self::Ja, Self::Es, Self::PtBr];
+    pub const ALL: [Self; 5] = [Self::En, Self::Ja, Self::Es, Self::PtBr, Self::Fr];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -49,6 +51,7 @@ impl Language {
             Self::Ja => "日本語",
             Self::Es => "Español",
             Self::PtBr => "Português (Brasil)",
+            Self::Fr => "Français",
         }
     }
 
@@ -58,6 +61,7 @@ impl Language {
             "ja" => Some(Self::Ja),
             "es" => Some(Self::Es),
             "pt-br" => Some(Self::PtBr),
+            "fr" => Some(Self::Fr),
             _ => None,
         }
     }
@@ -66,7 +70,7 @@ impl Language {
     /// (BCP 47 or POSIX locale tags such as `es-419`, `pt_BR.UTF-8`, most preferred first) that the
     /// interface has, else English. Any Portuguese gets the Brazilian catalog, the only one there is.
     pub fn from_locales(tags: &[String]) -> Self {
-        const PRIMARY: [(&str, Language); 4] = [("en", Language::En), ("ja", Language::Ja), ("es", Language::Es), ("pt", Language::PtBr)];
+        const PRIMARY: [(&str, Language); 5] = [("en", Language::En), ("ja", Language::Ja), ("es", Language::Es), ("pt", Language::PtBr), ("fr", Language::Fr)];
         tags.iter()
             .find_map(|tag| {
                 let primary = tag.split(['-', '_', '.', '@']).next().unwrap_or_default();
@@ -82,6 +86,7 @@ impl Language {
             Self::Ja => "ja",
             Self::Es => "es",
             Self::PtBr => "pt-br",
+            Self::Fr => "fr",
         }
     }
 
@@ -92,6 +97,7 @@ impl Language {
             Self::Ja => Some(JAPANESE.get_or_init(|| Catalog::parse(include_str!("ja.tsv")))),
             Self::Es => Some(SPANISH.get_or_init(|| Catalog::parse(include_str!("es.tsv")))),
             Self::PtBr => Some(PORTUGUESE.get_or_init(|| Catalog::parse(include_str!("pt-br.tsv")))),
+            Self::Fr => Some(FRENCH.get_or_init(|| Catalog::parse(include_str!("fr.tsv")))),
         }
     }
 
@@ -246,7 +252,7 @@ mod tests {
 
     #[test]
     fn catalogs_are_well_formed() {
-        for (code, text) in [("es", include_str!("es.tsv")), ("ja", include_str!("ja.tsv")), ("pt-br", include_str!("pt-br.tsv"))] {
+        for (code, text) in [("es", include_str!("es.tsv")), ("ja", include_str!("ja.tsv")), ("pt-br", include_str!("pt-br.tsv")), ("fr", include_str!("fr.tsv"))] {
             let (entries, errors) = catalog::parse_entries(text);
             assert!(errors.is_empty(), "{code}: {errors:?}");
             for (i, (ctx, en, tr)) in entries.iter().enumerate() {
@@ -268,6 +274,9 @@ mod tests {
         assert_eq!(Language::PtBr.tr("File"), "Arquivo");
         assert_eq!(Language::PtBr.tr("meu video.mp4"), "meu video.mp4");
         assert_eq!(Language::PtBr.name(), "Português (Brasil)");
+        assert_eq!(Language::Fr.tr("File"), "Fichier");
+        assert_eq!(Language::Fr.tr("ma video.mp4"), "ma video.mp4");
+        assert_eq!(Language::Fr.name(), "Français");
         for l in Language::ALL {
             assert_eq!(Language::parse(l.code()), Some(l));
             let json = serde_json::to_string(&l).unwrap();
@@ -591,6 +600,45 @@ mod tests {
         out
     }
 
+    /// The French catalog covers everything the Spanish one does: every menu label, every `tl!` literal and
+    /// every dynamic name (ext-all-v2, « aucune chaîne non traduite »).
+    #[test]
+    fn french_translates_everything_spanish_does() {
+        let app = crate::FilmcraftApp::new(filmcraft_engine::Session::default());
+        let mut missing: Vec<String> = Vec::new();
+        let mut need = |text: &str| {
+            if translatable(text) && !Language::Fr.has(text) && !missing.iter().any(|m| m == text) {
+                missing.push(text.to_string());
+            }
+        };
+        for top in crate::menus::MENUS {
+            need(top);
+        }
+        for it in crate::menus::menu_items(&app) {
+            need(&it.label);
+            for p in &it.path {
+                need(p);
+            }
+        }
+        for (_, text) in sources() {
+            for lit in tl_literals(&text) {
+                need(&lit);
+            }
+        }
+        for n in dynamic_names() {
+            need(&n);
+        }
+        // and every Spanish key: a string the Spanish catalog translates must have its French line too
+        let (entries, _) = catalog::parse_entries(include_str!("es.tsv"));
+        for (ctx, en, _) in entries {
+            if ctx.is_empty() {
+                need(&en);
+            }
+        }
+        missing.sort();
+        assert!(missing.is_empty(), "untranslated French strings: {missing:#?}");
+    }
+
     #[test]
     fn spanish_translates_dynamic_names() {
         let mut missing: Vec<String> = dynamic_names().into_iter().filter(|n| !Language::Es.has(n)).collect();
@@ -638,6 +686,8 @@ mod tests {
         assert_eq!(l(&["ES"]), Language::Es);
         assert_eq!(l(&["ja-JP"]), Language::Ja);
         assert_eq!(l(&["pt-BR"]), Language::PtBr);
+        assert_eq!(l(&["fr-FR"]), Language::Fr);
+        assert_eq!(l(&["fr_CA.UTF-8", "en"]), Language::Fr);
         assert_eq!(l(&["pt_PT.UTF-8@euro"]), Language::PtBr);
         assert_eq!(l(&["fr-FR", "de", "es-MX", "ja"]), Language::Es, "the first one the interface has");
         assert_eq!(l(&["en-GB", "es"]), Language::En);
