@@ -234,6 +234,8 @@ struct Job {
     source_in: Tick,
     duration: Tick,
     channels: Vec<usize>,
+    /// The clip's audio stream (0.5.0 multi-stream audio): the one that is cleaned.
+    audio_stream: usize,
 }
 
 fn targets(s: &Session, p: &Value, cmd: &str) -> Result<Vec<Job>> {
@@ -256,7 +258,7 @@ fn targets(s: &Session, p: &Value, cmd: &str) -> Result<Vec<Job>> {
         }
         let channels = if it.source_channels.is_empty() { vec![0, 1] } else { it.source_channels.iter().map(|c| usize::from(*c)).take(2).collect() };
         let name = s.project.items.get(&it.item).map(|i| i.name.clone()).unwrap_or_else(|| it.name.clone());
-        jobs.push(Job { clip: c, item: it.item, name, source_in: it.source_in, duration: it.duration, channels });
+        jobs.push(Job { clip: c, item: it.item, name, source_in: it.source_in, duration: it.duration, channels, audio_stream: it.audio_stream });
     }
     if jobs.is_empty() {
         return Err(bad(cmd, "select the audio clip(s) to clean (or pass `clips`)"));
@@ -283,7 +285,7 @@ fn denoise_voice(s: &mut Session, p: &Value) -> Result<Value> {
         let m0 = job.source_in.to_units_floor(i64::from(sr));
         let len = (job.source_in + job.duration).to_units_floor(i64::from(sr)) - m0 + 1;
         let src = filmcraft_render::SourceProvider::source(&provider, job.item).ok_or_else(|| bad(CMD, "le média du clip est hors ligne"))?;
-        let buf = src.audio(m0, len.max(0) as usize, sr).map_err(|e| bad(CMD, format!("lecture de l'audio du clip impossible : {e}")))?;
+        let buf = src.audio_stream(job.audio_stream, m0, len.max(0) as usize, sr).map_err(|e| bad(CMD, format!("lecture de l'audio du clip impossible : {e}")))?;
         let mut chans: Vec<Vec<f32>> = job.channels.iter().filter_map(|c| buf.channels.get(*c).or_else(|| buf.channels.first()).cloned()).collect();
         if job.channels.len() == 2 && buf.channels.len() == 1 {
             chans.truncate(1);
@@ -331,6 +333,7 @@ fn denoise_voice(s: &mut Session, p: &Value) -> Result<Value> {
             it.item = item;
             it.source_in = Tick::ZERO;
             it.source_channels.clear();
+            it.audio_stream = 0; // the cleaned file has a single audio stream
             Ok(())
         })?;
         let secs = len.max(0) as f64 / f64::from(sr);
