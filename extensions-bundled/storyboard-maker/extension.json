@@ -3,6 +3,7 @@
   "id": "storyboard-maker",
   "name": "Storyboard Maker",
   "version": "1.0.0",
+  "category": "export",
   "description": "One still per shot (clips of the first video track that has clips) or per marker of the active sequence, then a contact sheet with titles and timecodes (PNG and PDF). Stills come from the Program monitor and are written next to the saved project, in <project>-storyboard/. It reads the saved .fcproj, so save first. The sheet needs Python 3 with Pillow (pip3 install pillow); the stills do not. Programs run with your user's permissions.",
   "author": "FilmCraft",
   "entries": [

@@ -175,18 +175,22 @@ fn the_menu_lists_extensions_alphabetically_with_submenus_and_management_items()
     assert_eq!(
         l,
         vec![
+            // extensions without a category: the "Autres" group (a disabled heading), alphabetical
+            (ex(&["Extensions"]), "Autres".into(), "ext.group.other".into()),
             (ex(&["Extensions"]), "Alpha Tool".into(), "ext:alpha:0".into()),
             (ex(&["Extensions", "Beta Tool"]), "First".into(), "ext:beta:0".into()),
             (ex(&["Extensions", "Beta Tool"]), "Second".into(), "ext:beta:1".into()),
             (ex(&["Extensions"]), "zulu tool".into(), "ext:zulu:0".into()),
+            (ex(&["Extensions"]), "Gestion".into(), "ext.group.management".into()),
             (ex(&["Extensions"]), "Installer une extension…".into(), "extensions.install".into()),
             (ex(&["Extensions"]), "Gérer les extensions…".into(), "extensions.manage".into()),
             (ex(&["Extensions"]), "Recharger les extensions".into(), "extensions.reload".into()),
         ],
         "{items:?}"
     );
-    assert_eq!(items[4]["separator_before"], json!(true), "a separator sets the management items apart");
-    assert!(items[..4].iter().all(|m| m.get("separator_before").is_none()));
+    assert_eq!(items[5]["separator_before"], json!(true), "a separator sets the Gestion group apart");
+    assert!(items[..5].iter().all(|m| m.get("separator_before").is_none()));
+    assert!(items[0]["enabled"] == json!(false) && items[5]["enabled"] == json!(false), "headings are not commands");
     // between Window and Help, as a real top-level menu
     let all = d.ok("ui.menu.list", json!({}));
     assert!(all.as_array().unwrap().iter().any(|m| m["path"] == json!(["Window"])));

@@ -3,6 +3,8 @@
   "id": "rife-slowmo",
   "name": "Ralenti et images par seconde (RIFE)",
   "version": "1.0.0",
+  "category": "picture",
+  "models": ["rife-v4"],
   "description": "Creates a new media file from the selected clip with images invented by the RIFE v4 network (optional model rife-v4, 12 MB, MIT): a clean slow motion (x2, x4, x8) or a new frame rate (24 to 60 i/s). The original is not touched; the result (ProRes 422 LT) is imported into the project. Slow motion drops the audio. Variables: --var fps=60, --var slow=4, --var preset=prores_hq|h264.",
   "author": "FilmCraft",
   "entries": [

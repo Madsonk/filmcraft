@@ -3,6 +3,8 @@
   "id": "nettoyage-voix",
   "name": "Nettoyage de la voix",
   "version": "1.0.0",
+  "category": "audio",
+  "models": ["deepfilternet3"],
   "description": "Removes background noise from the selected audio clips with DeepFilterNet3, a speech-enhancement network that runs on this computer (audio.denoiseVoice). The cleaned audio is written next to the project as a WAV, the clip is pointed at it, and one Undo brings the original back. The model (8 MB, MIT or Apache-2.0) is an optional download: the last entry asks before fetching it.",
   "author": "FilmCraft",
   "entries": [

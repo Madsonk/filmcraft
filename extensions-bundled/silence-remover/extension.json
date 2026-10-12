@@ -3,6 +3,7 @@
   "id": "silence-remover",
   "name": "Silence Remover",
   "version": "1.0.0",
+  "category": "editing",
   "description": "Cuts the silences out of the active sequence. The mix is measured in 10 ms windows (sequence.removeSilence), the quiet/loud threshold comes from the recording's own noise floor, and the quiet stretches are ripple-deleted on every unlocked track. No transcript or speech model is needed. One undo step.",
   "author": "FilmCraft",
   "entries": [

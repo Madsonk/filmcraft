@@ -41,10 +41,17 @@ pub struct InstallReport {
     pub runs_programs: bool,
 }
 
-/// Which bundled extensions were already offered to this user (so a removed one stays removed).
+/// Which bundled extensions were already offered to this user (so a removed one stays removed), and
+/// until when the question about the ones that start a program is put off ("Plus tard").
 #[derive(Default, Serialize, Deserialize)]
 struct Seeded {
     ids: Vec<String>,
+    /// Unix time until which no offer is asked at launch (`snooze_offers`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    snoozed_until: Option<u64>,
+    /// The app version that was running when "Plus tard" was chosen: a new version asks again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    snoozed_version: Option<String>,
 }
 
 const SEEDED_FILE: &str = ".bundled-seeded.json";
@@ -247,6 +254,21 @@ impl ExtensionStore {
         Ok(())
     }
 
+    /// "Plus tard": no offer is asked at launch before `until_unix`, unless the app version changes
+    /// (the shipped extensions may have changed with it).
+    pub fn snooze_offers(&self, until_unix: u64, version: &str) -> Result<()> {
+        let mut seeded = self.seeded();
+        seeded.snoozed_until = Some(until_unix);
+        seeded.snoozed_version = Some(version.to_string());
+        self.save_seeded(&seeded).map_err(ExtError::Io)
+    }
+
+    /// Is the launch question still put off at `now_unix` for `version`?
+    pub fn offers_snoozed(&self, now_unix: u64, version: &str) -> bool {
+        let seeded = self.seeded();
+        seeded.snoozed_until.is_some_and(|until| now_unix < until) && seeded.snoozed_version.as_deref() == Some(version)
+    }
+
     fn seeded(&self) -> Seeded {
         fs::read_to_string(self.root.join(SEEDED_FILE)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
     }
@@ -386,6 +408,20 @@ mod tests {
     }
 
     /// An extension that starts a program is offered, never installed behind the user's back.
+    #[test]
+    fn later_puts_the_launch_question_off_for_a_while_and_for_this_version() {
+        let root = temp("snooze");
+        let store = ExtensionStore::new(root.join("ext"));
+        assert!(!store.offers_snoozed(1_000, "1.0"));
+        store.snooze_offers(2_000, "1.0").unwrap();
+        assert!(store.offers_snoozed(1_999, "1.0"), "before the deadline, same version: no question");
+        assert!(!store.offers_snoozed(2_000, "1.0"), "deadline reached: ask again");
+        assert!(!store.offers_snoozed(1_000, "1.1"), "a new version asks again");
+        // the marker file still lists the answered ids
+        store.decline_offer("x").unwrap();
+        assert!(store.offers_snoozed(1_500, "1.0") && store.seeded().ids == ["x"]);
+    }
+
     #[test]
     fn bundled_extensions_that_run_programs_wait_for_a_yes() {
         let store = ExtensionStore::new(temp("store").join("extensions"));

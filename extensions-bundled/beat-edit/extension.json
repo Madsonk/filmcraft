@@ -3,6 +3,8 @@
   "id": "beat-edit",
   "name": "Beat Edit",
   "version": "1.2.0",
+  "category": "editing",
+  "models": ["beat-this-final0"],
   "description": "Markers on, or cuts at, the beats of a music clip (65-172 BPM, one steady tempo; the tempo octave is chosen by how well the beats explain the onsets). The music is the selected audio clip, else the first one. Variables: --var bpm=90 (the tempo octave), every, offset, subdivide, downbeat=false. The « Beat This » entries use the neural tracker (optional model beat-this-final0: see Modèles IA optionnels).",
   "author": "FilmCraft",
   "entries": [

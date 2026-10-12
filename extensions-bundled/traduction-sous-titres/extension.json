@@ -3,6 +3,7 @@
   "id": "traduction-sous-titres",
   "name": "Traduction des sous-titres",
   "version": "1.0.0",
+  "category": "captions",
   "description": "Translates a caption track offline, French to English or English to French, into a second caption track with the same timings (Opus-MT tc-big running on the CPU; nothing leaves the computer). The model is a one-time download of about 460 MB per direction (CC-BY-4.0, source and licence shown before): transcript.downloadModel {model:opus-mt-tc-big-fr-en} or opus-mt-tc-big-en-fr, or the Speech models settings. About a second per caption.",
   "author": "FilmCraft",
   "entries": [

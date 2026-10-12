@@ -3,6 +3,7 @@
   "id": "sous-titres-animes",
   "name": "Sous-titres animés",
   "version": "1.0.0",
+  "category": "captions",
   "description": "Word-by-word animated subtitles drawn by FilmCraft's own graphics: karaoke (the spoken word takes the accent colour) or pop (one word at a time, springing in). Uses the word timestamps of the transcript (built-in Whisper), puts graphic clips with keyframes on a new video track, one undo step. Variables: --var accent=#ff3366, color, words (1-6), y (0-1, baseline height), font, language.",
   "author": "FilmCraft",
   "entries": [

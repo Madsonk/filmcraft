@@ -59,8 +59,26 @@ pub struct Manifest {
     pub description: String,
     #[serde(default)]
     pub author: String,
+    /// Where the Extensions menu files it: one of [`CATEGORIES`] (`editing`, `audio`, `captions`,
+    /// `picture`, `export`, `management`); anything else or nothing = the "Autres" group.
+    #[serde(default)]
+    pub category: String,
+    /// Ids of the optional neural models its entries use (`models.list` / `ml.models`): the menu shows
+    /// whether each is installed (✓) or still to download (↓).
+    #[serde(default)]
+    pub models: Vec<String>,
     pub entries: Vec<Entry>,
 }
+
+/// The groups of the Extensions menu, in menu order: (id in `category`, French heading).
+pub const CATEGORIES: &[(&str, &str)] = &[
+    ("editing", "Montage"),
+    ("audio", "Audio"),
+    ("captions", "Sous-titres et langue"),
+    ("picture", "Image et IA"),
+    ("export", "Export"),
+    ("management", "Gestion"),
+];
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]

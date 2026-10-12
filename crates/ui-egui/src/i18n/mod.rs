@@ -252,7 +252,9 @@ mod tests {
 
     #[test]
     fn catalogs_are_well_formed() {
-        for (code, text) in [("es", include_str!("es.tsv")), ("ja", include_str!("ja.tsv")), ("pt-br", include_str!("pt-br.tsv")), ("fr", include_str!("fr.tsv"))] {
+        for (code, text) in
+            [("es", include_str!("es.tsv")), ("ja", include_str!("ja.tsv")), ("pt-br", include_str!("pt-br.tsv")), ("fr", include_str!("fr.tsv"))]
+        {
             let (entries, errors) = catalog::parse_entries(text);
             assert!(errors.is_empty(), "{code}: {errors:?}");
             for (i, (ctx, en, tr)) in entries.iter().enumerate() {

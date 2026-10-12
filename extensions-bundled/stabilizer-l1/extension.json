@@ -3,6 +3,7 @@
   "id": "stabilizer-l1",
   "name": "Stabilisation L1 (trajectoire optimale)",
   "version": "1.0.0",
+  "category": "picture",
   "description": "Applies Warp Stabilizer with the L1-optimal camera path (Grundmann et al., CVPR 2011, re-implemented from the paper): the path is made of still, pan and ease segments instead of a Gaussian blur of the shake, within the crop window allowed by « Crop Less <-> Smooth More ». Use « Stabilize, Crop, Auto-scale » framing (default) to hide the borders. No model, no download. Applies to the first selected clip.",
   "author": "FilmCraft",
   "entries": [

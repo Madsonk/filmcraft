@@ -16,6 +16,7 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
     crate::panels::monitor_view::dialogs(app, ctx);
     crate::panels::graphics::dialogs(app, ctx);
     crate::panels::workspaces::dialogs(app, ctx);
+    crate::panels::extensions::refresh_models(app);
     crate::panels::extensions::pump(app, ctx);
     crate::panels::extensions::running_window(app, ctx);
     crate::panels::extensions::offers_dialog(app, ctx);

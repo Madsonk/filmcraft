@@ -3,6 +3,7 @@
   "id": "autoedit",
   "name": "AutoEdit",
   "version": "1.1.0",
+  "category": "editing",
   "description": "A first cut of talking footage: transcribes (built-in Whisper), removes the hesitations it wrote down (French list: euh, heu, hum, ben, bah…; an « eux » only when it stands alone between pauses), then the silences. One undo step per stage, reported in the status bar. Whisper omits or mis-spells some hesitations: only written ones are cut by word. List: parameters fillers / also / conditional of transcript.removeFillers.",
   "author": "FilmCraft",
   "entries": [

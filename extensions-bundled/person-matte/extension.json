@@ -3,6 +3,8 @@
   "id": "person-matte",
   "name": "Détourage de personne (RVM)",
   "version": "1.0.0",
+  "category": "picture",
+  "models": ["rvm-mobilenetv3"],
   "description": "Cuts the person out of the selected clip with Robust Video Matting (optional model rvm-mobilenetv3, 15 MB, GPL-3.0: PERSONAL USE ONLY, see the licence dialog). Creates a new video file: a black and white matte (white = the person), or the person over a flat colour (green by default). The matte is stable from one frame to the next (the network keeps a state). Variables: --var background=00B140.",
   "author": "FilmCraft",
   "entries": [

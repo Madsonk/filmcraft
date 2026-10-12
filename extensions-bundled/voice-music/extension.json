@@ -3,6 +3,8 @@
   "id": "voice-music",
   "name": "Voix et musique (HT Demucs)",
   "version": "1.0.0",
+  "category": "audio",
+  "models": ["htdemucs"],
   "description": "Splits the sound of the selected clip with the HT Demucs network (optional model htdemucs, 84 MB, MIT): the voice alone, or everything but the voice (the music without the voice), or the four stems (drums, bass, other, vocals). The results are new 32-bit float WAV files imported into the project; the original is not touched. About 2x real time on Metal. Variables: --var stems=vocals,rest,drums,bass,other.",
   "author": "FilmCraft",
   "entries": [

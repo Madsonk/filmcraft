@@ -3,6 +3,8 @@
   "id": "reframe-vertical",
   "name": "Reframe vertical",
   "version": "1.0.0",
+  "category": "picture",
+  "models": ["yolox-nano"],
   "description": "Re-frames the selected video clips on their main subject (people with YOLOX, faces with YuNet when installed): a 16:9 shot fills a 9:16, 1:1 or 4:5 frame, the crop follows the subject with a smooth pan, as Motion Position keyframes (sequence.autoReframe). One undo step. The detection models are optional downloads (the last two entries ask before fetching them).",
   "author": "FilmCraft",
   "entries": [

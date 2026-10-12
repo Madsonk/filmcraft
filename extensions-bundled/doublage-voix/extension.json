@@ -3,6 +3,7 @@
   "id": "doublage-voix",
   "name": "Doublage vocal",
   "version": "1.0.0",
+  "category": "captions",
   "description": "Dubs the selected clip: its speech (subtitle track or transcript) is translated and re-spoken by a Voicebox voice, fitted to the original timing (speed change of at most 15 %, or a shorter rewording), and laid on a new audio track while the original voice is lowered. Voicebox (local) is started if needed; the voice list comes from it. Save the project first. Needs ffmpeg; programs run with your user's permissions.",
   "author": "FilmCraft",
   "entries": [

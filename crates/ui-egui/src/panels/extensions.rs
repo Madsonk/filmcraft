@@ -1,9 +1,14 @@
 //! The Extensions menu and its manager (`filmcraft-extensions`, docs/extensions.md).
 //!
-//! * **Menu.** A top-level *Extensions* menu: one item per installed extension, in alphabetical order
-//!   (a submenu named after the extension when it has several entries), then *Installer une extension…*,
-//!   *Gérer les extensions…* and *Recharger les extensions*. Items are disabled when the entry's
-//!   `requires` (project, sequence, selection) are not met.
+//! * **Menu.** A top-level *Extensions* menu grouped by the manifest's `category` (Montage · Audio ·
+//!   Sous-titres et langue · Image et IA · Export · Gestion, a disabled heading and a separator above
+//!   each group), one item per installed extension in alphabetical order inside a group (a submenu
+//!   named after the extension when it has several entries), then *Installer une extension…*, *Gérer
+//!   les extensions…* and *Recharger les extensions* under Gestion. Items are disabled when the entry's
+//!   `requires` (project, sequence, selection) are not met. An extension whose manifest lists `models`
+//!   shows the state of each (✓ installé / ↓ à télécharger, with the size) at the top of its submenu,
+//!   or after its name when it has a single entry ([`ModelState`], refreshed from `models.list` and
+//!   `ml.models`).
 //! * **Commands** (menu, control channel, MCP bridge): `extensions.list`, `extensions.run {extension,
 //!   entry?, vars?, background?}`, `extensions.status`, `extensions.cancel`, `extensions.install {path?,
 //!   folder?}`, `extensions.remove {id}`, `extensions.reload`, `extensions.manage`, `extensions.offers`,
@@ -13,7 +18,12 @@
 //!   file or a folder, remove, reload, the shipped extensions not installed yet, the last run's result.
 //!   Automation ids `extensions.dialog.*`.
 //! * **Shipped extensions that start a program** are never installed silently: [`offers_dialog`] asks
-//!   (`extensions.offer.*`), and the manager lists them with a warning.
+//!   (`extensions.offer.*`) — a small window in the corner, once the project is on screen, never over
+//!   the dialogs; *Plus tard* puts the question off for seven days or until the next version
+//!   (`ExtensionStore::snooze_offers`) — and the manager lists them with a warning.
+//! * **Optional neural models** are installed from one dialog ([`licence_dialog`] for the `ml.*`
+//!   catalogue, `model_consent` for `models.*`): what the model does, download size, licence in one
+//!   line with its link, an Install button, then a progress window with Cancel.
 //!
 //! **Running.** A menu or manager run goes to a worker thread (`Running`): the entry's commands are asked
 //! of the window, which serves them between two frames through [`crate::menus::invoke`] (so UI commands
@@ -28,6 +38,7 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use filmcraft_extensions::manifest::CATEGORIES;
 use filmcraft_extensions::{Extension, ExtensionStore, Host, Listed, Offer, RunContext, RunReport};
 use serde_json::{Value, json};
 
@@ -65,6 +76,45 @@ pub struct ExtensionsState {
     /// An optional neural model whose licence must be accepted before it is downloaded (id, text):
     /// set when an entry's `ml.install` was refused for lack of `acceptLicense`.
     ml_licence: Option<(String, String)>,
+    /// A download started from [`licence_dialog`]: (model id, job id), shown with progress and Cancel.
+    ml_download: Option<(String, u64)>,
+    /// The optional neural models (both catalogues) and whether they are installed.
+    models: Vec<ModelState>,
+    /// When `models` was last read (a few seconds between reads: the menu shows the state live).
+    models_checked: Option<Instant>,
+    /// When the launch question became due: it is shown a moment later, once the project is drawn.
+    offer_due: Option<Instant>,
+}
+
+/// One optional neural model as the menu and the licence dialog describe it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModelState {
+    pub id: String,
+    pub name: String,
+    pub installed: bool,
+    pub bytes: u64,
+    /// What FilmCraft uses it for.
+    pub use_for: String,
+    pub licence: String,
+    pub licence_url: String,
+    pub source: String,
+    pub personal_only: bool,
+}
+
+/// How long "Plus tard" puts the launch question off.
+const SNOOZE: Duration = Duration::from_secs(7 * 24 * 3600);
+/// The launch question waits this long after it becomes due, so the project is drawn first.
+const OFFER_DELAY: Duration = Duration::from_millis(1500);
+/// The version the snooze is tied to (the workspace version: the app's).
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+fn now_unix() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// `7,9 Mo`, `1,6 Go`.
+pub fn size_text(bytes: u64) -> String {
+    if bytes >= 1_000_000_000 { format!("{:.1} Go", bytes as f64 / 1e9).replace('.', ",") } else { format!("{:.1} Mo", bytes as f64 / 1e6).replace('.', ",") }
 }
 
 /// What the worker thread running an entry asks of the window, and its end.
@@ -140,13 +190,32 @@ impl ExtensionsState {
         r
     }
 
-    /// Re-read the shipped extensions that are not installed; ask about the ones not yet answered.
+    /// Re-read the shipped extensions that are not installed; ask about the ones not yet answered,
+    /// unless "Plus tard" was chosen in this session or in the last seven days with this version.
     pub fn refresh_offers(&mut self) {
         self.offers = match (&self.store, &self.bundled_dir) {
             (Some(s), Some(d)) => s.offers(d),
             _ => Vec::new(),
         };
-        self.offer_prompt = !self.offer_snoozed && self.offers.iter().any(|o| o.runs_programs && !o.answered);
+        let snoozed = self.offer_snoozed || self.store.as_ref().is_some_and(|s| s.offers_snoozed(now_unix(), APP_VERSION));
+        self.offer_prompt = !snoozed && self.offers.iter().any(|o| o.runs_programs && !o.answered);
+        if !self.offer_prompt {
+            self.offer_due = None;
+        }
+    }
+
+    /// The optional neural models and their state (see [`refresh_models`]).
+    pub fn models(&self) -> &[ModelState] {
+        &self.models
+    }
+
+    pub fn model(&self, id: &str) -> Option<&ModelState> {
+        self.models.iter().find(|m| m.id == id)
+    }
+
+    /// Forget the model states: the next frame reads them again (after an install).
+    pub fn models_stale(&mut self) {
+        self.models_checked = None;
     }
 
     /// An entry is running in the background.
@@ -186,9 +255,88 @@ fn item_id(ext: &str, entry: usize) -> String {
     format!("ext:{ext}:{entry}")
 }
 
-/// Add the Extensions menu to the menu tree.
+/// Read the state of the optional neural models from both catalogues (`models.list`: voice clean-up
+/// and auto-reframe; `ml.models`: the `ml` feature). Cheap (file sizes), done every few seconds so the
+/// menu follows an install made elsewhere; the menu is rebuilt when something changed.
+pub fn refresh_models(app: &mut FilmcraftApp) {
+    if app.extensions.models_checked.is_some_and(|t| t.elapsed() < Duration::from_secs(3)) {
+        return;
+    }
+    app.extensions.models_checked = Some(Instant::now());
+    let mut out = Vec::new();
+    if let Ok(v) = app.session.execute("models.list", json!({})) {
+        for m in v["models"].as_array().into_iter().flatten() {
+            out.push(ModelState {
+                id: m["id"].as_str().unwrap_or_default().to_string(),
+                name: m["name"].as_str().unwrap_or_default().to_string(),
+                installed: m["installed"].as_bool().unwrap_or(false),
+                bytes: m["size"].as_u64().unwrap_or(0),
+                use_for: m["task"].as_str().unwrap_or_default().to_string(),
+                licence: m["license"].as_str().unwrap_or_default().to_string(),
+                licence_url: m["licenseUrl"].as_str().unwrap_or_default().to_string(),
+                source: m["source"].as_str().unwrap_or_default().to_string(),
+                personal_only: false,
+            });
+        }
+    }
+    if let Ok(v) = app.session.execute("ml.models", json!({})) {
+        for m in v["models"].as_array().into_iter().flatten() {
+            out.push(ModelState {
+                id: m["id"].as_str().unwrap_or_default().to_string(),
+                name: m["title"].as_str().unwrap_or_default().to_string(),
+                installed: m["installed"].as_bool().unwrap_or(false),
+                bytes: m["bytes"].as_u64().unwrap_or(0),
+                use_for: m["use"].as_str().unwrap_or_default().to_string(),
+                licence: m["licence"].as_str().unwrap_or_default().to_string(),
+                licence_url: m["licenceUrl"].as_str().unwrap_or_default().to_string(),
+                source: m["source"].as_str().unwrap_or_default().to_string(),
+                personal_only: m["personalOnly"].as_bool().unwrap_or(false),
+            });
+        }
+    }
+    if out != app.extensions.models {
+        app.extensions.models = out;
+        app.extensions.rev += 1;
+    }
+}
+
+/// `DeepFilterNet3 ✓ installé` / `RIFE v4 ↓ à télécharger (46,5 Mo)`; an id missing from both
+/// catalogues (this build has no `ml` feature) is said so.
+fn model_line(state: &ExtensionsState, id: &str) -> String {
+    match state.model(id) {
+        Some(m) if m.installed => format!("{} ✓ installé", m.name),
+        Some(m) => format!("{} ↓ à télécharger ({})", m.name, size_text(m.bytes)),
+        None => format!("{id} : absent de cette version"),
+    }
+}
+
+/// What follows a single-entry extension's name: ` (modèle ✓)` or ` (modèle ↓ à télécharger)`.
+fn model_suffix(state: &ExtensionsState, models: &[String]) -> String {
+    if models.is_empty() {
+        return String::new();
+    }
+    let missing: Vec<&ModelState> = models.iter().filter_map(|id| state.model(id)).filter(|m| !m.installed).collect();
+    let unknown = models.iter().any(|id| state.model(id).is_none());
+    if unknown && missing.is_empty() {
+        " (modèle absent de cette version)".into()
+    } else if missing.is_empty() {
+        " (modèle ✓)".into()
+    } else {
+        format!(" (modèle ↓ à télécharger, {})", size_text(missing.iter().map(|m| m.bytes).sum()))
+    }
+}
+
+/// The group heading an extension files under: (index in [`CATEGORIES`] or its length for "Autres").
+fn group_of(category: &str) -> usize {
+    CATEGORIES.iter().position(|(id, _)| *id == category).unwrap_or(CATEGORIES.len())
+}
+
+/// Add the Extensions menu to the menu tree: the groups of [`CATEGORIES`] in order (plus "Autres" for
+/// an extension without a known category), each with a disabled heading, a separator above it and its
+/// extensions in alphabetical order; the management items close the Gestion group.
 pub fn menu(app: &FilmcraftApp, items: &mut Vec<MenuItem>) {
     let ctx = run_context(app);
+    let state = &app.extensions;
     let item = |id: String, label: String, path: Vec<String>, enabled: bool, separator_before: bool| MenuItem {
         id,
         label,
@@ -198,19 +346,44 @@ pub fn menu(app: &FilmcraftApp, items: &mut Vec<MenuItem>) {
         checked: None,
         separator_before,
     };
-    for e in app.extensions.loaded() {
-        let m = &e.manifest;
-        if let [only] = m.entries.as_slice() {
-            items.push(item(item_id(&m.id, 0), m.name.clone(), vec![MENU.into()], ctx.satisfies(&only.requires).is_ok(), false));
-        } else {
-            for (n, en) in m.entries.iter().enumerate() {
-                items.push(item(item_id(&m.id, n), en.label.clone(), vec![MENU.into(), m.name.clone()], ctx.satisfies(&en.requires).is_ok(), false));
+    let mut groups: Vec<Vec<&Extension>> = vec![Vec::new(); CATEGORIES.len() + 1];
+    for e in state.loaded() {
+        groups[group_of(&e.manifest.category)].push(e);
+    }
+    for g in &mut groups {
+        g.sort_by_key(|e| e.manifest.name.to_lowercase());
+    }
+    let management = CATEGORIES.len() - 1;
+    let others = CATEGORIES.len();
+    // menu order: the categories but Gestion, then Autres, then Gestion (which holds the management items)
+    let order: Vec<usize> = (0..management).chain([others, management]).collect();
+    let mut first = true;
+    for n in order {
+        let exts = &groups[n];
+        if exts.is_empty() && n != management {
+            continue;
+        }
+        let (gid, label) = CATEGORIES.get(n).copied().unwrap_or(("other", "Autres"));
+        items.push(item(format!("ext.group.{gid}"), label.to_string(), vec![MENU.into()], false, !first));
+        first = false;
+        for e in exts {
+            let m = &e.manifest;
+            if let [only] = m.entries.as_slice() {
+                let label = format!("{}{}", m.name, model_suffix(state, &m.models));
+                items.push(item(item_id(&m.id, 0), label, vec![MENU.into()], ctx.satisfies(&only.requires).is_ok(), false));
+            } else {
+                for (k, id) in m.models.iter().enumerate() {
+                    items.push(item(format!("ext.model.{}.{k}", m.id), model_line(state, id), vec![MENU.into(), m.name.clone()], false, false));
+                }
+                for (k, en) in m.entries.iter().enumerate() {
+                    let sep = k == 0 && !m.models.is_empty();
+                    items.push(item(item_id(&m.id, k), en.label.clone(), vec![MENU.into(), m.name.clone()], ctx.satisfies(&en.requires).is_ok(), sep));
+                }
             }
         }
     }
-    let any = app.extensions.loaded().next().is_some();
-    let installable = app.extensions.store.is_some();
-    items.push(item("extensions.install".into(), "Installer une extension…".into(), vec![MENU.into()], installable, any));
+    let installable = state.store.is_some();
+    items.push(item("extensions.install".into(), "Installer une extension…".into(), vec![MENU.into()], installable, false));
     items.push(item("extensions.manage".into(), "Gérer les extensions…".into(), vec![MENU.into()], true, false));
     items.push(item("extensions.reload".into(), "Recharger les extensions".into(), vec![MENU.into()], installable, false));
 }
@@ -555,43 +728,131 @@ fn capture_licence(app: &mut FilmcraftApp, error: &str) {
     }
 }
 
-/// The licence of an optional neural model, asked before its download (automation ids `ml.licence.*`).
+/// "Plus tard": no launch question for seven days with this version (and none in this session).
+fn snooze(app: &mut FilmcraftApp) {
+    app.extensions.offer_snoozed = true;
+    app.extensions.offer_prompt = false;
+    app.extensions.offer_due = None;
+    if let Some(store) = &app.extensions.store
+        && let Err(e) = store.snooze_offers(now_unix() + SNOOZE.as_secs(), APP_VERSION)
+    {
+        app.ui.status = format!("« Plus tard » non mémorisé : {e}");
+    }
+}
+
+/// One dialog for an optional neural model of the `ml` catalogue, asked before its download
+/// (automation ids `ml.licence.*`): what it does, download size, licence in one line with its link, the
+/// source, an Install button; then a small progress window with Cancel while the job runs
+/// (`ml.download.cancel`). The `models.*` catalogue has the same dialog in `model_consent`.
 pub fn licence_dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
+    download_window(app, ctx);
     let Some((id, text)) = app.extensions.ml_licence.clone() else { return };
+    let model = app.extensions.model(&id).cloned();
     let mut elems: Vec<(String, egui::Rect, String)> = Vec::new();
     let mut accept = false;
     let mut cancel = false;
-    egui::Window::new("Modèle optionnel : licence")
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .default_width(520.0)
-        .show(ctx, |ui| {
-            ui.strong("Ce modèle n'est pas fourni avec FilmCraft : il est téléchargé depuis son éditeur, vérifié (SHA-256), puis utilisé hors ligne.");
-            ui.add_space(4.0);
-            ui.label(&text);
+    let title = model.as_ref().map(|m| m.name.clone()).unwrap_or_else(|| id.clone());
+    egui::Window::new("Modèle optionnel").collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).default_width(520.0).show(
+        ctx,
+        |ui| {
+            ui.strong(format!("{title} n'est pas installé."));
+            match &model {
+                Some(m) => {
+                    if !m.use_for.is_empty() {
+                        ui.label(&m.use_for);
+                    }
+                    ui.add_space(4.0);
+                    ui.label(format!("À télécharger : {}", size_text(m.bytes)));
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(format!("Licence : {} ·", m.licence));
+                        ui.hyperlink_to("texte de la licence", &m.licence_url);
+                    });
+                    if m.personal_only {
+                        ui.colored_label(ui.visuals().warn_fg_color, "Usage personnel / non commercial uniquement.");
+                    }
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Source :");
+                        ui.hyperlink_to(&m.source, &m.source);
+                    });
+                }
+                None => {
+                    ui.label(&text);
+                }
+            }
+            ui.label("Téléchargé depuis son éditeur, vérifié (SHA-256), puis exécuté sur votre ordinateur : rien n'est envoyé.");
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                let r = ui.button("J'ai lu la licence : télécharger");
+                let r = ui.button("J'ai lu la licence : installer");
                 elems.push((format!("ml.licence.accept.{id}"), r.rect, "Accept".into()));
                 accept = r.clicked();
                 let r = ui.button("Annuler");
                 elems.push(("ml.licence.cancel".into(), r.rect, "Cancel".into()));
                 cancel = r.clicked();
             });
-        });
+        },
+    );
     for (eid, r, l) in elems {
         app.auto.add(&eid, r, &l);
     }
     if accept {
         app.extensions.ml_licence = None;
         match invoke(app, ctx, "ml.install", json!({"model": id, "acceptLicense": true, "wait": false})) {
-            Ok(v) => app.ui.status = v["summary"].as_str().unwrap_or("téléchargement lancé").to_string(),
+            Ok(v) => {
+                app.ui.status = v["summary"].as_str().unwrap_or("téléchargement lancé").to_string();
+                if let Some(job) = v["job"].as_u64() {
+                    app.extensions.ml_download = Some((id, job));
+                }
+            }
             Err(e) => app.ui.status = e,
         }
     } else if cancel {
         app.extensions.ml_licence = None;
     }
+}
+
+/// The download started by [`licence_dialog`]: bytes done / total, a Cancel button; the status bar
+/// says the outcome when it ends (automation ids `ml.download.*`).
+fn download_window(app: &mut FilmcraftApp, ctx: &egui::Context) {
+    use std::sync::atomic::Ordering;
+    let Some((id, jid)) = app.extensions.ml_download.clone() else { return };
+    let Some(job) = app.session.jobs.iter().find(|j| j.id == jid).cloned() else {
+        app.extensions.ml_download = None;
+        return;
+    };
+    let name = app.extensions.model(&id).map(|m| m.name.clone()).unwrap_or_else(|| id.clone());
+    if job.progress.finished.load(Ordering::Relaxed) {
+        let err = job.progress.error.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        app.ui.status = match err {
+            None if job.progress.cancel.load(Ordering::Relaxed) => format!("Téléchargement de {name} annulé"),
+            None => format!("{name} installé"),
+            Some(e) => format!("Téléchargement de {name} impossible : {e}"),
+        };
+        app.extensions.ml_download = None;
+        app.extensions.models_stale();
+        return;
+    }
+    let (d, t) = (job.progress.done.load(Ordering::Relaxed), job.progress.total.load(Ordering::Relaxed).max(1));
+    let mut elems: Vec<(String, egui::Rect, String)> = Vec::new();
+    egui::Window::new("Téléchargement du modèle")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_BOTTOM, [0.0, -48.0])
+        .default_width(380.0)
+        .show(ctx, |ui| {
+            ui.label(format!("{name} : {} / {}", size_text(d), size_text(t)));
+            let bar = ui.add(egui::ProgressBar::new((d as f32 / t as f32).clamp(0.0, 1.0)).show_percentage());
+            elems.push(("ml.download.progress".into(), bar.rect, "Progress".into()));
+            let cancelling = job.progress.cancel.load(Ordering::Relaxed);
+            let r = ui.add_enabled(!cancelling, egui::Button::new(if cancelling { "Annulation…" } else { "Annuler" }));
+            elems.push(("ml.download.cancel".into(), r.rect, "Cancel".into()));
+            if r.clicked() {
+                job.progress.cancel.store(true, Ordering::Relaxed);
+            }
+        });
+    for (eid, r, l) in elems {
+        app.auto.add(&eid, r, &l);
+    }
+    ctx.request_repaint_after(Duration::from_millis(100));
 }
 
 /// The small window shown while an entry runs: what it is doing, the progress of a transcription and a
@@ -883,10 +1144,7 @@ pub fn dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
         Some(Act::DeclineBundled(id)) => {
             let _ = route(app, ctx, "extensions.declineBundled", &json!({"id": id}));
         }
-        Some(Act::Snooze) => {
-            app.extensions.offer_snoozed = true;
-            app.extensions.offer_prompt = false;
-        }
+        Some(Act::Snooze) => snooze(app),
         Some(Act::Install { folder }) => {
             let _ = route(app, ctx, "extensions.install", &json!({"folder": folder}));
         }
@@ -917,13 +1175,19 @@ pub fn offers_dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
         app.extensions.offer_prompt = false;
         return;
     };
+    // once the project is on screen, not at the first frame; and never while another dialog is open
+    let due = *app.extensions.offer_due.get_or_insert_with(Instant::now);
+    if due.elapsed() < OFFER_DELAY || app.dialog.is_some() || app.extensions.open || app.extensions.ml_licence.is_some() {
+        ctx.request_repaint_after(OFFER_DELAY);
+        return;
+    }
     let mut elems: Vec<(String, egui::Rect, String)> = Vec::new();
     let mut act: Option<Act> = None;
     egui::Window::new("Extension fournie avec FilmCraft")
         .collapsible(false)
         .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .default_width(460.0)
+        .anchor(egui::Align2::RIGHT_BOTTOM, [-16.0, -40.0])
+        .default_width(420.0)
         .show(ctx, |ui| {
             ui.strong(format!("« {} » {} n'est pas installée.", o.name, o.version));
             if !o.description.is_empty() {
@@ -937,7 +1201,7 @@ pub fn offers_dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
                     o.programs.join(", ")
                 ),
             );
-            ui.label("Rien n'a été installé. Vous pourrez aussi l'installer plus tard depuis le menu Extensions, « Gérer les extensions… »");
+            ui.label("Rien n'a été installé. Vous pourrez aussi l'installer plus tard depuis Extensions ▸ Gestion ▸ « Gérer les extensions… ».");
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 let r = ui.button(format!("Installer {}", o.name));
@@ -945,7 +1209,7 @@ pub fn offers_dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
                 if r.clicked() {
                     act = Some(Act::InstallBundled(o.id.clone()));
                 }
-                let r = ui.button("Plus tard");
+                let r = ui.button("Plus tard (7 jours)");
                 elems.push(("extensions.offer.later".into(), r.rect, "Later".into()));
                 if r.clicked() {
                     act = Some(Act::Snooze);
@@ -968,9 +1232,8 @@ pub fn offers_dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
             let _ = route(app, ctx, "extensions.declineBundled", &json!({"id": id}));
         }
         Some(Act::Snooze) => {
-            app.extensions.offer_snoozed = true;
-            app.extensions.offer_prompt = false;
-            app.ui.status = format!("« {} » reste à installer : menu Extensions, « Gérer les extensions… »", o.name);
+            snooze(app);
+            app.ui.status = format!("« {} » reste à installer : menu Extensions ▸ Gestion ▸ Gérer les extensions… (pas de rappel avant 7 jours)", o.name);
         }
         _ => {}
     }

@@ -3,6 +3,7 @@
   "id": "copy-pasta",
   "name": "Copy Pasta",
   "version": "1.0.0",
+  "category": "editing",
   "description": "Copies the look of one clip onto others: motion, opacity, volume, panner, time remapping and the standard effects, with their keyframes (Edit > Paste Attributes). The one-step entries take the first selected clip as the source and paste on the other selected clips; the Copier / Coller pair works across several runs in the window (the clipboard lives in the open session, so in filmcraft-cli use the one-step entries).",
   "author": "FilmCraft",
   "entries": [

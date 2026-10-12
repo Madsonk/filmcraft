@@ -3,6 +3,8 @@
   "id": "ml-models",
   "name": "Modèles IA optionnels",
   "version": "1.0.0",
+  "category": "management",
+  "models": ["rife-v4", "span-2x", "beat-this-final0", "htdemucs", "siglip2-base-224", "rvm-mobilenetv3"],
   "description": "Installs the optional neural models used by the other extensions (RIFE, SPAN, Beat This, HT Demucs, SigLIP 2, Robust Video Matting). Nothing is bundled: each entry downloads one model from its publisher after showing its licence (a dialog in the window; `ml.install` with acceptLicense in scripts), checks its SHA-256 and keeps it in the models folder (FILMCRAFT_ML_MODELS_DIR or <data folder>/models/ml). `Liste` says what is installed.",
   "author": "FilmCraft",
   "entries": [

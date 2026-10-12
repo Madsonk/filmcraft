@@ -81,7 +81,7 @@ pub fn dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
                     ui.label("Chaque fichier est vérifié (SHA-256) avant d'être utilisé. Le modèle s'exécute sur votre ordinateur ; rien n'est envoyé.");
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
-                        let r = ui.button("Accepter la licence et télécharger");
+                        let r = ui.button("J'ai lu la licence : installer");
                         elems.push(("models.consent.accept".into(), r.rect, "Accept".into()));
                         if r.clicked() {
                             let p = Arc::new(Progress {
@@ -116,6 +116,7 @@ pub fn dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
                     Ok(msg) => msg,
                     Err(e) => format!("Téléchargement de {} impossible : {e}", m.name),
                 };
+                app.extensions.models_stale();
                 next = Some(State::Idle);
             } else {
                 let (d, t) = (p.done.load(Ordering::Relaxed), p.total.load(Ordering::Relaxed).max(1));

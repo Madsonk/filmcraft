@@ -3,6 +3,7 @@
   "id": "sous-titres",
   "name": "Sous-titres",
   "version": "1.0.0",
+  "category": "captions",
   "description": "Transcribes the sequence's audio with the built-in Whisper speech recogniser, lays the words out as a caption track, and can write an .srt next to the project. Needs a FilmCraft built with speech-to-text and the speech model installed (Edit > Preferences > Media Analysis & Transcription). The transcription runs on the CPU and can take a while on long sequences.",
   "author": "FilmCraft",
   "entries": [

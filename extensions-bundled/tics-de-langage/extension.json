@@ -3,6 +3,7 @@
   "id": "tics-de-langage",
   "name": "Tics de langage",
   "version": "1.0.0",
+  "category": "editing",
   "description": "Cuts the hesitations (euh, heu, hum, um, uh…) and the silences of talking footage. Transcribes with Whisper large-v3-turbo (or base) in 'keep the hesitations' mode: an initial prompt that contains hesitations makes Whisper write them down instead of cleaning them up, so they can be cut by word. Needs the speech model installed (Edit > Preferences > Media Analysis & Transcription, or transcript.downloadModel); large-v3-turbo is 1.6 GB and several times slower than base on the CPU.",
   "author": "FilmCraft",
   "entries": [

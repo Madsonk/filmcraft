@@ -3,6 +3,8 @@
   "id": "rush-search",
   "name": "Recherche de rushes",
   "version": "1.0.0",
+  "category": "picture",
+  "models": ["siglip2-base-224"],
   "description": "Finds a shot in hours of footage by describing it (« plan zénith du plat », « a wide shot of the beach »). « Indexer les rushes » embeds one frame every 2 seconds of the project's video media with SigLIP 2 (optional model siglip2-base-224, 1.5 GB, Apache-2.0); « Chercher » (--var query=\"...\") lists the best moments with their timecode and puts a marker on the media at each hit.",
   "author": "FilmCraft",
   "entries": [

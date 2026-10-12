@@ -97,6 +97,8 @@ Nothing is half-installed.
 | `entries` | 1 to 32. One entry shows the extension's `name` as the menu item; several make a submenu named after the extension with each entry's `label` (unique within the extension) |
 | `entries[].requires` | any of `project` (saved), `sequence` (one is open), `selection` (clips selected). The menu item is disabled, and running it refused, until they hold |
 | `entries[].action` | exactly one of `commands`, `jsonl`, `exec` |
+| `category` | optional: where the Extensions menu files the extension — `editing` (Montage), `audio`, `captions` (Sous-titres et langue), `picture` (Image et IA), `export`, `management` (Gestion). Anything else, or nothing, goes under *Autres* |
+| `models` | optional: ids of the optional neural models its entries use (`models.list`: `deepfilternet3`, `yolox-nano`, `yunet`…; `ml.models`: `rife-v4`, `span-2x`, `beat-this-final0`, `htdemucs`, `siglip2-base-224`, `rvm-mobilenetv3`). The menu shows whether each is installed |
 
 Unknown fields are errors ("unknown field colour"), as are control characters, over-long text and a
 manifest over 256 KiB. The error names the field and the entry.
@@ -162,6 +164,45 @@ are taken. A failing exit status is reported with the last lines of its standard
 
 **An `exec` entry runs code with your user's permissions**, like any script you would run yourself. The
 installer and the manager say so; keep only extensions you trust. Nothing is sandboxed.
+
+## The Extensions menu, the launch offer and the model dialogs (ext-all-v2)
+
+**Groups.** The menu is grouped by the manifest's `category`, in this order: Montage · Audio ·
+Sous-titres et langue · Image et IA · Export · (Autres) · Gestion. Each group starts with a separator and a
+disabled heading (`ext.group.<category>` in `ui.menu.list`); inside a group the extensions are in
+alphabetical order, an extension with several entries is a submenu named after it. *Installer une
+extension…*, *Gérer les extensions…* and *Recharger les extensions* close the Gestion group, after
+*Modèles IA optionnels*.
+
+**Model state.** An extension whose manifest lists `models` shows them: at the top of its submenu, one
+disabled line per model — « DeepFilterNet3 ✓ installé », « RIFE v4 ↓ à télécharger (46,5 Mo) » —
+separated from the entries; a single-entry extension carries « (modèle ✓) » or « (modèle ↓ à
+télécharger, 46,5 Mo) » after its name. The states come from `models.list` and `ml.models`, read every
+few seconds (file sizes only) and right after an install, so the menu follows a download made elsewhere.
+
+**The launch offer.** The only shipped extensions that start a program (Storyboard Maker, Doublage vocal)
+are offered, never installed silently. The question is now a small window in the bottom-right corner,
+shown 1.5 s after the project is drawn and never while another dialog is open, with three answers:
+*Installer*, *Plus tard (7 jours)* and *Ne plus proposer*. *Plus tard* is remembered in
+`<extensions>/.bundled-seeded.json` (`snoozedUntil`, `snoozedVersion`): no question before seven days,
+or before the next app version (its shipped extensions may differ). *Ne plus proposer* is final; both
+extensions stay installable from Extensions ▸ Gestion ▸ Gérer les extensions… (section « Fournies avec
+FilmCraft, pas installées »).
+
+**One dialog per model.** Whatever the catalogue, an entry that needs a model that is not there opens a
+single window: what the model does, the download size, the licence in one line with a link to its
+text, the source, a warning when the licence is personal / non-commercial, an *installer* button and
+*Annuler*. The download then runs as a background job with a small progress window (bytes done /
+total, *Annuler*; automation ids `models.consent.*` for the `models.*` catalogue, `ml.licence.*` and
+`ml.download.*` for the `ml.*` one) and the status bar says the outcome. The status bar's right side,
+which used to read « Exporting… » for every job, now shows the job's own label (« Download RIFE v4 »,
+« Create Proxies (3 clips) », « Index rushes », « Separate stems »…) with its progress and its × button.
+
+**Finder.** On macOS the bundle declares the `.fcproj` document type: a double-click, `open -a FilmCraft
+x.fcproj` and a drop on the Dock icon open the project (and media files dropped on the icon are
+imported); an open on a running app goes through the same path as File ▸ Open Project…, so unsaved
+changes are asked about. The window title is the saved file's name (its stem), not the project's internal
+name.
 
 ## Running an entry: feedback and the window
 
