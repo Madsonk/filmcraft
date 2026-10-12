@@ -301,11 +301,11 @@ impl ExtensionStore {
                 Some(dir) => format!(
                     "{} {} → {} (mis à jour depuis le bundle ; l'ancienne copie est gardée dans {})",
                     r.id,
-                    r.replaced.unwrap_or_default(),
+                    installed.version.clone(),
                     r.version,
                     dir.display()
                 ),
-                None => format!("{} {} → {} (mis à jour depuis le bundle)", r.id, r.replaced.unwrap_or_default(), r.version),
+                None => format!("{} {} → {} (mis à jour depuis le bundle)", r.id, installed.version.clone(), r.version),
             }));
         }
         let lacks_menu_fields = (installed.category.is_empty() && !bundle.category.is_empty()) || (installed.models.is_empty() && !bundle.models.is_empty());
