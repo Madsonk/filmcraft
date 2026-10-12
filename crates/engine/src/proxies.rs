@@ -343,10 +343,14 @@ pub fn proxy_dir(media: &str, dest: Option<&str>) -> PathBuf {
     }
 }
 
-/// `media.createProxies {items?, preset?, destination?, wait?}`.
+/// `media.createProxies {items?, preset?, destination?, wait?}`. Without `items`: the Project panel's
+/// selection, else every video file of the project (the whole project, as the menu item reads).
 pub fn create(s: &mut Session, p: &Value) -> Result<Value> {
     let pr = preset(str_p(p, "preset").unwrap_or(DEFAULT_PROXY_PRESET)).ok_or_else(|| bad("media.createProxies", "unknown preset (see media.proxyPresets)"))?;
-    let items = items_param(s, p);
+    let mut items = items_param(s, p);
+    if items.is_empty() {
+        items = s.project.items.keys().copied().filter(|i| media_path(&s.project, *i).is_some()).collect();
+    }
     // default: Project Settings ▸ Scratch Disks ▸ Captured and Generated, else next to the media
     let dest = str_p(p, "destination")
         .map(str::to_string)

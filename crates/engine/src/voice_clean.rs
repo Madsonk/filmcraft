@@ -285,7 +285,8 @@ fn denoise_voice(s: &mut Session, p: &Value) -> Result<Value> {
         let m0 = job.source_in.to_units_floor(i64::from(sr));
         let len = (job.source_in + job.duration).to_units_floor(i64::from(sr)) - m0 + 1;
         let src = filmcraft_render::SourceProvider::source(&provider, job.item).ok_or_else(|| bad(CMD, "le média du clip est hors ligne"))?;
-        let buf = src.audio_stream(job.audio_stream, m0, len.max(0) as usize, sr).map_err(|e| bad(CMD, format!("lecture de l'audio du clip impossible : {e}")))?;
+        let buf =
+            src.audio_stream(job.audio_stream, m0, len.max(0) as usize, sr).map_err(|e| bad(CMD, format!("lecture de l'audio du clip impossible : {e}")))?;
         let mut chans: Vec<Vec<f32>> = job.channels.iter().filter_map(|c| buf.channels.get(*c).or_else(|| buf.channels.first()).cloned()).collect();
         if job.channels.len() == 2 && buf.channels.len() == 1 {
             chans.truncate(1);
