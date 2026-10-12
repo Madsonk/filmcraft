@@ -104,7 +104,8 @@ are exempt):
 `cargo xtask wasm` runs `cargo check --target wasm32-unknown-unknown` on every L0–L4 crate, the
 egui UI and the web app, so everything up to the engine stays web-portable and the web app builds
 ([web.md](web.md)). `unsafe_code = "forbid"` applies workspace-wide, except in `platform`
-(`deny`, allowed only on its FFI modules; [ADR 0001](adr/0001-platform-ffi.md)).
+(`deny`, allowed only on its FFI modules; [ADR 0001](adr/0001-platform-ffi.md)); the desktop app's `open_files` module (macOS
+open-documents event) is the fork's one other `unsafe` module, under the same discipline ([ADR 0002](adr/0002-macos-open-documents.md)).
 
 ## 2. Time base
 

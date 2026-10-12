@@ -51,6 +51,18 @@ pub mod state;
 pub mod theme;
 pub mod widgets;
 
+/// What the window calls the document: the saved file's name (its stem, what the Finder shows), else
+/// the project's internal name (a project built by a script may carry a name unrelated to its file).
+pub fn document_title(session: &Session) -> String {
+    session
+        .path
+        .as_deref()
+        .and_then(|p| std::path::Path::new(p).file_stem())
+        .map(|n| n.to_string_lossy().into_owned())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| session.project.name.clone())
+}
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender};
@@ -113,6 +125,10 @@ pub struct HostHooks {
     /// The user's preferred languages (locale tags, most preferred first) for Interface Language ▸
     /// System Language. Without it, System Language is English.
     pub system_languages: Option<Box<dyn Fn() -> Vec<String>>>,
+    /// Files the OS asked the app to open since the last call (macOS open-documents Apple Event: a
+    /// double-click on a `.fcproj`, `open -a FilmCraft`, a drop on the Dock icon). Polled every frame:
+    /// a project is opened, other files are imported (ext-all-v2).
+    pub take_opened_files: Option<Box<dyn FnMut() -> Vec<String>>>,
     /// Open dialog for a JSON file (shortcut preset import): filter name, extensions → path.
     pub pick_open_file: Option<Box<dyn FnMut(&str, &[&str]) -> Option<String>>>,
     /// Folder picker (Link Media search, proxy and Project Manager destinations).
@@ -1148,6 +1164,27 @@ impl FilmcraftApp {
         }
     }
 
+    /// Files the OS asked us to open (see `HostHooks::take_opened_files`): the last `.fcproj` is
+    /// opened (through the menu path, so unsaved changes are asked about), the rest is imported.
+    fn handle_opened_files(&mut self, ctx: &egui::Context) {
+        let Some(take) = self.hooks.take_opened_files.as_mut() else { return };
+        let files = take();
+        if files.is_empty() {
+            return;
+        }
+        let (projects, media): (Vec<String>, Vec<String>) = files.into_iter().partition(|f| f.to_lowercase().ends_with(".fcproj"));
+        if let Some(p) = projects.last() {
+            match menus::invoke(self, ctx, "file.open", json!({"path": p})) {
+                Ok(_) => self.ui.status = tlf!("Opened {path}", path = p),
+                Err(e) => self.ui.status = e,
+            }
+        }
+        if !media.is_empty() {
+            let _ = self.session.execute("file.import", json!({"paths": media, "bin": self.import_bin().0}));
+        }
+        ctx.request_repaint();
+    }
+
     // ---------------------------------------------------------------- input
 
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
@@ -1348,6 +1385,7 @@ impl FilmcraftApp {
         }
         self.sync_timeline_view();
         self.handle_drops(&ctx);
+        self.handle_opened_files(&ctx);
         if let Some(rx) = self.command_inbox.take() {
             while let Ok(id) = rx.try_recv() {
                 if let Err(e) = menus::invoke(self, &ctx, &id, json!({})) {
@@ -1440,7 +1478,12 @@ impl FilmcraftApp {
         let p = ui.painter();
         p.rect_filled(bar, 3.0, t.separator);
         p.rect_filled(egui::Rect::from_min_size(bar.min, egui::vec2(bar.width() * f, bar.height())), 3.0, t.accent);
-        let verb = if job.label.starts_with("Rendering") { crate::i18n::t(&job.label).to_string() } else { tl!("Exporting").to_string() };
+        // exports say "Exporting"; every other job (proxies, model download, rush index, stems…) its own label
+        let verb = if job.label.starts_with("Export") || job.label.starts_with("Quick Export") {
+            tl!("Exporting").to_string()
+        } else {
+            crate::i18n::t(&job.label).to_string()
+        };
         p.text(
             egui::pos2(bar.min.x - 8.0, sb.center().y),
             egui::Align2::RIGHT_CENTER,

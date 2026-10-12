@@ -32,6 +32,8 @@ mod graphics;
 mod logging;
 #[cfg(target_os = "macos")]
 mod native_menu;
+#[cfg(target_os = "macos")]
+mod open_files;
 mod window_raise;
 
 use args::{Cli, Launch};
@@ -112,6 +114,9 @@ fn main() -> eframe::Result {
     // OS hardware video decoders (VideoToolbox on macOS) in front of our own; Settings ▸ Playback ▸
     // Hardware decoding switches them off. Unsupported streams and failures use our decoders.
     register_hardware_decoders();
+    // Finder / Dock / `open -a` opens arrive as an Apple Event: before the event loop exists.
+    #[cfg(target_os = "macos")]
+    open_files::install();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("FilmCraft")
@@ -150,7 +155,15 @@ fn main() -> eframe::Result {
             }
             // voice-over recording reads the microphone through cpal
             session.voiceover.input = Some(Box::new(audio_in::CpalIn::new(&session.prefs.audio_hardware.device_class)));
-            let project = files.iter().find(|f| f.ends_with(".fcproj")).cloned();
+            // files the Finder asked to open at launch count like command-line files
+            #[cfg(target_os = "macos")]
+            let files = {
+                let mut files = files;
+                files.extend(open_files::take_pending());
+                open_files::set_waker(cc.egui_ctx.clone());
+                files
+            };
+            let project = files.iter().rev().find(|f| f.to_lowercase().ends_with(".fcproj")).cloned();
             if let Some(p) = project {
                 if let Err(e) = session.execute("file.open", json!({"path": p})) {
                     log::error!("{e}");
@@ -172,7 +185,7 @@ fn main() -> eframe::Result {
             } else if demo {
                 let _ = session.execute("file.openDemoProject", json!({}));
             }
-            let media: Vec<String> = files.iter().filter(|f| !f.ends_with(".fcproj")).cloned().collect();
+            let media: Vec<String> = files.iter().filter(|f| !f.to_lowercase().ends_with(".fcproj")).cloned().collect();
             if !media.is_empty() {
                 let _ = session.execute("file.import", json!({"paths": media}));
             }
@@ -242,6 +255,10 @@ fn main() -> eframe::Result {
             app.hooks.raise_without_focus = Some(Box::new(|| {
                 window_raise::raise_without_focus();
             }));
+            #[cfg(target_os = "macos")]
+            {
+                app.hooks.take_opened_files = Some(Box::new(open_files::take_pending));
+            }
             app.hooks.pick_open_file = Some(Box::new(|filter: &str, exts: &[&str]| {
                 rfd::FileDialog::new().add_filter(filmcraft_ui_egui::i18n::t(filter), exts).pick_file().map(|p| p.to_string_lossy().to_string())
             }));
