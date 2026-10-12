@@ -46,6 +46,11 @@ pub struct InstallReport {
 #[derive(Default, Serialize, Deserialize)]
 struct Seeded {
     ids: Vec<String>,
+    /// Fingerprint ([`fingerprint`]) of each bundled extension's `extension.json` as it was installed from
+    /// the bundle: while it still matches, the user has not touched the extension and a new bundle may
+    /// replace it (`seed_bundled`).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    fingerprints: std::collections::BTreeMap<String, u64>,
     /// Unix time until which no offer is asked at launch (`snooze_offers`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     snoozed_until: Option<u64>,
@@ -55,6 +60,31 @@ struct Seeded {
 }
 
 const SEEDED_FILE: &str = ".bundled-seeded.json";
+
+/// FNV-1a (64 bits) of a file's bytes: a stable fingerprint across Rust releases, not a security hash.
+pub fn fingerprint(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x0000_0100_0000_01b3))
+}
+
+fn manifest_fingerprint(dir: &Path) -> Option<u64> {
+    fs::read(dir.join(crate::manifest::MANIFEST_FILE)).ok().map(|b| fingerprint(&b))
+}
+
+/// The manifest without the fields that newer bundles add (`category`, `models`): an extension installed
+/// by an older FilmCraft (no fingerprint recorded) is known untouched when it equals the bundle's this way.
+fn without_menu_fields(m: &Manifest) -> Manifest {
+    Manifest { category: String::new(), models: Vec::new(), ..m.clone() }
+}
+
+/// `1.0.0` < `1.1.0`: numeric components, compared left to right (a non-numeric version never counts
+/// as older).
+fn older_version(installed: &str, bundle: &str) -> bool {
+    let parse = |v: &str| v.split('.').map(|c| c.parse::<u64>().ok()).collect::<Option<Vec<u64>>>();
+    match (parse(installed), parse(bundle)) {
+        (Some(a), Some(b)) => a < b,
+        _ => false,
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct ExtensionStore {
@@ -189,10 +219,25 @@ impl ExtensionStore {
                     continue;
                 }
             };
-            if seeded.ids.contains(&m.id) || m.runs_programs() {
+            let target = self.root.join(&m.id);
+            if seeded.ids.contains(&m.id) {
+                // already answered: refresh it from this bundle when the user never touched it
+                if target.exists() {
+                    match self.refresh_from_bundle(&dir, &m, &target, &mut seeded) {
+                        Ok(Some(line)) => {
+                            installed.push(line);
+                            changed = true;
+                        }
+                        Ok(None) => {}
+                        Err(e) => problems.push(format!("{}: {e}", m.id)),
+                    }
+                }
                 continue;
             }
-            if !self.root.join(&m.id).exists() {
+            if m.runs_programs() {
+                continue;
+            }
+            if !target.exists() {
                 match self.install(&dir) {
                     Ok(r) => installed.push(r.id),
                     Err(e) => {
@@ -201,6 +246,9 @@ impl ExtensionStore {
                     }
                 }
             }
+            if let Some(fp) = manifest_fingerprint(&target) {
+                seeded.fingerprints.insert(m.id.clone(), fp);
+            }
             seeded.ids.push(m.id);
             changed = true;
         }
@@ -208,6 +256,77 @@ impl ExtensionStore {
             problems.push(e);
         }
         (installed, problems)
+    }
+
+    /// A bundled extension already installed: replace it with the bundle's copy when it is still the
+    /// copy a bundle installed (recorded fingerprint, or — installed by an older FilmCraft that recorded
+    /// none — identical to the bundle's manifest but for `category` / `models`). An extension the user
+    /// edited or installed himself is never overwritten; when it only lacks the menu fields, those two
+    /// are copied into its manifest (`category`, `models`), nothing else. Returns the log line of what
+    /// was done.
+    fn refresh_from_bundle(&self, bundle_dir: &Path, bundle: &Manifest, target: &Path, seeded: &mut Seeded) -> Result<Option<String>> {
+        let Some(fp_installed) = manifest_fingerprint(target) else { return Ok(None) };
+        let fp_bundle = manifest_fingerprint(bundle_dir).unwrap_or(0);
+        if fp_installed == fp_bundle {
+            seeded.fingerprints.entry(bundle.id.clone()).or_insert(fp_installed);
+            return Ok(None);
+        }
+        let installed = Manifest::load(target)?;
+        // Installed by an older FilmCraft, no fingerprint on record: untouched when it is the bundle's
+        // manifest but for the menu fields; a FilmCraft-authored one of an older version is taken as a
+        // bundle's too, but its folder is kept aside (`.replaced/<id>-<version>`) in case it was edited.
+        let legacy_same = without_menu_fields(&installed) == without_menu_fields(bundle);
+        let legacy_older = installed.author == bundle.author && !bundle.author.is_empty() && older_version(&installed.version, &bundle.version);
+        let (untouched, keep_aside) = match seeded.fingerprints.get(&bundle.id) {
+            Some(recorded) => (*recorded == fp_installed, false),
+            None if legacy_same => (true, false),
+            None => (legacy_older, true),
+        };
+        if untouched {
+            let mut aside = None;
+            if keep_aside {
+                let dir = self.root.join(".replaced").join(format!("{}-{}", installed.id, installed.version));
+                let _ = fs::remove_dir_all(&dir);
+                if let Some(parent) = dir.parent() {
+                    fs::create_dir_all(parent).map_err(|e| ExtError::io(parent.display(), e))?;
+                }
+                fs::rename(target, &dir).map_err(|e| ExtError::io(format!("keeping {} aside", target.display()), e))?;
+                aside = Some(dir);
+            }
+            let r = self.install(bundle_dir)?;
+            if let Some(fp) = manifest_fingerprint(target) {
+                seeded.fingerprints.insert(bundle.id.clone(), fp);
+            }
+            return Ok(Some(match aside {
+                Some(dir) => format!(
+                    "{} {} → {} (mis à jour depuis le bundle ; l'ancienne copie est gardée dans {})",
+                    r.id,
+                    r.replaced.unwrap_or_default(),
+                    r.version,
+                    dir.display()
+                ),
+                None => format!("{} {} → {} (mis à jour depuis le bundle)", r.id, r.replaced.unwrap_or_default(), r.version),
+            }));
+        }
+        let lacks_menu_fields = (installed.category.is_empty() && !bundle.category.is_empty()) || (installed.models.is_empty() && !bundle.models.is_empty());
+        if !lacks_menu_fields {
+            return Ok(None);
+        }
+        // user-modified: only the menu fields are added, the rest of the manifest stays as written
+        let path = target.join(crate::manifest::MANIFEST_FILE);
+        let text = fs::read_to_string(&path).map_err(|e| ExtError::io(path.display(), e))?;
+        let mut json: serde_json::Value = serde_json::from_str(&text).map_err(|e| ExtError::Manifest(e.to_string()))?;
+        let Some(obj) = json.as_object_mut() else { return Ok(None) };
+        if installed.category.is_empty() && !bundle.category.is_empty() {
+            obj.insert("category".into(), serde_json::Value::String(bundle.category.clone()));
+        }
+        if installed.models.is_empty() && !bundle.models.is_empty() {
+            obj.insert("models".into(), serde_json::to_value(&bundle.models).unwrap_or_default());
+        }
+        let text = serde_json::to_string_pretty(&json).map_err(|e| ExtError::Manifest(e.to_string()))?;
+        Manifest::parse(&text)?;
+        fs::write(&path, text).map_err(|e| ExtError::io(path.display(), e))?;
+        Ok(Some(format!("{} (modifiée par l'utilisateur : catégorie et modèles repris du bundle, rien d'autre)", bundle.id)))
     }
 
     /// The bundled extensions of `bundled` that are not installed (valid ones only), sorted by id.
@@ -239,8 +358,11 @@ impl ExtensionStore {
         let mut seeded = self.seeded();
         if !seeded.ids.contains(&r.id) {
             seeded.ids.push(r.id.clone());
-            self.save_seeded(&seeded).map_err(ExtError::Io)?;
         }
+        if let Some(fp) = manifest_fingerprint(&self.root.join(&r.id)) {
+            seeded.fingerprints.insert(r.id.clone(), fp);
+        }
+        self.save_seeded(&seeded).map_err(ExtError::Io)?;
         Ok(r)
     }
 
@@ -408,6 +530,72 @@ mod tests {
     }
 
     /// An extension that starts a program is offered, never installed behind the user's back.
+    /// A new bundle refreshes the extensions it seeded earlier, as long as the user did not touch them:
+    /// a manifest an older FilmCraft installed without `category` (no fingerprint on record) is replaced
+    /// when it is otherwise the bundle's; a user-edited one only gains the menu fields; a user-edited one
+    /// that has them is left alone.
+    #[test]
+    fn a_new_bundle_refreshes_untouched_seeded_extensions_and_spares_edited_ones() {
+        let root = temp("refresh");
+        let store = ExtensionStore::new(root.join("ext"));
+        let v1 = root.join("bundle-v1");
+        let v2 = root.join("bundle-v2");
+        let old = |id: &str| manifest_json(id).replace("\"version\"", "\"author\":\"FilmCraft\",\"version\"");
+        let new = |id: &str| old(id).replace("\"version\"", "\"category\": \"audio\", \"models\": [\"deepfilternet3\"], \"version\"");
+        for id in ["same", "edited", "legacy", "legacy-edited", "legacy-older"] {
+            fs::create_dir_all(v1.join(id)).unwrap();
+            fs::write(v1.join(id).join("extension.json"), old(id)).unwrap();
+            fs::create_dir_all(v2.join(id)).unwrap();
+            fs::write(v2.join(id).join("extension.json"), new(id)).unwrap();
+        }
+        assert!(Manifest::parse(&new("same")).unwrap().category == "audio");
+        let (done, problems) = store.seed_bundled(&v1);
+        assert_eq!((done.len(), problems.len()), (5, 0));
+        // the user edits two of them; three others were installed by an older FilmCraft: no fingerprint on record;
+        // one of those is an older version of the bundle's (the bundle's text changed too)
+        {
+            let p = store.root().join("legacy-older").join("extension.json");
+            let t =
+                fs::read_to_string(&p).unwrap().replace("\"version\":\"1.0.0\"", "\"version\":\"0.9.0\"").replace("\"name\":\"Demo\"", "\"name\":\"Older\"");
+            fs::write(&p, t).unwrap();
+        }
+        let edit = |id: &str| {
+            let p = store.root().join(id).join("extension.json");
+            let t = fs::read_to_string(&p).unwrap().replace("\"name\":\"Demo\"", "\"name\":\"My own words\"");
+            fs::write(&p, t).unwrap();
+        };
+        edit("edited");
+        edit("legacy-edited");
+        let mut seeded = store.seeded();
+        seeded.fingerprints.remove("legacy");
+        seeded.fingerprints.remove("legacy-edited");
+        seeded.fingerprints.remove("legacy-older");
+        store.save_seeded(&seeded).unwrap();
+        let (done, problems) = store.seed_bundled(&v2);
+        assert!(problems.is_empty(), "{problems:?}");
+        let cat = |id: &str| Manifest::load(&store.root().join(id)).unwrap();
+        assert_eq!((cat("same").category.as_str(), cat("same").models.len()), ("audio", 1), "untouched (fingerprint): replaced");
+        assert_eq!(
+            (cat("legacy").category.as_str(), cat("legacy").models.len()),
+            ("audio", 1),
+            "untouched (no fingerprint, same but for the menu fields): replaced"
+        );
+        assert!(cat("edited").name == "My own words" && cat("edited").category == "audio", "edited: kept, menu fields added");
+        assert!(cat("legacy-edited").name == "My own words" && cat("legacy-edited").category == "audio");
+        assert_eq!((cat("legacy-older").version.as_str(), cat("legacy-older").category.as_str()), ("1.0.0", "audio"), "older FilmCraft version: replaced…");
+        assert!(store.root().join(".replaced/legacy-older-0.9.0/extension.json").is_file(), "…with the old folder kept aside");
+        assert_eq!(done.len(), 5, "{done:?}");
+        assert!(
+            done.iter().filter(|l| l.contains("mis à jour depuis le bundle")).count() == 3
+                && done.iter().filter(|l| l.contains("modifiée par l'utilisateur")).count() == 2,
+            "{done:?}"
+        );
+        assert_eq!(store.list().len(), 5, "the .replaced folder is not an extension");
+        // a third launch with the same bundle does nothing
+        assert_eq!(store.seed_bundled(&v2), (vec![], vec![]));
+        assert!(store.seeded().fingerprints.contains_key("same") && store.seeded().fingerprints.contains_key("legacy"));
+    }
+
     #[test]
     fn later_puts_the_launch_question_off_for_a_while_and_for_this_version() {
         let root = temp("snooze");

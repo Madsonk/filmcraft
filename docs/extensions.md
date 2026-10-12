@@ -198,6 +198,17 @@ total, *Annuler*; automation ids `models.consent.*` for the `models.*` catalogue
 which used to read « Exporting… » for every job, now shows the job's own label (« Download RIFE v4 »,
 « Create Proxies (3 clips) », « Index rushes », « Separate stems »…) with its progress and its × button.
 
+**Refresh of the shipped extensions (ext-all-v3).** At launch, a shipped extension that is already
+installed is compared with the bundle's copy: if the user never touched it — the fingerprint of its
+`extension.json` recorded in `.bundled-seeded.json` at install time still matches, or, for a folder
+seeded by an older FilmCraft that recorded none, its manifest equals the bundle's but for
+`category` / `models`, or it is a FilmCraft-authored older version (then the old folder is kept aside in
+`<extensions>/.replaced/<id>-<version>/`) — it is replaced by the bundle's copy (manifest and scripts).
+An extension the user edited or installed himself is never overwritten: when it merely lacks
+`category` / `models`, those two fields are copied into its manifest and nothing else changes. Each
+refresh is one line in the log (`installed the bundled extensions […]`). Without this, a data folder
+seeded by ext-all v1 showed the whole menu under *Autres*.
+
 **Finder.** On macOS the bundle declares the `.fcproj` document type: a double-click, `open -a FilmCraft
 x.fcproj` and a drop on the Dock icon open the project (and media files dropped on the icon are
 imported); an open on a running app goes through the same path as File ▸ Open Project…, so unsaved

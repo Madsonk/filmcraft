@@ -522,6 +522,48 @@ fn a_shipped_extension_that_starts_a_program_is_asked_about_never_installed_sile
     let _ = std::fs::remove_dir_all(&bundled);
 }
 
+/// A data folder seeded by an older FilmCraft (manifests without `category` / `models`) gets the menu
+/// groups and the model lines after one launch: the untouched bundled extensions are refreshed from the
+/// current bundle (ext-all-v3).
+#[test]
+fn an_older_seeded_folder_is_refreshed_from_the_bundle_and_gets_the_menu_groups() {
+    let root = temp("legacy");
+    let bundled_old = temp("legacy-bundle-old");
+    let bundled_new = temp("legacy-bundle-new");
+    let old_dir = write_ext(&bundled_old, "cleaner", "Cleaner", json!([marker_entry("Clean", "c")]));
+    let mut m: Value = serde_json::from_str(&std::fs::read_to_string(old_dir.join("extension.json")).unwrap()).unwrap();
+    m["author"] = json!("FilmCraft");
+    std::fs::write(old_dir.join("extension.json"), m.to_string()).unwrap();
+    // the new bundle: a newer version with the menu fields and one more entry (as ext-all v1 → v3)
+    let dir = write_ext(&bundled_new, "cleaner", "Cleaner", json!([marker_entry("Clean", "c")]));
+    let mut m: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("extension.json")).unwrap()).unwrap();
+    m["author"] = json!("FilmCraft");
+    m["version"] = json!("1.1.0");
+    m["category"] = json!("audio");
+    m["models"] = json!(["deepfilternet3"]);
+    m["entries"].as_array_mut().unwrap().push(marker_entry("Clean more", "c2"));
+    std::fs::write(dir.join("extension.json"), m.to_string()).unwrap();
+    // the older FilmCraft seeded it, recording no fingerprint (its marker file only listed the ids)
+    let mut d = Driver::new(&root);
+    d.app().extensions.seed_bundled(&bundled_old);
+    std::fs::write(root.join(".bundled-seeded.json"), json!({"ids": ["cleaner"]}).to_string()).unwrap();
+    d.frames(2);
+    let items = d.menu_items();
+    assert!(items.iter().any(|i| i["id"] == json!("ext.group.other")) && items.iter().all(|i| i["id"] != json!("ext.group.audio")), "{items:?}");
+    // the new launch: refreshed, filed under Audio, with the model line
+    let (done, problems) = d.app().extensions.seed_bundled(&bundled_new);
+    assert!(problems.is_empty() && done.len() == 1 && done[0].contains("mis à jour depuis le bundle"), "{done:?} {problems:?}");
+    d.frames(2);
+    let items = d.menu_items();
+    let ids: Vec<&str> = items.iter().filter_map(|i| i["id"].as_str()).collect();
+    assert!(ids.contains(&"ext.group.audio") && !ids.contains(&"ext.group.other"), "{ids:?}");
+    assert!(ids.contains(&"ext.model.cleaner.0") && ids.contains(&"ext:cleaner:1"), "{ids:?}");
+    assert!(root.join(".replaced/cleaner-1.0.0/extension.json").is_file(), "the folder of the older version is kept aside");
+    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir_all(&bundled_old);
+    let _ = std::fs::remove_dir_all(&bundled_new);
+}
+
 #[test]
 fn refusing_a_shipped_program_extension_is_remembered_and_install_still_possible() {
     let root = temp("never");
