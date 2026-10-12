@@ -84,6 +84,8 @@ pub struct ExtensionsState {
     models_checked: Option<Instant>,
     /// When the launch question became due: it is shown a moment later, once the project is drawn.
     offer_due: Option<Instant>,
+    /// How long after it is due the launch question waits ([`OFFER_DELAY`]; tests set zero).
+    pub offer_delay: Duration,
 }
 
 /// One optional neural model as the menu and the licence dialog describe it.
@@ -151,7 +153,7 @@ impl ExtensionsState {
     /// Extensions under `root` (`<data dir>/extensions`); `None` = no data directory (nothing can be
     /// installed, the menu is empty).
     pub fn new(root: Option<PathBuf>) -> Self {
-        let mut s = ExtensionsState { store: root.map(ExtensionStore::new), ..Default::default() };
+        let mut s = ExtensionsState { store: root.map(ExtensionStore::new), offer_delay: OFFER_DELAY, ..Default::default() };
         s.reload();
         s
     }
@@ -1177,8 +1179,9 @@ pub fn offers_dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
     };
     // once the project is on screen, not at the first frame; and never while another dialog is open
     let due = *app.extensions.offer_due.get_or_insert_with(Instant::now);
-    if due.elapsed() < OFFER_DELAY || app.dialog.is_some() || app.extensions.open || app.extensions.ml_licence.is_some() {
-        ctx.request_repaint_after(OFFER_DELAY);
+    let delay = app.extensions.offer_delay;
+    if due.elapsed() < delay || app.dialog.is_some() || app.extensions.open || app.extensions.ml_licence.is_some() {
+        ctx.request_repaint_after(delay.max(Duration::from_millis(100)));
         return;
     }
     let mut elems: Vec<(String, egui::Rect, String)> = Vec::new();

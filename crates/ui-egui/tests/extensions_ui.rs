@@ -478,6 +478,10 @@ fn a_shipped_extension_that_starts_a_program_is_asked_about_never_installed_sile
     let mut d = Driver::new(&root);
     let (done, problems) = d.app().extensions.seed_bundled(&bundled);
     assert_eq!((done, problems.len()), (vec!["safe".to_string()], 0), "only the extension that drives FilmCraft is installed");
+    // the question waits a moment so the project is drawn first (ext-all-v2): not on screen yet…
+    d.frames(3);
+    assert!(!d.has("extensions.offer.later"), "the question is not asked over the first frames");
+    d.app().extensions.offer_delay = std::time::Duration::ZERO;
     d.frames(3);
     assert!(!root.join("risky").exists(), "nothing installed behind the user's back");
     assert!(d.menu_items().iter().all(|m| m["id"] != json!("ext:risky:0")));
@@ -494,6 +498,18 @@ fn a_shipped_extension_that_starts_a_program_is_asked_about_never_installed_sile
     assert!(!d.has("extensions.offer.later"));
     assert!(d.app().ui.status.contains("Gérer les extensions"), "{}", d.app().ui.status);
     assert!(!root.join("risky").exists());
+    // …and it is remembered for seven days with this version: the next launch does not ask
+    let seeded: Value = serde_json::from_str(&std::fs::read_to_string(root.join(".bundled-seeded.json")).unwrap()).unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let until = seeded["snoozed_until"].as_u64().unwrap();
+    assert!(until > now + 6 * 24 * 3600 && until <= now + 7 * 24 * 3600 + 5, "{seeded}");
+    assert_eq!(seeded["snoozed_version"], json!(env!("CARGO_PKG_VERSION")));
+    d.app().extensions = ExtensionsState::new(Some(root.clone()));
+    d.app().extensions.offer_delay = std::time::Duration::ZERO;
+    d.app().extensions.seed_bundled(&bundled);
+    d.frames(3);
+    assert!(!d.has("extensions.offer.later"), "snoozed: not asked at the next launch");
+    assert_eq!(d.exec("extensions.offers", json!({}))["asking"], json!(false));
     d.exec("extensions.manage", json!({}));
     d.frames(3);
     d.snap("manager-with-offer");
@@ -512,6 +528,7 @@ fn refusing_a_shipped_program_extension_is_remembered_and_install_still_possible
     let bundled = temp("never-bundled");
     write_program_ext(&bundled, "risky", "Risky Tool");
     let mut d = Driver::new(&root);
+    d.app().extensions.offer_delay = std::time::Duration::ZERO;
     d.app().extensions.seed_bundled(&bundled);
     d.frames(3);
     d.click("extensions.offer.never.risky");
