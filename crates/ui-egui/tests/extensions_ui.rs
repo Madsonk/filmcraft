@@ -309,8 +309,8 @@ fn install_from_a_folder_and_an_archive_remove_and_hot_reload() {
     let root = temp("install");
     let src = temp("install-src");
     let mut d = Driver::new(&root);
-    // no extension yet: only the management items
-    assert_eq!(d.menu_items().len(), 3);
+    // no extension yet: only the Gestion heading and the management items
+    assert_eq!(d.menu_items().len(), 4);
     // a folder
     let one = write_ext(&src, "one", "One", json!([marker_entry("Go", "one")]));
     let r = d.exec("extensions.install", json!({"path": one.to_string_lossy()}));

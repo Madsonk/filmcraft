@@ -691,9 +691,9 @@ mod tests {
         assert_eq!(l(&["fr-FR"]), Language::Fr);
         assert_eq!(l(&["fr_CA.UTF-8", "en"]), Language::Fr);
         assert_eq!(l(&["pt_PT.UTF-8@euro"]), Language::PtBr);
-        assert_eq!(l(&["fr-FR", "de", "es-MX", "ja"]), Language::Es, "the first one the interface has");
+        assert_eq!(l(&["it-IT", "de", "es-MX", "ja"]), Language::Es, "the first one the interface has");
         assert_eq!(l(&["en-GB", "es"]), Language::En);
-        for none in [&[][..], &["fr"], &["C"], &["POSIX"], &[""], &["e"], &["esp"], &["-es"]] {
+        for none in [&[][..], &["de"], &["C"], &["POSIX"], &[""], &["e"], &["esp"], &["-es"]] {
             assert_eq!(l(none), Language::En, "{none:?}");
         }
         assert_eq!(l(&[&"x".repeat(1 << 20), "es"]), Language::Es);
@@ -715,7 +715,7 @@ mod tests {
         let count = asked.clone();
         app.hooks.system_languages = Some(Box::new(move || {
             count.set(count.get() + 1);
-            vec!["fr-FR".into(), "es-ES".into()]
+            vec!["de-DE".into(), "es-ES".into()]
         }));
         app.apply_prefs(&ctx);
         assert_eq!(app.ui.language, Language::Es);
