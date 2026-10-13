@@ -3515,3 +3515,37 @@
 	Choose two different clips.	Elija dos planos distintos.
 	(choose a clip)	(elegir un plano)
 	Shot match: mean colour distance {before} → {after} (LUT “{name}”)	Igualar color: distancia media {before} → {after} (LUT “{name}”)
+	Resources	Recursos
+	A LUT goes on a video clip, not on a sound	Una LUT va en un plano de vídeo, no en un sonido
+	Add to the LUT library	Añadir a la biblioteca de LUT
+	Adobe template: needs converting (see Resources ▸ Titles)	Plantilla de Adobe: hay que convertirla (ver Recursos ▸ Títulos)
+	Before	Antes
+	Choose the folder…	Elegir la carpeta…
+	FilmCraft can't read Adobe .mogrt templates: convert it into a video with transparency (mogrt_to_alpha, see Window ▸ Resources ▸ Titles), then drop the video	FilmCraft no lee las plantillas .mogrt de Adobe: conviértala en un vídeo con transparencia (mogrt_to_alpha, ver Ventana ▸ Recursos ▸ Títulos) y arrastre el vídeo
+	Hover a LUT to preview it	Pase sobre una LUT para previsualizarla
+	LUTs	LUT
+	Listening is not available in this build	La escucha no está disponible en esta versión
+	No folder chosen: click the folder icon.	Ninguna carpeta elegida: haga clic en el icono de carpeta.
+	Not converted yet: the preview is dropped as a reference, not the title itself	Aún no convertido: se coloca la vista previa como referencia, no el título
+	On a free audio track at this time	En una pista de audio libre en este instante
+	On a free video track at this time	En una pista de vídeo libre en este instante
+	Reading the LUT…	Leyendo la LUT…
+	Search by name or folder	Buscar por nombre o carpeta
+	Select a video clip (or put the playhead on one) to preview LUTs on it.	Seleccione un plano de vídeo (o ponga el cabezal sobre uno) para previsualizar las LUT.
+	Select a video clip first: the LUT becomes its Creative Look.	Seleccione primero un plano de vídeo: la LUT pasa a ser su Look creativo.
+	Sound Effects	Efectos de sonido
+	Titles = .mogrt converted to video with transparency (mogrt_to_alpha). “preview only” = not converted yet: a reference, not the title.	Títulos = .mogrt convertidos en vídeo con transparencia (mogrt_to_alpha). “solo vista previa” = aún sin convertir: una referencia, no el título.
+	Update the index (only changed folders are read again)	Actualizar el índice (solo se releen las carpetas modificadas)
+	preview only	solo vista previa
+	Could not play {path}	No se pudo reproducir {path}
+	Creative Look applied ({n})	Look creativo aplicado ({n})
+	Creative Look on {clip}	Look creativo en {clip}
+	Folder: {path} (click to change)	Carpeta: {path} (clic para cambiar)
+	Import into {bin}	Importar en {bin}
+	Index error: {error}	Error del índice: {error}
+	{n} LUT(s) added to the LUT library	{n} LUT añadida(s) a la biblioteca de LUT
+	{n} file(s) imported	{n} archivo(s) importado(s)
+	{n} file(s) refused: {why}	{n} archivo(s) rechazado(s): {why}
+	{n} of {total}	{n} de {total}
+	{n} of {total} · indexing in the background ({dirs} folders read)…	{n} de {total} · indexando en segundo plano ({dirs} carpetas leídas)…
+	{n} resource(s) placed on the timeline	{n} recurso(s) colocado(s) en la línea de tiempo

@@ -29,6 +29,7 @@ macro_rules! tlf {
     };
 }
 
+pub mod assets;
 pub mod automation;
 pub mod brand;
 mod cjk;
@@ -147,6 +148,12 @@ pub struct HostHooks {
     /// Open a file in its default application, or (`true`) reveal it in the file manager (Edit ▸
     /// Edit Original, Help ▸ Reveal Log Files).
     pub open_path: Option<Box<dyn FnMut(&str, bool) -> Result<(), String>>>,
+    /// The pointer in the window's content (logical points, top-left origin) while files are
+    /// dragged in from the Finder: winit reports the files but not where they are (assets-dnd).
+    pub pointer_in_window: Option<Box<dyn FnMut() -> Option<(f32, f32)>>>,
+    /// Audition a sound file (Window ▸ Resources ▸ ▶): `Some(path)` plays it (stopping the
+    /// previous one) and says whether it started, `None` stops.
+    pub preview_audio: Option<Box<dyn FnMut(Option<&str>) -> bool>>,
 }
 
 /// The command a [`HostHooks::pick_file_for_relink`] caller runs with the chosen file, for hosts
@@ -309,6 +316,8 @@ pub struct FilmcraftApp {
     menu_extensions: u64,
     /// The Extensions menu: installed extensions and their manager (docs/extensions.md).
     pub extensions: panels::extensions::ExtensionsState,
+    /// Window ▸ Resources and resource drops (assets-dnd).
+    pub assets: assets::AssetsState,
 }
 
 pub struct GpuState {
@@ -491,6 +500,7 @@ impl FilmcraftApp {
             menu_workspaces: Default::default(),
             menu_extensions: 0,
             extensions,
+            assets: Default::default(),
         }
     }
 
@@ -1160,7 +1170,10 @@ impl FilmcraftApp {
             }
         }
         if !paths.is_empty() {
-            let _ = self.session.execute("file.import", json!({"paths": paths, "bin": self.import_bin().0}));
+            // where it was dropped decides what it does (assets-dnd): a LUT on a shot, a sound on
+            // a free audio track; elsewhere, imported as before
+            let pos = assets::os_pointer(self, ctx).or_else(|| ctx.input(|i| i.pointer.latest_pos()));
+            assets::drop_files(self, paths, pos);
         }
     }
 
@@ -1600,6 +1613,7 @@ impl FilmcraftApp {
             }
         }
         panels::panel_menu_popup(self, ui);
+        assets::after_panels(self, ui.ctx());
     }
 }
 
