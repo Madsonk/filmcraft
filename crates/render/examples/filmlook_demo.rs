@@ -17,7 +17,7 @@ fn main() -> Result<(), String> {
     let rgb = image::open(input).map_err(|e| e.to_string())?.to_rgb8();
     let (w, h) = (rgb.width() as usize, rgb.height() as usize);
     let mut src = Image::new(w, h);
-    for (p, o) in rgb.pixels().zip(src.px.chunks_exact_mut(4)) {
+    for (p, o) in rgb.pixels().zip(src.px.as_chunks_mut::<4>().0.iter_mut()) {
         for k in 0..3 {
             o[k] = srgb_to_linear(f32::from(p.0[k]) / 255.0);
         }
@@ -26,7 +26,7 @@ fn main() -> Result<(), String> {
     std::fs::create_dir_all(out).map_err(|e| e.to_string())?;
     let save = |name: &str, img: &Image| -> Result<(), String> {
         let mut buf = image::RgbImage::new(w as u32, h as u32);
-        for (p, o) in img.px.chunks_exact(4).zip(buf.pixels_mut()) {
+        for (p, o) in img.px.as_chunks::<4>().0.iter().zip(buf.pixels_mut()) {
             for k in 0..3 {
                 o.0[k] = (linear_to_srgb(p[k].clamp(0.0, 1.0)) * 255.0 + 0.5) as u8;
             }
