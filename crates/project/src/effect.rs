@@ -914,5 +914,7 @@ mod tests {
         assert!(hidden.is_empty(), "not listed by the Effects panel: {hidden:?}");
         let film: Vec<&str> = effect_defs().iter().filter(|e| e.category.first() == Some(&"Film Look")).map(|e| e.id).collect();
         assert_eq!(film.len(), 9, "{film:?}");
+        // rendered on the CPU (no shader): the Effects panel must not show the GPU badge
+        assert!(effect_defs().iter().filter(|e| e.category.first() == Some(&"Film Look")).all(|e| !e.accelerated));
     }
 }

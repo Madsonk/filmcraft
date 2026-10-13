@@ -1097,6 +1097,8 @@ pub(super) fn apply_badges(v: &mut [EffectDef]) {
         let yuv = matches!(id, "proc_amp" | "lumetri" | "video_limiter" | "black_white" | "alpha_adjust" | "luma_key" | "track_matte");
         let accel = match e.category.first().copied() {
             Some("Legacy") => !matches!(id, "camera_blur"),
+            // our Film Look bin has no GPU (WGSL) implementation: rendered on the CPU
+            Some("Film Look") => false,
             _ if folder == "Obsolete" => false,
             _ => !matches!(id, "clone" | "stroke"),
         };
