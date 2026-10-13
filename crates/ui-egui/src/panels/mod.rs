@@ -38,6 +38,7 @@ pub mod project_dialogs;
 pub mod project_views;
 pub mod reference;
 pub mod remix;
+pub mod resources;
 pub mod scopes;
 pub mod sequence_settings;
 pub mod settings;
@@ -99,6 +100,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, p: PanelKind, rect: Rect)
         PanelKind::ReferenceMonitor => reference::show(app, ui, rect),
         PanelKind::Text => text::show(app, ui, rect),
         PanelKind::EssentialSound => essential_sound::show(app, ui, rect),
+        PanelKind::Resources => resources::show(app, ui, rect),
         other => crate::dock::placeholder(ui, rect, &app.tokens, &tlf!("{panel} — coming in a later milestone", panel = crate::i18n::t(other.title()))),
     }
 }

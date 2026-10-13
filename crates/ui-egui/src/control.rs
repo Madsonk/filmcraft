@@ -358,6 +358,37 @@ pub fn handle(app: &mut FilmcraftApp, ctx: &egui::Context, req: &ControlRequest)
             app.synthetic.push(egui::Event::Key { key: egui::Key::F35, physical_key: None, pressed: false, repeat: false, modifiers: Default::default() });
             Outcome::AfterInput
         }
+        // assets-dnd: drop files from "the Finder" at a window point (`id` or `x`,`y`), as the OS
+        // does; the result of the last drop (`assets.place` parameters and answer).
+        "ui.dropFiles" => {
+            let paths: Vec<String> =
+                p.get("paths").and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
+            if paths.is_empty() {
+                return err("need `paths`");
+            }
+            let pos = match point(app, p) {
+                Ok(p) => p,
+                Err(e) if e.starts_with(RETRY) => return Outcome::Retry(e.trim_start_matches(RETRY).to_string()),
+                Err(e) => return err(e),
+            };
+            app.synthetic.push(egui::Event::PointerMoved(pos));
+            app.assets.synthetic_drop = Some((paths, pos));
+            app.assets.last_drop = None;
+            Outcome::AfterInput
+        }
+        "ui.assets" => ok(json!({
+            "lastDrop": app.assets.last_drop,
+            "tab": app.assets.tab.map(|k| k.id()),
+            "query": app.assets.query,
+            "hoverLut": app.assets.hover_lut,
+            "previewOf": app.assets.preview.after_of,
+            "playing": app.assets.playing,
+            "dragging": app.assets.drag.as_ref().map(|d| d.paths.clone()),
+            "libraries": app.assets.libs.iter().map(|(k, l)| {
+                let s = l.snapshot();
+                (k.id().to_string(), json!({"root": l.root, "entries": s.entries.len(), "running": s.running, "complete": s.complete, "dirs": s.dirs_seen, "error": s.error}))
+            }).collect::<serde_json::Map<String, Value>>(),
+        })),
         "ui.timeline.hit" => {
             let pos = match point(app, p) {
                 Ok(p) => p,

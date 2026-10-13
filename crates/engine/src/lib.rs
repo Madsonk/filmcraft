@@ -11,6 +11,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 
 pub mod aaf_omf;
+pub mod assets;
 pub mod auto_reframe;
 pub mod autosave;
 pub mod beats;
@@ -1045,6 +1046,8 @@ const MAX_SUBCLIP_CHAIN: usize = 16;
 
 #[cfg(test)]
 mod aaf_omf_tests;
+#[cfg(test)]
+mod assets_tests;
 #[cfg(test)]
 mod audio_effects_tests;
 #[cfg(test)]
