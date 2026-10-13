@@ -51,10 +51,10 @@ fn harness() -> H {
 }
 
 fn snapshot(h: &mut H, name: &str) {
-    if let Some(dir) = std::env::var_os("FILMCRAFT_UI_SNAPSHOT_DIR") {
-        if let Ok(img) = h.render() {
-            let _ = img.save(Path::new(&dir).join(format!("assets-{name}.png")));
-        }
+    if let Some(dir) = std::env::var_os("FILMCRAFT_UI_SNAPSHOT_DIR")
+        && let Ok(img) = h.render()
+    {
+        let _ = img.save(Path::new(&dir).join(format!("assets-{name}.png")));
     }
 }
 

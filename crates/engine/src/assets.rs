@@ -167,15 +167,14 @@ fn place(s: &mut Session, p: &Value) -> Result<Value> {
         let kind = AssetKind::of(path);
         let r: Result<Value> = (|| match kind {
             AssetKind::Mogrt => Err(bad(CMD, MOGRT_GUIDE)),
-            AssetKind::Lut => match hovered_clip {
-                Some((_, TrackKind::Video, _)) => {
-                    let c = clip.expect("hovered clip");
+            AssetKind::Lut => match (hovered_clip, clip) {
+                (Some((_, TrackKind::Video, _)), Some(c)) => {
                     let r = s.execute("lumetri.setLook", json!({"clip": c.0, "path": path}))?;
                     summary.push(format!("Look “{}” on clip {}", name_of(path), c.0));
                     Ok(json!({"path": path, "kind": "lut", "action": "look", "clip": c.0, "result": r}))
                 }
-                Some((_, TrackKind::Audio, _)) => Err(bad(CMD, "a LUT goes on a video clip, not on a sound")),
-                None => {
+                (Some((_, TrackKind::Audio, _)), _) => Err(bad(CMD, "a LUT goes on a video clip, not on a sound")),
+                _ => {
                     let r = s.execute("lut.import", json!({"path": path}))?;
                     summary.push(format!("LUT “{}” added to the project's LUT library", name_of(path)));
                     Ok(json!({"path": path, "kind": "lut", "action": "library", "lut": r.get("ref").cloned().unwrap_or(Value::Null)}))

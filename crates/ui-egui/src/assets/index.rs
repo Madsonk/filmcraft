@@ -189,7 +189,7 @@ fn entries_of(root: &str, dirs: &BTreeMap<String, DirRec>) -> Vec<Entry> {
             });
         }
     }
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|e| e.name.to_lowercase());
     out
 }
 
@@ -355,7 +355,7 @@ fn load_titles(root: &str, shared: &Mutex<Snapshot>) -> Result<(), String> {
             Some(Entry { path, name: t.name, dir: t.pack, dur: t.duration, family: t.app, source: Some(t.source), ready })
         })
         .collect();
-    entries.sort_by(|a, b| (!a.ready, a.dir.to_lowercase(), a.name.to_lowercase()).cmp(&(!b.ready, b.dir.to_lowercase(), b.name.to_lowercase())));
+    entries.sort_by_key(|e| (!e.ready, e.dir.to_lowercase(), e.name.to_lowercase()));
     let mut s = shared.lock().unwrap_or_else(|e| e.into_inner());
     s.dirs_seen = 1;
     s.entries = Arc::new(entries);
