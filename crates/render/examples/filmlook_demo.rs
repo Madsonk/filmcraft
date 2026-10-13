@@ -33,16 +33,8 @@ fn main() -> Result<(), String> {
         }
         buf.save(Path::new(out).join(format!("{name}.png"))).map_err(|e| e.to_string())
     };
-    let cx = FxCtx {
-        t: Tick::ZERO,
-        px_scale: 1.0,
-        seconds,
-        timecode: "",
-        clip_name: "",
-        project: None,
-        env: None,
-        working: filmcraft_color::WorkingSpace::Rec709,
-    };
+    let cx =
+        FxCtx { t: Tick::ZERO, px_scale: 1.0, seconds, timecode: "", clip_name: "", project: None, env: None, working: filmcraft_color::WorkingSpace::Rec709 };
     save("00_original", &src)?;
     for id in ["film_grain", "halation", "bloom", "diffusion", "film_stock", "gate_weave", "film_damage", "lens_character"] {
         let e = find_effect(id).ok_or(id)?.instance();

@@ -27,16 +27,8 @@ fn main() -> Result<(), String> {
         }
         o[3] = 1.0;
     }
-    let cx = FxCtx {
-        t: Tick::ZERO,
-        px_scale: 1.0,
-        seconds,
-        timecode: "",
-        clip_name: "",
-        project: None,
-        env: None,
-        working: filmcraft_color::WorkingSpace::Rec709,
-    };
+    let cx =
+        FxCtx { t: Tick::ZERO, px_scale: 1.0, seconds, timecode: "", clip_name: "", project: None, env: None, working: filmcraft_color::WorkingSpace::Rec709 };
     // the LUT, applied to the sRGB-encoded picture as the app's own presets expect
     let mut lutted = src.clone();
     for p in lutted.px.as_chunks_mut::<4>().0.iter_mut() {

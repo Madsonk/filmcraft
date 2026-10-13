@@ -894,4 +894,25 @@ mod tests {
         assert_eq!(find_effect_by_name("Gaussian Blur").unwrap().id, "gaussian_blur");
         assert_eq!(intrinsic_video().len(), 3);
     }
+
+    /// The Effects panel only draws the folders of `EFFECT_TOP_FOLDERS`: an effect whose top
+    /// category is missing there cannot be found or dragged (the Film Look bin was, at first).
+    #[test]
+    fn every_effect_sits_in_a_panel_folder() {
+        let tops = crate::vtransition::EFFECT_TOP_FOLDERS;
+        let mut hidden: Vec<String> = Vec::new();
+        for e in effect_defs().iter().filter(|e| !e.intrinsic) {
+            // "Obsolete" holds superseded transitions kept only so old projects still open
+            if let Some(top) = e.category.first()
+                && *top != "Obsolete"
+                && !tops.contains(top)
+            {
+                hidden.push(format!("{top}/{}", e.id));
+            }
+        }
+        hidden.sort();
+        assert!(hidden.is_empty(), "not listed by the Effects panel: {hidden:?}");
+        let film: Vec<&str> = effect_defs().iter().filter(|e| e.category.first() == Some(&"Film Look")).map(|e| e.id).collect();
+        assert_eq!(film.len(), 9, "{film:?}");
+    }
 }

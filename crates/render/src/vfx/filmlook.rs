@@ -149,6 +149,19 @@ fn grain_response(l: f32, g: &Grain) -> f32 {
     (ws * g.shadows + wm * g.mids + wh * g.highs) * floor
 }
 
+/// Share of the standard deviation of smooth lattice noise of spacing `l` clip pixels that
+/// survives an n×n box average, relative to full resolution (n = 1 → exactly 1). The raw curve
+/// `1 / √(1 + α u²)`, u = n / l, falls as 1/u once the box spans many lattice cells (their count
+/// grows as u²); α is fitted on a box-filtered full-resolution render (see the Film Look preview
+/// tests in `filmlook_preview_tests.rs`).
+#[inline]
+fn preview_retention(n: f32, l: f32) -> f32 {
+    const ALPHA: f32 = 1.5;
+    let raw = |u: f32| (1.0 + ALPHA * u * u).sqrt().recip();
+    let l = l.max(0.3);
+    raw(n / l) / raw(1.0 / l)
+}
+
 fn grain_core(img: &mut Image, g: &Grain, seconds: f64, px_scale: f32) {
     if g.amount <= 0.0 || img.w == 0 {
         return;
@@ -159,13 +172,20 @@ fn grain_core(img: &mut Image, g: &Grain, seconds: f64, px_scale: f32) {
     let scale = (g.size * px_scale).max(0.3);
     let frame = if g.animated { frame_index(seconds, g.fps) } else { 0 };
     let norm = 1.0 / (0.552 * (W1 * W1 + W2 * W2) + W3 * W3 * g.rough * g.rough).sqrt();
+    // Below full resolution (Program monitor at 1/2, 1/4…) one working pixel stands for n×n clip
+    // pixels: the grain must look like the full-resolution grain filtered down, not like
+    // full-strength grain on bigger pixels. Each octave keeps the share of its deviation that
+    // survives an n×n box average (`preview_retention`); the per-pixel term keeps 1/n.
+    let n = (1.0 / px_scale.clamp(1e-3, 1.0)).max(1.0);
+    let (w1, w2) = (W1 * preview_retention(n, g.size), W2 * preview_retention(n, g.size / 2.3));
+    let w3 = W3 * g.rough / n;
     let (k_luma, k_chroma) = ((1.0 - g.chroma).sqrt(), g.chroma.sqrt());
     let field = |x: f32, y: f32, chan: u64| -> f32 {
         let (fx, fy) = (x / scale, y / scale);
         let o1 = vnoise(fx, fy, frame, chan, g.seed);
         let o2 = vnoise(fx * 2.3 + 17.0, fy * 2.3 + 5.0, frame, chan + 11, g.seed);
         let fine = lattice(x as i64, y as i64, frame, chan + 23, g.seed);
-        (o1 * W1 + o2 * W2 + fine * W3 * g.rough) * norm
+        (o1 * w1 + o2 * w2 + fine * w3) * norm
     };
     let w = img.w;
     img.px.par_chunks_mut(w * 4).enumerate().for_each(|(y, row)| {

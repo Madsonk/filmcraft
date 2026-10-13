@@ -3514,3 +3514,57 @@
 	Choose two different clips.	Choisissez deux plans différents.
 	(choose a clip)	(choisir un plan)
 	Shot match: mean colour distance {before} → {after} (LUT “{name}”)	Calage couleur : écart moyen {before} → {after} (LUT « {name} »)
+	Film Look	Rendu pellicule
+	35mm Clean	35 mm net
+	35mm Gritty	35 mm granuleux
+	16mm Documentary	16 mm documentaire
+	Super 8 Memory	Souvenir Super 8
+	Large Format 65	Grand format 65
+	Vintage 70s Print	Tirage années 70
+	Night Neon	Néons de nuit
+	Grain	Grain
+	Halation	Halation
+	Bloom	Éclat (bloom)
+	Stock Colour	Couleur de l'émulsion
+	Gate Weave & Flicker	Instabilité et scintillement
+	Dust & Scratches	Poussières et rayures
+	Film Grain	Grain de pellicule
+	Roughness	Rugosité
+	Shadows Response	Réponse des ombres
+	Midtones Response	Réponse des tons moyens
+	Highlights Response	Réponse des hautes lumières
+	Colour Grain	Grain coloré
+	Animated	Animé
+	Wide Spread	Diffusion large
+	Halation Color	Couleur de l'halation
+	Colour Strength	Force de la couleur
+	Halation Only	Halation seule
+	Scatter	Dispersion
+	Bloom Color	Couleur de l'éclat
+	Anamorphic Streak	Traînée anamorphique
+	Streak Length	Longueur de la traînée
+	Streak Color	Couleur de la traînée
+	Bloom Only	Éclat seul
+	Diffusion Filter	Filtre de diffusion
+	Highlight Bias	Priorité aux hautes lumières
+	Warmth	Chaleur
+	Black Lift	Relèvement des noirs
+	Film Stock	Émulsion de pellicule
+	Stock	Émulsion
+	Neutral	Neutre
+	Warm Print	Tirage chaud
+	Cool Teal	Bleu-vert froid
+	Cross Process	Traitement croisé
+	Tungsten Night	Nuit tungstène
+	Vintage 70s	Années 70
+	Silver B&W	N&B argentique
+	Highlight Roll-off	Adoucissement des hautes lumières
+	Weave	Instabilité
+	Breathing	Respiration
+	Dust	Poussières
+	Dust Size	Taille des poussières
+	Dark Dust Share	Part de poussières sombres
+	Hairs	Cheveux
+	Scratches	Rayures
+	Lens Character	Caractère d'objectif
+	Chromatic Aberration	Aberration chromatique
