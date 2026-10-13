@@ -465,6 +465,12 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
             crate::panels::sequence_settings::open_new(app);
             return Ok(json!({"dialog": "newSequence"}));
         }
+        // Clip ▸ Match Shot Colour… opens the dialog; with params the engine command matches directly.
+        "color.matchShots" if params.as_object().is_none_or(|m| m.is_empty()) => {
+            filmcraft_engine::find_command(id).map_or(Ok(()), |c| (c.enabled)(&app.session))?;
+            crate::panels::color_dialogs::open_match(app);
+            return Ok(json!({"dialog": "matchShots"}));
+        }
         "sequence.colorSettings" if params.as_object().is_none_or(|m| m.is_empty()) => {
             filmcraft_engine::find_command(id).map_or(Ok(()), |c| (c.enabled)(&app.session))?;
             crate::panels::color_dialogs::open_sequence(app);

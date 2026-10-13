@@ -3501,3 +3501,17 @@
 	Sous-titres et langue	Subtítulos e idioma
 	Image et IA	Imagen e IA
 	Index rushes	Indexar brutos
+	Match Shot Colour…	Igualar color entre planos…
+	Match Shot Colour	Igualar color entre planos
+	Reference clip (the look to reach)	Plano de referencia (el aspecto a conseguir)
+	Use selected clip	Usar el clip seleccionado
+	Clip to match	Plano a igualar
+	Mean and spread (Reinhard), recommended	Media y dispersión (Reinhard), recomendado
+	Linear transport 3×3 (Monge–Kantorovich)	Transporte lineal 3×3 (Monge–Kantorovich)
+	Histogram per channel	Histograma por canal
+	Apply to the clip (Lumetri Creative Look)	Aplicar al plano (Look creativo de Lumetri)
+	Measured after each clip's Input LUT and Basic Correction: convert log or flat footage to Rec.709 first.	Medido tras la LUT de entrada y la corrección básica de cada plano: convierta antes el material log o plano a Rec.709.
+	The LUT joins the project's LUT library; Edit ▸ Undo removes it.	La LUT se añade a la biblioteca de LUT del proyecto; Edición ▸ Deshacer la quita.
+	Choose two different clips.	Elija dos planos distintos.
+	(choose a clip)	(elegir un plano)
+	Shot match: mean colour distance {before} → {after} (LUT “{name}”)	Igualar color: distancia media {before} → {after} (LUT “{name}”)

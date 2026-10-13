@@ -977,3 +977,41 @@ fn doublage_voix_dubs_a_clip_with_a_stand_in_for_voicebox() {
     assert!(d > 8.0 && d < 13.0, "{d} s");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn match_shot_colour_from_the_shell() {
+    let dir = std::env::temp_dir().join(format!("fc-cli-match-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (proj, cube) = (dir.join("p.fcproj"), dir.join("match.cube"));
+    let p = proj.to_str().unwrap();
+    json_out(&cli(&["--demo", "exec", "file.newBin", "name=x", "--save-as", p]));
+    let seq = json_out(&cli(&["--project", p, "exec", "sequence.inspect"]));
+    let items = seq["video"][0]["items"].as_array().unwrap();
+    let (a, b) = (items[0]["clip"].as_u64().unwrap(), items.last().unwrap()["clip"].as_u64().unwrap());
+    let r = json_out(&cli(&[
+        "--project",
+        p,
+        "--save",
+        "exec",
+        "color.matchShots",
+        &format!("referenceClip={a}"),
+        &format!("targetClip={b}"),
+        "method=histogram",
+        "strength=80",
+        &format!("path={}", cube.to_str().unwrap()),
+    ]));
+    assert_eq!(r["method"], "histogram");
+    assert_eq!(r["applied"], true);
+    assert!(r["lut"].as_str().unwrap().starts_with("lib:"), "{r}");
+    let text = std::fs::read_to_string(&cube).unwrap();
+    assert!(text.contains("LUT_3D_SIZE 33"));
+    // saved: the library holds the LUT and the target plays it
+    let luts = json_out(&cli(&["--project", p, "exec", "lut.list"]));
+    assert_eq!(luts["library"].as_array().unwrap().len(), 1, "{luts}");
+    let seq = json_out(&cli(&["--project", p, "exec", "sequence.inspect"]));
+    assert!(seq.to_string().contains(r["lut"].as_str().unwrap()), "the target's look is the LUT");
+    // the same clip twice is a failed command (exit 1), nothing saved
+    let bad = cli(&["--project", p, "exec", "color.matchShots", &format!("referenceClip={a}"), &format!("targetClip={a}")]);
+    assert_eq!(bad.status.code(), Some(1));
+    let _ = std::fs::remove_dir_all(&dir);
+}
