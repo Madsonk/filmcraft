@@ -63,7 +63,9 @@ fn param(id: u32, name: &str, ctl: u32, start: &str, keys: Option<&str>) -> Stri
 }
 
 fn arb(id: u32, name: &str, blob: &str) -> String {
-    format!("<ArbVideoComponentParam ObjectID=\"{id}\"><Name>{name}</Name><ParameterControlType>9</ParameterControlType><StartKeyframeValue Encoding=\"base64\">{blob}</StartKeyframeValue></ArbVideoComponentParam>")
+    format!(
+        "<ArbVideoComponentParam ObjectID=\"{id}\"><Name>{name}</Name><ParameterControlType>9</ParameterControlType><StartKeyframeValue Encoding=\"base64\">{blob}</StartKeyframeValue></ArbVideoComponentParam>"
+    )
 }
 
 fn comp(id: u32, match_name: &str, display: &str, inst: &str, params: &[u32]) -> String {

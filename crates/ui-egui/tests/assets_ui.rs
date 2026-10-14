@@ -395,7 +395,8 @@ fn a_premiere_title_from_the_titles_tab_becomes_an_editable_title_above_the_shot
     let titles = root.join("TITLES");
     std::fs::create_dir_all(&titles).unwrap();
     let pr = root.join("Lower third PR.mogrt");
-    std::fs::write(&pr, premiere(&Spec { text: "Madson Kurtis", font: "Inter-Bold", second_run_size: None, opacity_keys: true, extra_effect: false }).unwrap()).unwrap();
+    std::fs::write(&pr, premiere(&Spec { text: "Madson Kurtis", font: "Inter-Bold", second_run_size: None, opacity_keys: true, extra_effect: false }).unwrap())
+        .unwrap();
     let ae = root.join("Lower third AE.mogrt");
     std::fs::write(&ae, after_effects().unwrap()).unwrap();
     let preview = root.join("ae-preview.png");
@@ -452,7 +453,11 @@ fn a_premiere_title_from_the_titles_tab_becomes_an_editable_title_above_the_shot
     wait_for(&mut h, "conversion done", |h| h.state().assets.convert_job.as_ref().is_some_and(|j| !j.lock().unwrap().running));
     let j = h.state().assets.convert_job.as_ref().unwrap().lock().unwrap().clone();
     assert_eq!((j.total, j.done, j.failed), (1, 1, 0), "{j:?}");
-    let fcgt: Vec<_> = std::fs::read_dir(root.join("data/Graphics Templates")).unwrap().filter_map(|e| e.ok()).filter(|e| e.path().extension().is_some_and(|x| x == "fcgt")).collect();
+    let fcgt: Vec<_> = std::fs::read_dir(root.join("data/Graphics Templates"))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|x| x == "fcgt"))
+        .collect();
     assert_eq!(fcgt.len(), 1);
     snapshot(&mut h, "06-titles-converted");
 }

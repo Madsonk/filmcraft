@@ -6,8 +6,8 @@ use crate::Session;
 use crate::media_test_util::tmp_dir;
 use crate::mogrt_fixtures::{IN, Spec, after_effects, premiere, zip_of};
 use crate::mogrt_import::{MogrtError, MogrtKind, convert, kind};
-use filmcraft_project::gtemplate::{ControlKind, GraphicsTemplate};
 use filmcraft_project::graphic::{SHAPE_LAYER, TEXT_LAYER};
+use filmcraft_project::gtemplate::{ControlKind, GraphicsTemplate};
 use filmcraft_project::{EffectInstance, Interpolation, ParamValue};
 use filmcraft_time::{TICKS_PER_SECOND, Tick};
 
@@ -73,7 +73,13 @@ fn a_premiere_title_becomes_editable_layers_with_its_look_and_animation() {
     assert!(t.description.contains("Wave Warp"));
     // editable: text, font and colour of the text, colour of the box
     let kinds: Vec<(u64, ControlKind)> = t.controls.iter().map(|c| (c.layer, c.kind)).collect();
-    assert!(kinds.contains(&(2, ControlKind::Text)) && kinds.contains(&(2, ControlKind::Font)) && kinds.contains(&(2, ControlKind::Color)) && kinds.contains(&(1, ControlKind::Color)), "{kinds:?}");
+    assert!(
+        kinds.contains(&(2, ControlKind::Text))
+            && kinds.contains(&(2, ControlKind::Font))
+            && kinds.contains(&(2, ControlKind::Color))
+            && kinds.contains(&(1, ControlKind::Color)),
+        "{kinds:?}"
+    );
     // a valid .fcgt that reads back the same
     let back = GraphicsTemplate::from_bytes(t.to_json().as_bytes()).unwrap();
     assert_eq!(&back, t);
@@ -81,7 +87,8 @@ fn a_premiere_title_becomes_editable_layers_with_its_look_and_animation() {
 
 #[test]
 fn an_installed_font_is_kept_and_after_effects_titles_are_never_opened() {
-    let c = convert(&premiere(&Spec { text: "Bold", font: "Inter-Bold", second_run_size: None, opacity_keys: false, extra_effect: false }).unwrap(), "x.mogrt").unwrap();
+    let c = convert(&premiere(&Spec { text: "Bold", font: "Inter-Bold", second_run_size: None, opacity_keys: false, extra_effect: false }).unwrap(), "x.mogrt")
+        .unwrap();
     let text = c.template.layers.iter().find(|l| l.effect == TEXT_LAYER).unwrap();
     assert_eq!(v(text, "font"), ParamValue::Text("Inter".into()));
     assert!(matches!(v(text, "font_style"), ParamValue::Text(s) if s.contains("Bold")));

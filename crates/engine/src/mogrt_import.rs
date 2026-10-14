@@ -32,9 +32,7 @@ const MAX_MEMBER: u64 = 64 << 20;
 /// Why a `.mogrt` cannot become a native title.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum MogrtError {
-    #[error(
-        "this title is an After Effects template: FilmCraft cannot convert it (it would need After Effects); it stays “preview only”"
-    )]
+    #[error("this title is an After Effects template: FilmCraft cannot convert it (it would need After Effects); it stays “preview only”")]
     AfterEffects,
     #[error("not a .mogrt title: {0}")]
     NotMogrt(String),
@@ -304,8 +302,7 @@ fn color(v: &Value, alpha: f64) -> Option<[f32; 4]> {
 /// A style-sheet property: the value at character 0 and the later runs `(start, value)`.
 fn sheet<'v>(ss: &'v Value, key: &str) -> (Option<&'v Value>, Vec<(usize, &'v Value)>) {
     let Some(a) = ss.get(key).and_then(|v| v.get("mParamValues")).and_then(Value::as_array) else { return (None, Vec::new()) };
-    let mut runs: Vec<(usize, &Value)> =
-        a.iter().filter_map(|p| p.as_array()).filter_map(|p| Some((p.first()?.as_u64()? as usize, p.get(1)?))).collect();
+    let mut runs: Vec<(usize, &Value)> = a.iter().filter_map(|p| p.as_array()).filter_map(|p| Some((p.first()?.as_u64()? as usize, p.get(1)?))).collect();
     runs.sort_by_key(|r| r.0);
     let base = runs.first().filter(|r| r.0 == 0).map(|r| r.1);
     let rest = runs.into_iter().filter(|r| r.0 > 0).collect();
@@ -343,9 +340,15 @@ fn font_candidates(ps: &str) -> Vec<(String, String)> {
     v
 }
 
+/// Premiere sometimes stores a font id (a GUID) instead of a name for the run after the last
+/// character: not a font.
+fn is_font_id(ps: &str) -> bool {
+    ps.len() == 36 && ps.chars().filter(|c| *c == '-').count() == 4 && ps.chars().all(|c| c == '-' || c.is_ascii_hexdigit())
+}
+
 /// The font FilmCraft will use for PostScript name `ps`, and whether it is the real one.
 fn resolve_font(ps: &str) -> (String, String, bool) {
-    if ps.is_empty() {
+    if ps.is_empty() || is_font_id(ps) {
         return (filmcraft_text::fonts::DEFAULT_FAMILY.into(), "Regular".into(), true);
     }
     for (fam, style) in font_candidates(ps) {
@@ -442,7 +445,13 @@ fn appearance(e: &mut EffectInstance, style: &Value, sheet_v: Option<&Value>, wa
     if let Some(c) = style.get("mShadowColor").and_then(|v| color(v, 1.0)) {
         set(e, "shadow_color", ParamValue::Color(c));
     }
-    for (k, to) in [("mShadowOpacity", "shadow_opacity"), ("mShadowAngle", "shadow_angle"), ("mShadowOffset", "shadow_distance"), ("mShadowSize", "shadow_size"), ("mShadowBlur", "shadow_blur")] {
+    for (k, to) in [
+        ("mShadowOpacity", "shadow_opacity"),
+        ("mShadowAngle", "shadow_angle"),
+        ("mShadowOffset", "shadow_distance"),
+        ("mShadowSize", "shadow_size"),
+        ("mShadowBlur", "shadow_blur"),
+    ] {
         if let Some(v) = f(k) {
             set(e, to, ParamValue::Float(v));
         }
@@ -553,7 +562,7 @@ fn text_layer(c: &PComponent, in_point: i64, frame: [u32; 2], out: &mut Converte
             st.size = at("mFontSize", s).and_then(|v| v.as_f64()).map(|v| v as f32);
         }
         if differs("mFontName")
-            && let Some(ps) = at("mFontName", s).and_then(|v| v.as_str().map(str::to_string))
+            && let Some(ps) = at("mFontName", s).and_then(|v| v.as_str().map(str::to_string)).filter(|ps| !is_font_id(ps))
         {
             let (fam, style) = font_of(&ps, out);
             st.font = Some(fam);
@@ -824,7 +833,11 @@ pub fn convert(bytes: &[u8], source: &str) -> Result<Converted, MogrtError> {
     let def: Value = serde_json::from_slice(&read_member(&mut z, "definition.json")?).map_err(|e| MogrtError::Unreadable(format!("definition.json: {e}")))?;
     let inner = read_member(&mut z, "project.prgraphic")?;
     let mut iz = zip::ZipArchive::new(std::io::Cursor::new(inner)).map_err(|e| MogrtError::Unreadable(format!("project.prgraphic: {e}")))?;
-    let proj = iz.file_names().find(|n| n.to_ascii_lowercase().ends_with(".prproj")).map(str::to_string).ok_or_else(|| MogrtError::Unreadable("no .prproj inside".into()))?;
+    let proj = iz
+        .file_names()
+        .find(|n| n.to_ascii_lowercase().ends_with(".prproj"))
+        .map(str::to_string)
+        .ok_or_else(|| MogrtError::Unreadable("no .prproj inside".into()))?;
     let gz = read_member(&mut iz, &proj)?;
     let mut xml = String::new();
     flate2::read::GzDecoder::new(&gz[..]).take(MAX_MEMBER).read_to_string(&mut xml).map_err(|e| MogrtError::Unreadable(format!("{proj}: {e}")))?;
@@ -862,6 +875,11 @@ pub fn convert(bytes: &[u8], source: &str) -> Result<Converted, MogrtError> {
     if layers.is_empty() {
         return Err(MogrtError::Unreadable("no text or shape layer".into()));
     }
+    // masks (often animated reveals) hang off the clip's Opacity, outside the component chain
+    let masks = doc.descendants().filter(|n| n.has_tag_name("MatchName") && n.text() == Some("AE.ADBE AEMask")).count();
+    if masks > 0 {
+        out.lost.push(format!("masks ({masks}): reveals and cut-outs are not drawn"));
+    }
     // Premiere draws the graphic's layers from the last component to the first (the first one listed
     // is in front): FilmCraft paints in list order
     layers.reverse();
@@ -888,11 +906,39 @@ pub fn convert(bytes: &[u8], source: &str) -> Result<Converted, MogrtError> {
             _ => format!("Layer {uid}"),
         };
         if l.effect == TEXT_LAYER {
-            controls.push(TemplateControl { id: format!("text-{uid}"), name: name.clone(), kind: ControlKind::Text, layer: uid, param: "text".into(), ..Default::default() });
-            controls.push(TemplateControl { id: format!("font-{uid}"), name: format!("{name} · Font"), kind: ControlKind::Font, layer: uid, param: "font".into(), ..Default::default() });
-            controls.push(TemplateControl { id: format!("color-{uid}"), name: format!("{name} · Colour"), kind: ControlKind::Color, layer: uid, param: "fill_color".into(), ..Default::default() });
+            controls.push(TemplateControl {
+                id: format!("text-{uid}"),
+                name: name.clone(),
+                kind: ControlKind::Text,
+                layer: uid,
+                param: "text".into(),
+                ..Default::default()
+            });
+            controls.push(TemplateControl {
+                id: format!("font-{uid}"),
+                name: format!("{name} · Font"),
+                kind: ControlKind::Font,
+                layer: uid,
+                param: "font".into(),
+                ..Default::default()
+            });
+            controls.push(TemplateControl {
+                id: format!("color-{uid}"),
+                name: format!("{name} · Colour"),
+                kind: ControlKind::Color,
+                layer: uid,
+                param: "fill_color".into(),
+                ..Default::default()
+            });
         } else if l.effect == SHAPE_LAYER {
-            controls.push(TemplateControl { id: format!("color-{uid}"), name: format!("{name} · Colour"), kind: ControlKind::Color, layer: uid, param: "fill_color".into(), ..Default::default() });
+            controls.push(TemplateControl {
+                id: format!("color-{uid}"),
+                name: format!("{name} · Colour"),
+                kind: ControlKind::Color,
+                layer: uid,
+                param: "fill_color".into(),
+                ..Default::default()
+            });
         }
     }
     let name = {

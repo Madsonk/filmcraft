@@ -212,7 +212,8 @@ fn an_after_effects_mogrt_is_refused_as_preview_only_and_a_premiere_one_is_place
     assert!(e.contains("After Effects"), "{e}");
     // a Premiere title dropped on a shot: converted, placed above it, one undo step
     let pr = d.join("Lower third PR.mogrt");
-    std::fs::write(&pr, premiere(&Spec { text: "Hello Title", font: "Inter-Bold", second_run_size: None, opacity_keys: false, extra_effect: false }).unwrap()).unwrap();
+    std::fs::write(&pr, premiere(&Spec { text: "Hello Title", font: "Inter-Bold", second_run_size: None, opacity_keys: false, extra_effect: false }).unwrap())
+        .unwrap();
     let original = std::fs::read(&pr).unwrap();
     let (clip, t) = first_video_clip(&s);
     let v1 = clip_count(&s, TrackKind::Video, 0);

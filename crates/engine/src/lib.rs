@@ -12,8 +12,6 @@
 
 pub mod aaf_omf;
 pub mod assets;
-pub mod mogrt_fixtures;
-pub mod mogrt_import;
 pub mod auto_reframe;
 pub mod autosave;
 pub mod beats;
@@ -38,6 +36,8 @@ pub mod ml_audio;
 pub mod ml_rush;
 pub mod ml_tools;
 pub mod ml_video;
+pub mod mogrt_fixtures;
+pub mod mogrt_import;
 pub mod multicam;
 pub mod panels;
 pub mod perf;
@@ -1051,8 +1051,6 @@ mod aaf_omf_tests;
 #[cfg(test)]
 mod assets_tests;
 #[cfg(test)]
-mod mogrt_import_tests;
-#[cfg(test)]
 mod audio_effects_tests;
 #[cfg(test)]
 mod audio_placement_tests;
@@ -1092,6 +1090,8 @@ mod media_browser_tests;
 mod media_test_util;
 #[cfg(test)]
 mod mixer_tests;
+#[cfg(test)]
+mod mogrt_import_tests;
 #[cfg(test)]
 mod multicam_tests;
 #[cfg(test)]

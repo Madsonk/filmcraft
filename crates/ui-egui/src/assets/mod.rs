@@ -189,7 +189,10 @@ pub fn refresh(app: &mut FilmcraftApp, k: Kind) {
 
 /// Whether the Titles index says this `.mogrt` was made in After Effects (unknown = no).
 fn title_is_after_effects(app: &FilmcraftApp, mogrt: &str) -> bool {
-    app.assets.libs.get(&Kind::Titles).is_some_and(|l| l.snapshot().entries.iter().any(|e| e.source.as_deref() == Some(mogrt) && e.family.as_deref() == Some("aefx")))
+    app.assets
+        .libs
+        .get(&Kind::Titles)
+        .is_some_and(|l| l.snapshot().entries.iter().any(|e| e.source.as_deref() == Some(mogrt) && e.family.as_deref() == Some("aefx")))
 }
 
 /// The converted video of a `.mogrt`, from the Titles index.
@@ -323,7 +326,11 @@ fn status_of(v: &Value) -> String {
     if titles.iter().any(|p| p["action"] == "converted") {
         parts.push(tlf!("{n} title(s) converted into Graphics Templates", n = titles.iter().filter(|p| p["action"] == "converted").count()));
     }
-    let fonts: Vec<String> = titles.iter().flat_map(|p| p["conversion"]["missingFonts"].as_array().cloned().unwrap_or_default()).filter_map(|f| f.as_str().map(str::to_string)).collect();
+    let fonts: Vec<String> = titles
+        .iter()
+        .flat_map(|p| p["conversion"]["missingFonts"].as_array().cloned().unwrap_or_default())
+        .filter_map(|f| f.as_str().map(str::to_string))
+        .collect();
     if !fonts.is_empty() {
         parts.push(tlf!("missing fonts replaced by Inter: {fonts}", fonts = fonts.join(", ")));
     }

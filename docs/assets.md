@@ -10,13 +10,14 @@ titles) by drag and drop, from the Finder or from **Window ▸ Resources**.
 | LUT (`.cube`, `.3dl`) | the clip's Lumetri **Creative Look** (`lumetri.setLook`) | LUT library | LUT library (`lut.import`) |
 | Sound (WAV, AIFF, MP3, M4A, FLAC, Ogg, Opus, CAF) | at the drop time, on the first **free** audio track | that track if free there, else the next free one below, else a new track | imported into the bin |
 | Picture (video, still, title with alpha) | at the drop time, on the first free video track **above** the clip | that track if free, else the next free one above, else a new track | imported into the bin |
-| `.mogrt` | its converted video if `mogrt_to_alpha` made one, else refused with the way to convert it | same | same |
+| `.mogrt` made in Premiere | converted once into an editable title (`.fcgt`), placed on the first free video track **above** | same | converted into Graphics Templates |
+| `.mogrt` made in After Effects | refused: *preview only* (FilmCraft cannot run an After Effects project) | same | same |
 | anything else (project, XML, captions) | imported as before | | |
 
 A drop never overwrites a clip and is **one undo step** (import + new track + placement). The
 dropped files are only read. Engine command: `assets.place {"paths":[…],"clip"?:id,"track"?:id|"A1","time"?:ticks,"bin"?:id}`
 (CLI, MCP and control channel); it answers `placed` (`look` / `library` / `placed` / `imported`)
-and `refused` (`code`: `mogrt`, `lutOnSound`, `failed`).
+and `refused` (`code`: `afterEffects`, `mogrt` (unreadable), `lutOnSound`, `failed`). A converted title's `conversion` lists `missingFonts`, `warnings` and `lost`.
 
 macOS reports no pointer position during a drag from the Finder (winit 0.30): the app asks AppKit
 (`mouseLocationOutsideOfEventStream`, `apps/filmcraft/src/asset_hooks.rs`) at the drop, so the
@@ -42,10 +43,12 @@ file name or its folder), the folder button (one folder per tab) and Refresh.
   clip under the playhead): before / after, rendered small (320 px) with the look slot switched
   off, the LUT applied on the CPU; nothing is written to the project. The LUT file is read in a
   background thread. Double-click = Creative Look of that shot.
-- **Titles**: entries of `<titles folder>/index.json`, written by `mogrt_to_alpha.py`. A title
-  converted to a video with transparency is placed above the shot; a title not converted yet is
-  marked *preview only*: its preview video (or thumbnail) can be dropped as a **reference**, never
-  passed off as the title.
+- **Titles**: entries of `<titles folder>/index.json`, written by `mogrt_to_alpha.py index`
+  (which only reads the ZIPs). A title made in Premiere is marked *editable*: dropping it converts
+  it (once, cached by path + size + date) and places it as an editable title; **Convert all
+  shown (N)** converts the listed ones in a background thread. A title made in After Effects is
+  marked *preview only*: its preview can be dropped as a **reference**, never passed off as the
+  title. See [mogrt-import.md](mogrt-import.md).
 
 Settings: `<data>/assets/settings.json` (`luts`, `sfx`, `music`, `titles`, `soundDb`). Defaults
 point at Madson's library when it is mounted (`/Volumes/Qnap bureau/6. Garden/Ressources/03 LUTS`,
@@ -57,24 +60,7 @@ LUT and the libraries' state. Automation ids: `resources.tab.<luts|sfx|music|tit
 `resources.search`, `resources.folder`, `resources.refresh`, `resources.row.<n>`,
 `resources.play.<n>`, `resources.preview`.
 
-## `.mogrt`: why FilmCraft does not open them, and what to do instead
+## `.mogrt` titles
 
-A `.mogrt` is a ZIP holding `definition.json` (name, size, duration, editable controls, fonts),
-previews (`thumb.png`, often `thumb.mp4`, 640×360 H.264 **without** alpha) and the template
-itself: `project.aegraphic` (a ZIP with an **After Effects project**, binary `.aep`, plus footage)
-or `project.prgraphic` (a **Premiere** project, gzipped XML). Playing one means running the
-After Effects or Premiere project: FilmCraft does not, and never opens the template.
-
-`mogrt_to_alpha.py` (Madson's vault, `5. Systeme/scripts/ae/`) bridges it:
-
-- `list` — packs of the library and their counts;
-- `index PACK…` — reads each `.mogrt` as a ZIP (nothing executed): controls with their default
-  texts and colours, fonts (with the ones missing on this Mac), size, duration, and extracts the
-  previews; writes `<out>/<pack>/index.json` and `<out>/index.json` (the Titles tab);
-- `render PACK|MOGRT…` — with After Effects installed and signed in: renders each After Effects
-  template with its default texts through `aerender`, output module "High Quality with Alpha"
-  (QuickTime ProRes 4444 + alpha), checks the alpha channel with `ffprobe`, records the video in
-  the index. Premiere templates (`prgraphic`) cannot be rendered by `aerender`.
-
-The Premiere templates' text layers are readable JSON inside the project XML (text, font, size,
-colours), which would allow a native `.fcgt` for simple static titles: not built yet.
+See [mogrt-import.md](mogrt-import.md): titles made in Premiere become native, editable FilmCraft
+titles; titles made in After Effects stay *preview only*.

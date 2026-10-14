@@ -305,7 +305,17 @@ fn convert_all_row(app: &mut FilmcraftApp, ui: &mut egui::Ui, snap: &index::Snap
     let resp = ui.interact(r, egui::Id::new("res-convert-all"), Sense::click());
     app.auto.add("resources.convertAll", r, &label);
     let enabled = !running && !todo.is_empty();
-    ui.painter().rect_filled(r, 4.0, if resp.hovered() && enabled { t.accent_hover } else if enabled { t.accent } else { t.tab_bg });
+    ui.painter().rect_filled(
+        r,
+        4.0,
+        if resp.hovered() && enabled {
+            t.accent_hover
+        } else if enabled {
+            t.accent
+        } else {
+            t.tab_bg
+        },
+    );
     ui.painter().text(r.center(), Align2::CENTER_CENTER, &label, Tokens::ui(11.0), egui::Color32::WHITE);
     let mut y = r.max.y + 4.0;
     if let Some(j) = job.filter(|j| !j.running && j.total > 0) {
