@@ -527,7 +527,8 @@ fn sounds_show_waveforms_and_listening_on_hover_plays_in_the_app() {
     let pk = h.state().assets.peaks.as_ref().unwrap().get(&a).unwrap();
     assert_eq!(pk.cols.len(), filmcraft_ui_egui::assets::peaks::COLUMNS);
     assert!((pk.duration - 0.5).abs() < 0.02, "{}", pk.duration);
-    assert!(pk.cols.iter().any(|(lo, hi)| *hi > 20 && *lo < -20), "the sine shows");
+    // ±6 000 / 32 767 = 23 of 127: the sine's peaks show (a column is shorter than its period)
+    assert!(pk.cols.iter().map(|c| c.1).max().unwrap() >= 22 && pk.cols.iter().map(|c| c.0).min().unwrap() <= -22, "the sine shows: {:?}", &pk.cols[..20]);
     assert!(root.join("peaks-cache/peaks-v1.bin").exists(), "cached on disk");
     snapshot(&mut h, "07-sfx-waveforms");
     // L2: hover a row, still, for more than 150 ms: it plays inside the app
