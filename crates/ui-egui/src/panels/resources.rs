@@ -217,13 +217,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         assets_mod::refresh(app, tab);
     }
     // ---- search + toggles
-    let buttons = if sound {
-        3
-    } else if tab == Kind::Titles {
-        3
-    } else {
-        2
-    };
+    let buttons = if sound || tab == Kind::Titles { 3 } else { 2 };
     let bw = 26.0;
     let sw = (rect.width() - 12.0 - buttons as f32 * (bw + 4.0)).max(40.0);
     let sr = Rect::from_min_size(pos2(rect.min.x + 6.0, y + 28.0), vec2(sw, 22.0));
@@ -580,12 +574,10 @@ fn rows_list(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, sna
                         app.assets.audition.stop();
                     }
                     app.assets.hover = Some((path.clone(), now, p));
-                } else if moved {
-                    if let Some(h) = app.assets.hover.as_mut() {
-                        h.2 = p;
-                        if app.assets.audition.path.as_ref() != Some(path) {
-                            h.1 = now;
-                        }
+                } else if moved && let Some(h) = app.assets.hover.as_mut() {
+                    h.2 = p;
+                    if app.assets.audition.path.as_ref() != Some(path) {
+                        h.1 = now;
                     }
                 }
                 let still_for = app.assets.hover.as_ref().map(|h| now - h.1).unwrap_or(0.0);
@@ -686,7 +678,7 @@ fn titles_grid(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, s
                     }
                 }
                 let badge = if e.ready { tl!("editable") } else { tl!("preview only") };
-                let name = elide_middle(ui, &display_name(&e.name).0.to_string(), TILE_W - 8.0);
+                let name = elide_middle(ui, display_name(&e.name).0, TILE_W - 8.0);
                 ui.painter().text(pos2(r.min.x + 4.0, r.max.y - 14.0), Align2::LEFT_CENTER, name, Tokens::ui(10.5), t.text);
                 ui.painter().text(
                     pos2(r.max.x - 6.0, r.min.y + 12.0),

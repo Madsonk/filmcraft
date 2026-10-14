@@ -35,10 +35,28 @@ file name or its folder), the folder button (one folder per tab) and Refresh.
   folders) are skipped. Nothing is ever listed on the UI thread: libraries on slow USB disks or a
   NAS stay usable.
 - **Sounds**: if the `/sfx` tool's SQLite index exists (`~/audio-tools/audio_index.db`, table
-  `sons`: path, duration, family), it seeds the index through the system `sqlite3` (read only), so
-  durations and families show at once. ▶ auditions the file (macOS `afplay`, one sound at a time).
-  Double-click = at the playhead on a free audio track. Tags written in file names
+  `sons`: path, duration, family, and when present bpm, key, envelope, loop, peaks), it seeds the
+  index through the system `sqlite3` (read only), so durations, families, tempo and key show at
+  once. Double-click / Enter = at the playhead on a free audio track. Tags written in file names
   (`name [tag · tag · 1.4s].wav`) are shown in the tooltip.
+- **Waveforms** (ressources-v2): each sound row draws its waveform (1000 min/max columns, about
+  2 KB per sound). They are computed once, in one background thread, one file at a time (the
+  library may be on a NAS), visible rows first, then the rest of the library; the sweep pauses
+  while the timeline plays. Kept in `<peaks dir>/peaks-v1.bin` (default
+  `/Volumes/Data/FilmCraft-cache/peaks`, setting `peaksDir`); waveforms already in the sound
+  index (`peaks` column, written by `index_build.py --peaks`) are taken from there. A file that
+  cannot be decoded (for example a macOS `._` AppleDouble file) shows *not a readable sound*.
+- **Listening** happens inside the app (no `afplay`): play head on the waveform, position, pause.
+  **On hover** (after 150 ms still; button ♪, settings `hoverSfx` / `hoverMusic`, on by default):
+  sound effects from the start, music from 30 % of its length. Moving along the waveform scrubs,
+  a click on it plays from that point, leaving the row stops. Listening is refused while the
+  timeline plays, and stops when the timeline starts.
+- **Search, filters, favourites**: search by relevance (words in the name count more than words
+  in the folder), filters family / duration / tempo range / key (relative key included) / loops
+  only, sort (relevance, name, duration, tempo), ★ favourites and ↺ recently used (the last 50
+  dropped or applied), kept in `<data>/assets/library-state.json`.
+- **Keyboard** (panel focused): ↑ ↓ select (and listen when listening on hover is on), Space play
+  / pause, Enter apply, Esc stop then clear the search, `F` favourite, `/` search.
 - **LUTs**: hover a row to preview the LUT on the current shot (selected video clip, else the
   clip under the playhead): before / after, rendered small (320 px) with the look slot switched
   off, the LUT applied on the CPU; nothing is written to the project. The LUT file is read in a
@@ -48,7 +66,8 @@ file name or its folder), the folder button (one folder per tab) and Refresh.
   it (once, cached by path + size + date) and places it as an editable title; **Convert all
   shown (N)** converts the listed ones in a background thread. A title made in After Effects is
   marked *preview only*: its preview can be dropped as a **reference**, never passed off as the
-  title. See [mogrt-import.md](mogrt-import.md).
+  title. Button ▦ switches between a list and a grid of thumbnails (setting `titlesGrid`). See
+  [mogrt-import.md](mogrt-import.md).
 
 Settings: `<data>/assets/settings.json` (`luts`, `sfx`, `music`, `titles`, `soundDb`). Defaults
 point at Madson's library when it is mounted (`/Volumes/Qnap bureau/6. Garden/Ressources/03 LUTS`,
@@ -56,9 +75,12 @@ point at Madson's library when it is mounted (`/Volumes/Qnap bureau/6. Garden/Re
 
 Control channel: `ui.dropFiles {"paths":[…], "id"|"x","y"}` drops files at a window point as the
 Finder does; `ui.assets` returns the last drop (parameters and answer), the open tab, the hovered
-LUT and the libraries' state. Automation ids: `resources.tab.<luts|sfx|music|titles>`,
-`resources.search`, `resources.folder`, `resources.refresh`, `resources.row.<n>`,
-`resources.play.<n>`, `resources.preview`.
+LUT, the libraries' state, the audition (path, playing, position, progress), the selection, the
+waveform store (known, computed, failed, queued, visiblePending, lastMs) and the filters.
+Automation ids: `resources.tab.<luts|sfx|music|titles>`, `resources.search`, `resources.folder`,
+`resources.refresh`, `resources.favorites`, `resources.recents`, `resources.hoverPlay`,
+`resources.view`, `resources.filter.<family|duration|bpm|key|loops|sort>`, `resources.row.<n>`,
+`resources.play.<n>`, `resources.star.<n>`, `resources.wave.<n>`, `resources.preview`.
 
 ## `.mogrt` titles
 
