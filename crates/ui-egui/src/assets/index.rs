@@ -319,7 +319,12 @@ fn list_dir(kind: Kind, abs: &Path, mtime: u64, old: Option<&DirRec>) -> std::io
             }
         } else if kind.wants(&name) {
             let known = old.and_then(|o| o.files.iter().find(|f| f.name == name));
-            rec.files.push(FileRec { dur: known.and_then(|f| f.dur), family: known.and_then(|f| f.family.clone()), meta: known.map(|f| f.meta.clone()).unwrap_or_default(), name });
+            rec.files.push(FileRec {
+                dur: known.and_then(|f| f.dur),
+                family: known.and_then(|f| f.family.clone()),
+                meta: known.map(|f| f.meta.clone()).unwrap_or_default(),
+                name,
+            });
         }
     }
     rec.subdirs.sort();

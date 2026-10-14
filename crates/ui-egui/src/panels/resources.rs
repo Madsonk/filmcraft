@@ -143,7 +143,17 @@ fn toggle_button(app: &mut FilmcraftApp, ui: &mut egui::Ui, r: Rect, id: &str, l
     let t = app.tokens;
     let resp = ui.interact(r, egui::Id::new(("res-btn", id)), Sense::click()).on_hover_text(tip);
     app.auto.add(&format!("resources.{id}"), r, tip);
-    ui.painter().rect_filled(r, 4.0, if on { t.accent } else if resp.hovered() { t.hover } else { t.tab_bg });
+    ui.painter().rect_filled(
+        r,
+        4.0,
+        if on {
+            t.accent
+        } else if resp.hovered() {
+            t.hover
+        } else {
+            t.tab_bg
+        },
+    );
     ui.painter().text(r.center(), Align2::CENTER_CENTER, label, Tokens::ui(12.0), if on { Color32::WHITE } else { t.tab_text });
     resp.clicked()
 }
@@ -207,7 +217,13 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         assets_mod::refresh(app, tab);
     }
     // ---- search + toggles
-    let buttons = if sound { 3 } else if tab == Kind::Titles { 3 } else { 2 };
+    let buttons = if sound {
+        3
+    } else if tab == Kind::Titles {
+        3
+    } else {
+        2
+    };
     let bw = 26.0;
     let sw = (rect.width() - 12.0 - buttons as f32 * (bw + 4.0)).max(40.0);
     let sr = Rect::from_min_size(pos2(rect.min.x + 6.0, y + 28.0), vec2(sw, 22.0));
@@ -273,6 +289,12 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     if app.assets.filtered.as_ref().is_none_or(|(k, _)| *k != key) {
         let st = assets_mod::library_state(app).clone();
         let rows = filters::select(&snap.entries, &app.assets.query, &app.assets.filters, app.assets.sort, &st.favorites, &st.recents);
+        // a new search or filter shows its first rows (not the old scroll position); a new
+        // index publication (same query) keeps the position
+        let same_query = app.assets.filtered.as_ref().is_some_and(|(k, _)| k.0 == key.0 && k.2 == key.2);
+        if !same_query {
+            ctx.data_mut(|d| d.insert_temp(egui::Id::new("res-scroll-top"), true));
+        }
         app.assets.filtered = Some((key, rows));
     }
     let rows = app.assets.filtered.as_ref().map(|(_, r)| r.clone()).unwrap_or_default();
@@ -352,8 +374,10 @@ fn filter_bar(app: &mut FilmcraftApp, ui: &mut egui::Ui, snap: &index::Snapshot,
         let mut lo = f.bpm_min.unwrap_or(0.0);
         let mut hi = f.bpm_max.unwrap_or(0.0);
         child.label(egui::RichText::new(tl!("BPM")).size(10.5));
-        let a = child.add(egui::DragValue::new(&mut lo).range(0.0..=300.0).speed(1.0).custom_formatter(|v, _| if v <= 0.0 { "–".into() } else { format!("{v:.0}") }));
-        let b = child.add(egui::DragValue::new(&mut hi).range(0.0..=300.0).speed(1.0).custom_formatter(|v, _| if v <= 0.0 { "–".into() } else { format!("{v:.0}") }));
+        let a = child
+            .add(egui::DragValue::new(&mut lo).range(0.0..=300.0).speed(1.0).custom_formatter(|v, _| if v <= 0.0 { "–".into() } else { format!("{v:.0}") }));
+        let b = child
+            .add(egui::DragValue::new(&mut hi).range(0.0..=300.0).speed(1.0).custom_formatter(|v, _| if v <= 0.0 { "–".into() } else { format!("{v:.0}") }));
         f.bpm_min = (lo > 0.0).then_some(lo);
         f.bpm_max = (hi > 0.0).then_some(hi);
         rects.push(("bpm", a.rect.union(b.rect)));
@@ -370,11 +394,12 @@ fn filter_bar(app: &mut FilmcraftApp, ui: &mut egui::Ui, snap: &index::Snapshot,
     let lp = child.checkbox(&mut f.loops_only, tl!("Loops"));
     rects.push(("loops", lp.rect));
     let sort = &mut app.assets.sort;
-    let st = egui::ComboBox::from_id_salt(("res-sort", tab.id())).selected_text(tlf!("Sort: {v}", v = sort_label(*sort))).width(100.0).show_ui(&mut child, |ui| {
-        for s in Sort::ALL {
-            ui.selectable_value(sort, s, sort_label(s));
-        }
-    });
+    let st =
+        egui::ComboBox::from_id_salt(("res-sort", tab.id())).selected_text(tlf!("Sort: {v}", v = sort_label(*sort))).width(100.0).show_ui(&mut child, |ui| {
+            for s in Sort::ALL {
+                ui.selectable_value(sort, s, sort_label(s));
+            }
+        });
     rects.push(("sort", st.response.rect));
     for (id, r) in rects {
         app.auto.add(&format!("resources.filter.{id}"), r, id);
@@ -408,6 +433,10 @@ fn rows_list(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, sna
         ctx.data_mut(|d| d.insert_temp(egui::Id::new("res-scroll-to"), false));
         let off = (n as f32 * row_h - list.height() / 2.0).max(0.0);
         scroll = scroll.vertical_scroll_offset(off);
+    }
+    if ctx.data(|d| d.get_temp::<bool>(egui::Id::new("res-scroll-top"))).unwrap_or(false) {
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("res-scroll-top"), false));
+        scroll = scroll.vertical_scroll_offset(0.0);
     }
     let selected = app.assets.selected.clone();
     scroll.show_rows(&mut child, row_h, rows.len(), |ui, range| {
@@ -487,14 +516,25 @@ fn rows_list(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, sna
                     let weak = tab == Kind::Music && e.meta.bpm_conf.is_some_and(|c| c < 0.5);
                     let er = Rect::from_min_max(pos2(rx - extra_w, r.min.y), pos2(rx, r.max.y));
                     let txt = elide_middle(ui, &txt, extra_w - 4.0);
-                    ui.painter().with_clip_rect(er).text(pos2(er.max.x - 2.0, r.center().y), Align2::RIGHT_CENTER, txt, Tokens::ui(10.0), if weak { t.text_faint } else { t.text_dim });
+                    ui.painter().with_clip_rect(er).text(
+                        pos2(er.max.x - 2.0, r.center().y),
+                        Align2::RIGHT_CENTER,
+                        txt,
+                        Tokens::ui(10.0),
+                        if weak { t.text_faint } else { t.text_dim },
+                    );
                     rx -= extra_w;
                 }
                 let wr = Rect::from_min_max(pos2(rx - wave_w, r.min.y + 4.0), pos2(rx - 4.0, r.max.y - 4.0));
                 visible_paths.push(e.path.clone());
                 let peaks = app.assets.peaks.as_ref().and_then(|w| w.get(&e.path));
+                let unreadable = peaks.is_none() && app.assets.peaks.as_ref().is_some_and(|w| w.failed(&e.path));
                 let playing_this = audition.path.as_deref() == Some(e.path.as_str());
-                draw_wave(ui.painter(), wr, peaks.as_deref(), if playing_this { audition.progress } else { None }, &t);
+                if unreadable {
+                    ui.painter().text(wr.center(), Align2::CENTER_CENTER, tl!("not a readable sound"), Tokens::ui(9.5), t.text_faint);
+                } else {
+                    draw_wave(ui.painter(), wr, peaks.as_deref(), if playing_this { audition.progress } else { None }, &t);
+                }
                 app.auto.add(&format!("resources.wave.{n}"), wr, &e.name);
                 if let Some(p) = pointer
                     && wr.contains(p)
@@ -618,7 +658,17 @@ fn titles_grid(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, s
                 let resp = ui.interact(r, egui::Id::new(("res-tile", n)), Sense::click_and_drag());
                 app.auto.add(&format!("resources.row.{n}"), r, &e.name);
                 let sel = selected.as_deref() == Some(e.path.as_str());
-                ui.painter().rect_filled(r, 4.0, if sel { t.row_selected } else if resp.hovered() { t.hover } else { t.field_bg });
+                ui.painter().rect_filled(
+                    r,
+                    4.0,
+                    if sel {
+                        t.row_selected
+                    } else if resp.hovered() {
+                        t.hover
+                    } else {
+                        t.field_bg
+                    },
+                );
                 let img_r = Rect::from_min_size(r.min + vec2(4.0, 4.0), vec2(TILE_W - 8.0, TILE_H - 26.0));
                 let key = e.thumb.clone().unwrap_or_default();
                 match app.assets.thumbs.get(&key) {
@@ -638,7 +688,13 @@ fn titles_grid(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, s
                 let badge = if e.ready { tl!("editable") } else { tl!("preview only") };
                 let name = elide_middle(ui, &display_name(&e.name).0.to_string(), TILE_W - 8.0);
                 ui.painter().text(pos2(r.min.x + 4.0, r.max.y - 14.0), Align2::LEFT_CENTER, name, Tokens::ui(10.5), t.text);
-                ui.painter().text(pos2(r.max.x - 6.0, r.min.y + 12.0), Align2::RIGHT_CENTER, badge, Tokens::ui(9.5), if e.ready { t.accent } else { t.text_faint });
+                ui.painter().text(
+                    pos2(r.max.x - 6.0, r.min.y + 12.0),
+                    Align2::RIGHT_CENTER,
+                    badge,
+                    Tokens::ui(9.5),
+                    if e.ready { t.accent } else { t.text_faint },
+                );
                 let resp = resp.on_hover_text(format!("{}\n{}", e.name, e.dir));
                 if resp.double_clicked() {
                     action = Some((n, "apply"));

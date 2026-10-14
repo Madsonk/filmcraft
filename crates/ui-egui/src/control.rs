@@ -450,7 +450,7 @@ fn peaks_json(app: &FilmcraftApp) -> Value {
     match app.assets.peaks.as_ref() {
         Some(w) => {
             let st = w.stats();
-            json!({"known": st.known, "computed": st.computed, "failed": st.failed, "queued": st.queued, "loaded": st.loaded, "lastMs": st.last_ms, "dir": w.dir})
+            json!({"known": st.known, "computed": st.computed, "failed": st.failed, "queued": st.queued, "visiblePending": st.visible_pending, "loaded": st.loaded, "lastMs": st.last_ms, "dir": w.dir, "errors": w.errors()})
         }
         None => Value::Null,
     }

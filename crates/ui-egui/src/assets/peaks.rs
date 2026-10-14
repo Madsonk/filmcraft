@@ -147,6 +147,8 @@ pub struct PeakStats {
     pub loaded: bool,
     /// Milliseconds the last computed file took (decode included).
     pub last_ms: u64,
+    /// Rows on screen still waiting for their waveform.
+    pub visible_pending: usize,
 }
 
 struct Shared {
@@ -155,6 +157,8 @@ struct Shared {
     background: Mutex<VecDeque<String>>,
     queued_bg: Mutex<HashSet<u64>>,
     failed: Mutex<HashSet<u64>>,
+    /// The last few files that could not be read, with the reason.
+    errors: Mutex<Vec<(String, String)>>,
     paused: AtomicBool,
     quit: AtomicBool,
     loaded: AtomicBool,
@@ -243,13 +247,19 @@ fn seed_from_db(db: &Path) -> Vec<(String, Peaks)> {
 
 impl PeakWorker {
     /// Start the store (pack file in `dir`, seeded from `db` when given) and its worker.
-    pub fn start(dir: PathBuf, db: Option<PathBuf>, media: Arc<filmcraft_engine::media_pool::MediaPool>, services: Arc<dyn filmcraft_engine::Services>) -> PeakWorker {
+    pub fn start(
+        dir: PathBuf,
+        db: Option<PathBuf>,
+        media: Arc<filmcraft_engine::media_pool::MediaPool>,
+        services: Arc<dyn filmcraft_engine::Services>,
+    ) -> PeakWorker {
         let shared = Arc::new(Shared {
             map: RwLock::new(HashMap::new()),
             visible: Mutex::new(Vec::new()),
             background: Mutex::new(VecDeque::new()),
             queued_bg: Mutex::new(HashSet::new()),
             failed: Mutex::new(HashSet::new()),
+            errors: Mutex::new(Vec::new()),
             paused: AtomicBool::new(false),
             quit: AtomicBool::new(false),
             loaded: AtomicBool::new(false),
@@ -308,7 +318,12 @@ impl PeakWorker {
                         shared.map.write().unwrap_or_else(|e| e.into_inner()).insert(h, Rec { size, mtime, peaks: Arc::new(p) });
                         shared.computed.fetch_add(1, Ordering::Relaxed);
                     }
-                    Err(_) => {
+                    Err(e) => {
+                        let mut errs = shared.errors.lock().unwrap_or_else(|x| x.into_inner());
+                        if errs.len() < 20 {
+                            errs.push((path.clone(), e));
+                        }
+                        drop(errs);
                         shared.failed.lock().unwrap_or_else(|e| e.into_inner()).insert(h);
                         shared.failed_n.fetch_add(1, Ordering::Relaxed);
                     }
@@ -368,9 +383,10 @@ impl PeakWorker {
 
     /// The rows on screen this frame (first served, nearest the top last in the list so popped first).
     pub fn want_visible(&self, paths: Vec<String>) {
+        let failed = self.shared.failed.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let missing: Vec<String> = {
             let m = self.shared.map.read().unwrap_or_else(|e| e.into_inner());
-            paths.into_iter().rev().filter(|p| !m.contains_key(&hash(p))).collect()
+            paths.into_iter().rev().filter(|p| !m.contains_key(&hash(p)) && !failed.contains(&hash(p))).collect()
         };
         let changed = {
             let mut v = self.shared.visible.lock().unwrap_or_else(|e| e.into_inner());
@@ -404,15 +420,30 @@ impl PeakWorker {
     }
 
     pub fn stats(&self) -> PeakStats {
+        // one lock at a time: two guards of the same mutex in one expression would deadlock
         let s = &self.shared;
+        let known = s.map.read().unwrap_or_else(|e| e.into_inner()).len();
+        let background = s.background.lock().unwrap_or_else(|e| e.into_inner()).len();
+        let visible_pending = s.visible.lock().unwrap_or_else(|e| e.into_inner()).len();
         PeakStats {
-            known: s.map.read().unwrap_or_else(|e| e.into_inner()).len(),
+            known,
             computed: s.computed.load(Ordering::Relaxed),
             failed: s.failed_n.load(Ordering::Relaxed),
-            queued: s.background.lock().unwrap_or_else(|e| e.into_inner()).len() + s.visible.lock().unwrap_or_else(|e| e.into_inner()).len(),
+            queued: background + visible_pending,
             loaded: s.loaded.load(Ordering::Relaxed),
             last_ms: s.last_ms.load(Ordering::Relaxed) as u64,
+            visible_pending,
         }
+    }
+
+    /// Whether `path` could not be read (not a sound FilmCraft decodes, or damaged).
+    pub fn failed(&self, path: &str) -> bool {
+        self.shared.failed.lock().unwrap_or_else(|e| e.into_inner()).contains(&hash(path))
+    }
+
+    /// The last files that could not be read, with the reason.
+    pub fn errors(&self) -> Vec<(String, String)> {
+        self.shared.errors.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Block until nothing visible is pending (tests).
@@ -453,7 +484,17 @@ mod tests {
     fn columns_follow_the_signal() {
         // a sound silent in its first half and loud in its second
         let total = 2000u64;
-        let ch: Vec<f32> = (0..total).map(|i| if i < 1000 { 0.0 } else if i % 2 == 0 { 0.5 } else { -0.5 }).collect();
+        let ch: Vec<f32> = (0..total)
+            .map(|i| {
+                if i < 1000 {
+                    0.0
+                } else if i % 2 == 0 {
+                    0.5
+                } else {
+                    -0.5
+                }
+            })
+            .collect();
         let mut cols = vec![(0f32, 0f32); 10];
         accumulate(&mut cols, &[ch[..700].to_vec()], 0, total);
         accumulate(&mut cols, &[ch[700..].to_vec()], 700, total);
