@@ -86,30 +86,29 @@ pub fn premiere(spec: &Spec) -> Option<Vec<u8>> {
     );
     let shape_json = r#"{"mStyle":{"mFillColor":5342408,"mFillVisible":true,"mFillColorType":0,"mStrokeVisible":false,"mShadowVisible":false},"mVersion":1}"#;
     let opk = spec.opacity_keys.then(|| format!("{},0.,0,0,0,0.16,0,0.16;{},100.,5,0,0,0.16,0,0.16", IN, IN + 254_016_000_000 / 2));
-    let mut objs = Vec::new();
-    // text component 10: params 11..
-    objs.push(arb(11, "Source Text", &utf16_blob(&text_json)));
-    objs.push(param(12, "Position", 6, "0.1:0.8", None));
-    objs.push(param(13, "Scale", 2, "100.", None));
-    objs.push(param(14, "Horizontal Scale", 2, "100.", None));
-    objs.push(param(15, " ", 4, "true", None));
-    objs.push(param(16, "Rotation", 3, "0.", None));
-    objs.push(param(17, "Opacity", 2, "100.", opk.as_deref()));
-    objs.push(param(18, "Anchor Point", 6, "0:0", None));
-    objs.push(comp(10, "AE.ADBE Text", "Text", "Name", &[11, 12, 13, 14, 15, 16, 17, 18]));
-    // shape component 20
-    objs.push(arb(21, "Path", &b64(&rect_path(600.0, 200.0))));
-    objs.push(arb(22, "Appearance", &utf16_blob(shape_json)));
-    objs.push(param(23, "Position", 6, "0.1:0.8", None));
-    objs.push(param(24, "Scale", 2, "100.", None));
-    objs.push(param(25, "Horizontal Scale", 2, "50.", None));
-    objs.push(param(26, " ", 4, "false", None));
-    objs.push(param(27, "Rotation", 3, "0.", None));
-    objs.push(param(28, "Opacity", 2, "100.", None));
-    objs.push(param(29, "Anchor Point", 6, "0.0:0.0", None));
-    objs.push(comp(20, "AE.ADBE Shape", "Shape", "Box", &[21, 22, 23, 24, 25, 26, 27, 28, 29]));
-    objs.push(param(31, "Wave Height", 2, "10.", None));
-    objs.push(comp(30, "AE.ADBE Wave Warp", "Wave Warp", "", &[31]));
+    let objs = [
+        arb(11, "Source Text", &utf16_blob(&text_json)),
+        param(12, "Position", 6, "0.1:0.8", None),
+        param(13, "Scale", 2, "100.", None),
+        param(14, "Horizontal Scale", 2, "100.", None),
+        param(15, " ", 4, "true", None),
+        param(16, "Rotation", 3, "0.", None),
+        param(17, "Opacity", 2, "100.", opk.as_deref()),
+        param(18, "Anchor Point", 6, "0:0", None),
+        comp(10, "AE.ADBE Text", "Text", "Name", &[11, 12, 13, 14, 15, 16, 17, 18]),
+        arb(21, "Path", &b64(&rect_path(600.0, 200.0))),
+        arb(22, "Appearance", &utf16_blob(shape_json)),
+        param(23, "Position", 6, "0.1:0.8", None),
+        param(24, "Scale", 2, "100.", None),
+        param(25, "Horizontal Scale", 2, "50.", None),
+        param(26, " ", 4, "false", None),
+        param(27, "Rotation", 3, "0.", None),
+        param(28, "Opacity", 2, "100.", None),
+        param(29, "Anchor Point", 6, "0.0:0.0", None),
+        comp(20, "AE.ADBE Shape", "Shape", "Box", &[21, 22, 23, 24, 25, 26, 27, 28, 29]),
+        param(31, "Wave Height", 2, "10.", None),
+        comp(30, "AE.ADBE Wave Warp", "Wave Warp", "", &[31]),
+    ];
     let chain: String = if spec.extra_effect { "<Component Index=\"0\" ObjectRef=\"30\"/>".to_string() } else { String::new() }
         + "<Component Index=\"1\" ObjectRef=\"10\"/><Component Index=\"2\" ObjectRef=\"20\"/>";
     let xml = format!(

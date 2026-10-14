@@ -367,7 +367,7 @@ fn fold_undo(s: &mut Session, before: usize, label: &str) {
 
 fn apply_template(s: &mut Session, p: &Value) -> Result<Value> {
     let key = str_p(p, "template").or_else(|| str_p(p, "id")).or_else(|| str_p(p, "name")).ok_or_else(|| bad("graphics.template.apply", "need `template`"))?;
-    let entry = if is_mogrt(key) { import_mogrt(s, &key.to_string())?.0 } else { find_template(s, key)? };
+    let entry = if is_mogrt(key) { import_mogrt(s, key)?.0 } else { find_template(s, key)? };
     let t = entry.template;
     register_fonts(&t);
     let (w, h) = s.active_sequence().map(|q| (q.settings.width, q.settings.height)).ok_or(EngineError::NoSequence)?;

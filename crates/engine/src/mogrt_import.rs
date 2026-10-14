@@ -168,7 +168,7 @@ impl PParam {
     fn json(&self) -> Option<Value> {
         let b = self.blob.as_ref()?;
         let body = b.get(8..)?;
-        let units: Vec<u16> = body.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        let units: Vec<u16> = body.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
         let s = String::from_utf16_lossy(&units);
         serde_json::from_str(s.trim_end_matches('\0')).ok()
     }
@@ -954,7 +954,7 @@ pub fn convert(bytes: &[u8], source: &str) -> Result<Converted, MogrtError> {
         description.push_str(&format!(" Differences: {}.", out.warnings.join("; ")));
     }
     out.template = GraphicsTemplate {
-        id: format!("user:mogrt-{}-{}", slug(&name), &slug(capsule).chars().take(8).collect::<String>()),
+        id: format!("user:mogrt-{}-{}", slug(&name), slug(capsule).chars().take(8).collect::<String>()),
         name,
         category: "Converted Titles".into(),
         description,
