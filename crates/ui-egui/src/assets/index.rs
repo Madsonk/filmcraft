@@ -15,7 +15,7 @@
 //!
 //! Folders whose name starts with `.` or `_` (Adobe Bridge caches, preview folders) are skipped.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -331,18 +331,43 @@ fn list_dir(kind: Kind, abs: &Path, mtime: u64, old: Option<&DirRec>) -> std::io
     Ok(rec)
 }
 
+/// What the sound index knows of a folder's files wins over the cache (the index is where the
+/// measures are made); files it does not know keep what the cache had.
+fn enrich(rec: &mut DirRec, known: &DirRec) {
+    let by_name: HashMap<&str, &FileRec> = known.files.iter().map(|f| (f.name.as_str(), f)).collect();
+    for f in &mut rec.files {
+        let Some(k) = by_name.get(f.name.as_str()) else { continue };
+        f.dur = k.dur.or(f.dur);
+        f.family = k.family.clone().or(f.family.take());
+        if k.meta != SoundMeta::default() {
+            f.meta = k.meta.clone();
+        }
+    }
+}
+
 fn walk(kind: Kind, root: &str, cache_path: Option<&Path>, seed_db: Option<&Path>, shared: &Mutex<Snapshot>, cancel: &AtomicBool) -> Result<(), String> {
     let mut cache = cache_path
         .and_then(|p| std::fs::read(p).ok())
         .and_then(|b| serde_json::from_slice::<Cache>(&b).ok())
         .filter(|c| c.version == CACHE_VERSION && c.root == root)
         .unwrap_or_else(|| Cache { version: CACHE_VERSION, root: root.to_string(), dirs: BTreeMap::new() });
+    // the sound index is read at every walk, not only for the first one: a cache written while
+    // the database could not be read (locked by `index_build.py`, missing) would otherwise never
+    // get its durations, families and measures back
+    let seed_db = seed_db.filter(|d| d.exists());
+    let mut seed = BTreeMap::new();
     if cache.dirs.is_empty()
-        && let Some(db) = seed_db.filter(|d| d.exists())
+        && let Some(db) = seed_db
     {
-        cache.dirs = seed_from_db(db, root);
+        seed = seed_from_db(db, root);
+        cache.dirs = seed.clone();
+        publish(shared, root, &cache.dirs, 0);
+    } else {
+        publish(shared, root, &cache.dirs, 0);
+        if let Some(db) = seed_db {
+            seed = seed_from_db(db, root);
+        }
     }
-    publish(shared, root, &cache.dirs, 0);
     let root_path = Path::new(root);
     std::fs::metadata(root_path).map_err(|e| format!("{root}: {e}"))?;
     let mut fresh: BTreeMap<String, DirRec> = BTreeMap::new();
@@ -356,13 +381,16 @@ fn walk(kind: Kind, root: &str, cache_path: Option<&Path>, seed_db: Option<&Path
         let Ok(meta) = std::fs::metadata(&abs) else { continue };
         let mtime = mtime_of(&meta);
         let old = cache.dirs.get(&rel);
-        let rec = match old {
+        let mut rec = match old {
             Some(o) if o.mtime == mtime => o.clone(),
             _ => match list_dir(kind, &abs, mtime, old) {
                 Ok(r) => r,
                 Err(_) => continue,
             },
         };
+        if let Some(known) = seed.get(&rel) {
+            enrich(&mut rec, known);
+        }
         for s in rec.subdirs.iter().rev() {
             stack.push(join(&rel, s));
         }
@@ -524,6 +552,35 @@ mod tests {
         let e = s.entries.iter().find(|e| e.name == "x.wav").expect("entry");
         assert_eq!(e.dur, Some(1.5), "duration kept from the database after the walk");
         assert_eq!(e.family.as_deref(), Some("one-shot / impact"));
+    }
+
+    #[test]
+    fn a_cache_written_without_the_database_gets_its_durations_back() {
+        if !Path::new("/usr/bin/sqlite3").exists() {
+            return;
+        }
+        let root = tmp("stale");
+        std::fs::create_dir_all(root.join("A")).unwrap();
+        std::fs::write(root.join("A/x.wav"), b"x").unwrap();
+        std::fs::write(root.join("A/y.wav"), b"y").unwrap();
+        let cache = root.join("index-sfx.json");
+        // first walk: no database (it was locked or missing) -> no durations
+        let s = Library::start(Kind::Sfx, &root.to_string_lossy(), Some(cache.clone()), None).wait(std::time::Duration::from_secs(20));
+        assert!(s.entries.iter().all(|e| e.dur.is_none()) && s.entries.len() == 2, "{:?}", s.entries);
+        let db = root.join("audio_index.db");
+        let sql = format!(
+            "create table sons(path text primary key, duree real, famille text, bpm real, bpm_conf real, tonalite text, enveloppe text, direction text, boucle integer); insert into sons values('{}/A/x.wav', 1.5, 'one-shot / impact', 120, 0.9, 'A minor', 'plate', 'stable', 0);",
+            root.display()
+        );
+        assert!(std::process::Command::new("/usr/bin/sqlite3").arg(&db).arg(sql).status().unwrap().success());
+        // next session: the cache exists, the database is read anyway
+        let s = Library::start(Kind::Sfx, &root.to_string_lossy(), Some(cache), Some(db)).wait(std::time::Duration::from_secs(20));
+        let x = s.entries.iter().find(|e| e.name == "x.wav").expect("x");
+        assert_eq!(x.dur, Some(1.5));
+        assert_eq!(x.family.as_deref(), Some("one-shot / impact"));
+        assert_eq!(x.meta.key.as_deref(), Some("A minor"));
+        let y = s.entries.iter().find(|e| e.name == "y.wav").expect("y");
+        assert_eq!(y.dur, None, "a file the database does not know keeps what the cache had");
     }
 
     #[test]
