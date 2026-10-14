@@ -68,6 +68,33 @@ pub struct Entry {
     pub source: Option<String>,
     /// Titles: a video with transparency exists (`path` is it); false = `path` is only a preview.
     pub ready: bool,
+    /// Measures of the sound index (`audio_index.db`), when it analysed the file.
+    pub meta: SoundMeta,
+    /// Titles: a still of the title (`thumb.png`), for the grid.
+    pub thumb: Option<String>,
+}
+
+/// What the `/sfx` sound index measured of a file (ressources-v2: filters and sort).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SoundMeta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bpm: Option<f32>,
+    /// Confidence of the tempo (0-1).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bpm_conf: Option<f32>,
+    /// "C minor", "F major"…
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    /// "plate", "croissante", "decroissante".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub envelope: Option<String>,
+    /// "montant (riser)", "descendant (downer)", "impact (attaque puis chute)", "stable".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direction: Option<String>,
+    /// Loops cleanly.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub looped: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -78,6 +105,8 @@ struct FileRec {
     dur: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     family: Option<String>,
+    #[serde(flatten)]
+    meta: SoundMeta,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -97,7 +126,8 @@ struct Cache {
     dirs: BTreeMap<String, DirRec>,
 }
 
-const CACHE_VERSION: u32 = 1;
+/// 2: files carry the sound index measures (ressources-v2); older caches are rebuilt.
+const CACHE_VERSION: u32 = 2;
 
 /// What the panel reads: the entries so far and the walk's progress.
 #[derive(Clone, Debug, Default)]
@@ -186,6 +216,8 @@ fn entries_of(root: &str, dirs: &BTreeMap<String, DirRec>) -> Vec<Entry> {
                 family: f.family.clone(),
                 source: None,
                 ready: true,
+                meta: f.meta.clone(),
+                thumb: None,
             });
         }
     }
@@ -225,15 +257,39 @@ fn seed_from_db(db: &Path, root: &str) -> BTreeMap<String, DirRec> {
         .arg("-separator")
         .arg("\t")
         .arg(db)
-        .arg("select path, coalesce(duree, ''), coalesce(famille, '') from sons")
+        .arg("select path, coalesce(duree, ''), coalesce(famille, ''), coalesce(bpm, ''), coalesce(bpm_conf, ''), coalesce(tonalite, ''), coalesce(enveloppe, ''), coalesce(direction, ''), coalesce(boucle, '') from sons")
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .output();
+    // an older index without the measure columns: path, duration and family only
+    let out = match out {
+        Ok(o) if o.status.success() => Ok(o),
+        _ => std::process::Command::new(tool)
+            .arg("-readonly")
+            .arg("-noheader")
+            .arg("-separator")
+            .arg("\t")
+            .arg(db)
+            .arg("select path, coalesce(duree, ''), coalesce(famille, '') from sons")
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output(),
+    };
     let Ok(out) = out else { return dirs };
     let prefix = format!("{}/", root.trim_end_matches('/'));
     for line in String::from_utf8_lossy(&out.stdout).lines() {
-        let mut it = line.split('\t');
-        let (Some(path), dur, fam) = (it.next(), it.next(), it.next()) else { continue };
+        let f: Vec<&str> = line.split('\t').collect();
+        let (Some(path), dur, fam) = (f.first().copied(), f.get(1).copied(), f.get(2).copied()) else { continue };
+        let text = |i: usize| f.get(i).map(|v| v.trim()).filter(|v| !v.is_empty()).map(str::to_string);
+        let num = |i: usize| text(i).and_then(|v| v.parse::<f32>().ok());
+        let meta = SoundMeta {
+            bpm: num(3).filter(|b| *b > 0.0),
+            bpm_conf: num(4),
+            key: text(5),
+            envelope: text(6),
+            direction: text(7),
+            looped: text(8).map(|v| v == "1"),
+        };
         let Some(rel) = path.strip_prefix(&prefix) else { continue };
         let (dir, name) = match rel.rsplit_once('/') {
             Some((d, n)) => (d.to_string(), n.to_string()),
@@ -243,7 +299,7 @@ fn seed_from_db(db: &Path, root: &str) -> BTreeMap<String, DirRec> {
             continue;
         }
         let rec = dirs.entry(dir).or_default();
-        rec.files.push(FileRec { name, dur: dur.and_then(|d| d.parse().ok()), family: fam.filter(|f| !f.is_empty()).map(str::to_string) });
+        rec.files.push(FileRec { name, dur: dur.and_then(|d| d.parse().ok()), family: fam.filter(|f| !f.is_empty()).map(str::to_string), meta });
     }
     dirs
 }
@@ -263,7 +319,7 @@ fn list_dir(kind: Kind, abs: &Path, mtime: u64, old: Option<&DirRec>) -> std::io
             }
         } else if kind.wants(&name) {
             let known = old.and_then(|o| o.files.iter().find(|f| f.name == name));
-            rec.files.push(FileRec { dur: known.and_then(|f| f.dur), family: known.and_then(|f| f.family.clone()), name });
+            rec.files.push(FileRec { dur: known.and_then(|f| f.dur), family: known.and_then(|f| f.family.clone()), meta: known.map(|f| f.meta.clone()).unwrap_or_default(), name });
         }
     }
     rec.subdirs.sort();
@@ -355,12 +411,13 @@ fn load_titles(root: &str, shared: &Mutex<Snapshot>) -> Result<(), String> {
             // title); an After Effects one only as its preview (a reference)
             let premiere = t.template.as_deref() == Some("project.prgraphic") || t.app.as_deref() == Some("ppro");
             let video = t.video.filter(|v| Path::new(v).exists());
+            let thumb = t.thumb.clone();
             let (path, ready) = match (premiere, video) {
                 (true, _) => (t.source.clone(), true),
                 (false, Some(v)) => (v, true),
                 (false, None) => (t.preview.or(t.thumb)?, false),
             };
-            Some(Entry { path, name: t.name, dir: t.pack, dur: t.duration, family: t.app, source: Some(t.source), ready })
+            Some(Entry { path, name: t.name, dir: t.pack, dur: t.duration, family: t.app, source: Some(t.source), ready, meta: SoundMeta::default(), thumb })
         })
         .collect();
     entries.sort_by_key(|e| (!e.ready, e.dir.to_lowercase(), e.name.to_lowercase()));

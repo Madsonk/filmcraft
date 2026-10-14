@@ -382,7 +382,11 @@ pub fn handle(app: &mut FilmcraftApp, ctx: &egui::Context, req: &ControlRequest)
             "query": app.assets.query,
             "hoverLut": app.assets.hover_lut,
             "previewOf": app.assets.preview.after_of,
-            "playing": app.assets.playing,
+            "audition": audition_json(app),
+            "selected": app.assets.selected,
+            "peaks": peaks_json(app),
+            "filters": serde_json::to_value(&app.assets.filters).unwrap_or_default(),
+            "rows": app.assets.filtered.as_ref().map(|(_, r)| r.len()),
             "dragging": app.assets.drag.as_ref().map(|d| d.paths.clone()),
             "libraries": app.assets.libs.iter().map(|(k, l)| {
                 let s = l.snapshot();
@@ -434,6 +438,21 @@ pub fn handle(app: &mut FilmcraftApp, ctx: &egui::Context, req: &ControlRequest)
             ok(Value::Null)
         }
         m => err(format!("unknown method `{m}`")),
+    }
+}
+
+fn audition_json(app: &FilmcraftApp) -> Value {
+    let a = app.assets.audition.state();
+    json!({"path": a.path, "playing": a.playing, "position": a.position, "progress": a.progress, "error": a.error})
+}
+
+fn peaks_json(app: &FilmcraftApp) -> Value {
+    match app.assets.peaks.as_ref() {
+        Some(w) => {
+            let st = w.stats();
+            json!({"known": st.known, "computed": st.computed, "failed": st.failed, "queued": st.queued, "loaded": st.loaded, "lastMs": st.last_ms, "dir": w.dir})
+        }
+        None => Value::Null,
     }
 }
 

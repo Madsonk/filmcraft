@@ -3615,3 +3615,31 @@
 	{n} title(s) converted into Graphics Templates	{n} titre(s) converti(s) dans les modèles graphiques
 	missing fonts replaced by Inter: {fonts}	polices absentes remplacées par Inter : {fonts}
 	some effects of the original title were left out (see the template's description)	certains effets du titre d'origine n'ont pas été repris (voir la description du modèle)
+	0.5–2 s	0,5–2 s
+	2–10 s	2–10 s
+	< 0.5 s	< 0,5 s
+	> 10 s	> 10 s
+	Also finds the relative major / minor	Trouve aussi le relatif majeur / mineur
+	BPM	BPM
+	Family: {v}	Famille : {v}
+	Favourites only	Favoris seulement
+	Grid / list	Grille / liste
+	Key: {v}	Tonalité : {v}
+	Length: {v}	Durée : {v}
+	Listen on hover	Écoute au survol
+	Listening is paused while the timeline plays	L'écoute se tait pendant la lecture de la timeline
+	Loops	Boucles
+	No audio output	Aucune sortie audio
+	Recently used	Utilisés récemment
+	Relevance	Pertinence
+	Sort: {v}	Tri : {v}
+	Tempo	Tempo
+	ambience / texture	ambiance / texture
+	dense ambience	ambiance dense
+	loading waveforms…	chargement des formes d'onde…
+	music	musique
+	one-shot / impact	impact / one-shot
+	pad / continuous noise	nappe / bruit continu
+	tonal, no rhythm (pad, drone)	tonal sans rythme (nappe, drone)
+	waveforms: {known} known	formes d'onde : {known} connues
+	waveforms: {known} known, {queued} to read	formes d'onde : {known} connues, {queued} à lire

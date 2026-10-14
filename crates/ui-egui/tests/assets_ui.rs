@@ -133,6 +133,49 @@ fn wav(dir: &Path, name: &str) -> String {
     p.to_string_lossy().into_owned()
 }
 
+/// An output device for the tests: keeps the callback the app starts, so a test can pull samples.
+#[derive(Clone, Default)]
+struct FakeOut {
+    fill: Arc<Mutex<Option<Box<dyn FnMut(&mut [f32], usize) + Send>>>>,
+    starts: Arc<Mutex<usize>>,
+}
+
+impl FakeOut {
+    fn install(h: &mut H) -> FakeOut {
+        let f = FakeOut::default();
+        h.state_mut().audio = Some(Box::new(f.clone()));
+        f
+    }
+    fn started(&self) -> bool {
+        *self.starts.lock().unwrap() > 0 && self.fill.lock().unwrap().is_some()
+    }
+    /// Pull `frames` stereo frames from the running callback (None when stopped).
+    fn pull(&self, frames: usize) -> Option<Vec<f32>> {
+        let mut g = self.fill.lock().unwrap();
+        let f = g.as_mut()?;
+        let mut b = vec![0.0f32; frames * 2];
+        f(&mut b, 2);
+        Some(b)
+    }
+}
+
+impl filmcraft_ui_egui::AudioOut for FakeOut {
+    fn start(&mut self, fill: Box<dyn FnMut(&mut [f32], usize) + Send>) -> Result<u32, String> {
+        *self.fill.lock().unwrap() = Some(fill);
+        *self.starts.lock().unwrap() += 1;
+        Ok(48_000)
+    }
+    fn stop(&mut self) {
+        *self.fill.lock().unwrap() = None;
+    }
+    fn sample_rate(&self) -> u32 {
+        48_000
+    }
+    fn played_frames(&self) -> Option<u64> {
+        None
+    }
+}
+
 /// A file dropped by "the Finder" (egui's native handle is the integration's).
 #[derive(Debug)]
 struct TestFile(PathBuf);
@@ -244,6 +287,7 @@ fn open_resources(h: &mut H, luts: &Path, sfx: &Path, titles: &Path) {
         app.assets.settings.music = String::new();
         app.assets.settings.titles = titles.to_string_lossy().into_owned();
         app.assets.settings.sound_db = String::new();
+        app.assets.settings.peaks_dir = luts.parent().unwrap_or(luts).join("peaks-cache").to_string_lossy().into_owned();
     }
     let ctx = h.ctx.clone();
     filmcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "window.panel.Resources", json!({})).expect("Window ▸ Resources");
@@ -299,13 +343,8 @@ fn the_resources_panel_lists_previews_and_drags_luts_sounds_and_titles() {
     drag_to(&mut h, row0.center(), to);
     assert!(look_of(&h, clip).is_some(), "look from a dragged row; status: {}", h.state().ui.status);
 
-    // --- Sound effects: search, ▶ through the host, drag onto the shot = free audio track
-    let played: Arc<Mutex<Vec<Option<String>>>> = Arc::default();
-    let rec = played.clone();
-    h.state_mut().hooks.preview_audio = Some(Box::new(move |p: Option<&str>| {
-        rec.lock().unwrap().push(p.map(str::to_string));
-        true
-    }));
+    // --- Sound effects: search, ▶ in the app, drag onto the shot = free audio track
+    let out = FakeOut::install(&mut h);
     let tab = rect(&h, "resources.tab.sfx").unwrap().center();
     h.input_mut().events.push(egui::Event::PointerMoved(tab));
     step(&mut h);
@@ -320,8 +359,8 @@ fn the_resources_panel_lists_previews_and_drags_luts_sounds_and_titles() {
     h.input_mut().events.push(egui::Event::PointerButton { pos: play, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
     h.input_mut().events.push(egui::Event::PointerButton { pos: play, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
     steps(&mut h, 2);
-    assert_eq!(played.lock().unwrap().last().cloned().flatten().as_deref(), Some(w.as_str()));
-    assert_eq!(h.state().assets.playing.as_deref(), Some(w.as_str()));
+    assert_eq!(h.state().assets.audition.state().path.as_deref(), Some(w.as_str()));
+    assert!(out.started(), "the audition started the output device");
     snapshot(&mut h, "03-resources-sfx");
     let n0 = audio_clip_count(&h);
     let row = rect(&h, "resources.row.0").unwrap();
@@ -460,4 +499,102 @@ fn a_premiere_title_from_the_titles_tab_becomes_an_editable_title_above_the_shot
         .collect();
     assert_eq!(fcgt.len(), 1);
     snapshot(&mut h, "06-titles-converted");
+}
+
+/// ressources-v2: waveforms are computed in the background and drawn, hovering a sound still for
+/// 150 ms plays it inside the app (the play head moves), moving along the waveform scrubs, the
+/// keyboard selects / plays / favourites / applies, and the timeline playing silences it.
+#[test]
+fn sounds_show_waveforms_and_listening_on_hover_plays_in_the_app() {
+    let mut h = harness();
+    let root = tmp("v2-sounds");
+    let sfx = root.join("SFX/01 HITS");
+    std::fs::create_dir_all(&sfx).unwrap();
+    let a = wav(&sfx, "SFX · Hits · boom [impact · court · 0.5s].wav");
+    let b = wav(&sfx, "SFX · Hits · clap.wav");
+    let luts = root.join("LUTS");
+    std::fs::create_dir_all(&luts).unwrap();
+    open_resources(&mut h, &luts, root.join("SFX").as_path(), &root);
+    let out = FakeOut::install(&mut h);
+    h.state_mut().assets.tab = Some(filmcraft_ui_egui::assets::index::Kind::Sfx);
+    h.state_mut().assets.filtered = None;
+    wait_for(&mut h, "two sound rows", |h| rect(h, "resources.wave.1").is_some());
+    // L1: the waveforms of the rows on screen are computed and kept on disk
+    wait_for(&mut h, "waveforms", |h| {
+        let w = h.state().assets.peaks.as_ref().unwrap();
+        w.get(&a).is_some() && w.get(&b).is_some()
+    });
+    let pk = h.state().assets.peaks.as_ref().unwrap().get(&a).unwrap();
+    assert_eq!(pk.cols.len(), filmcraft_ui_egui::assets::peaks::COLUMNS);
+    assert!((pk.duration - 0.5).abs() < 0.02, "{}", pk.duration);
+    assert!(pk.cols.iter().any(|(lo, hi)| *hi > 20 && *lo < -20), "the sine shows");
+    assert!(root.join("peaks-cache/peaks-v1.bin").exists(), "cached on disk");
+    snapshot(&mut h, "07-sfx-waveforms");
+    // L2: hover a row, still, for more than 150 ms: it plays inside the app
+    let row = rect(&h, "resources.row.0").unwrap();
+    h.input_mut().events.push(egui::Event::PointerMoved(row.left_center() + egui::vec2(60.0, 0.0)));
+    step(&mut h);
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    steps(&mut h, 2);
+    let st = h.state().assets.audition.state();
+    let first = h.state().assets.filtered.as_ref().map(|(_, r)| r[0]).unwrap();
+    let first_path = h.state().assets.libs.get(&filmcraft_ui_egui::assets::index::Kind::Sfx).unwrap().snapshot().entries[first].path.clone();
+    assert_eq!(st.path.as_deref(), Some(first_path.as_str()), "hover listening");
+    assert!(out.started());
+    // the device callback plays the decoded sound (after the fade in) and the position advances
+    let mut heard = 0.0f32;
+    for _ in 0..40 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        if let Some(s) = out.pull(2400) {
+            heard = heard.max(s.iter().fold(0.0f32, |m, v| m.max(v.abs())));
+        }
+        if heard > 0.05 {
+            break;
+        }
+    }
+    assert!(heard > 0.05, "samples heard: {heard}");
+    let pos = h.state().assets.audition.state().position;
+    assert!(pos > 0.0, "{pos}");
+    steps(&mut h, 2);
+    snapshot(&mut h, "08-sfx-hover-playing");
+    // scrub: moving along the waveform of the row being heard moves the play position
+    let wr = rect(&h, "resources.wave.0").unwrap();
+    h.input_mut().events.push(egui::Event::PointerMoved(wr.left_center() + egui::vec2(wr.width() * 0.8, 0.0)));
+    steps(&mut h, 2);
+    let p2 = h.state().assets.audition.state().position;
+    assert!(p2 > 0.3, "scrubbed to 80 % of 0.5 s: {p2}");
+    // leaving the list stops it (fade out)
+    h.input_mut().events.push(egui::Event::PointerMoved(egui::pos2(5.0, 5.0)));
+    steps(&mut h, 2);
+    let _ = out.pull(4800);
+    steps(&mut h, 2);
+    assert!(!h.state().assets.audition.state().playing);
+    // the keyboard: focus the panel, ↓ selects (and listens), F favourites, Enter places it
+    h.state_mut().ui.focused = filmcraft_ui_egui::dock::PanelKind::Resources;
+    h.input_mut().events.push(egui::Event::Key { key: egui::Key::ArrowDown, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+    steps(&mut h, 2);
+    let sel = h.state().assets.selected.clone().expect("selection");
+    assert_eq!(h.state().assets.audition.state().path.as_deref(), Some(sel.as_str()));
+    h.input_mut().events.push(egui::Event::Key { key: egui::Key::F, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+    steps(&mut h, 2);
+    assert!(h.state().assets.library.as_ref().unwrap().favorites.contains(&sel));
+    let n0 = audio_clip_count(&h);
+    h.input_mut().events.push(egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+    steps(&mut h, 2);
+    assert_eq!(audio_clip_count(&h), n0 + 1, "Enter placed the sound; status: {}", h.state().ui.status);
+    assert_eq!(h.state().assets.library.as_ref().unwrap().recents.first(), Some(&sel), "now a recent");
+    // ★ only: one row
+    h.state_mut().assets.filters.favorites_only = true;
+    h.state_mut().assets.filtered = None;
+    steps(&mut h, 2);
+    assert_eq!(h.state().assets.filtered.as_ref().unwrap().1.len(), 1);
+    h.state_mut().assets.filters.favorites_only = false;
+    h.state_mut().assets.filtered = None;
+    // the timeline playing silences the audition and stops the background waveform work
+    h.state_mut().playback.playing = true;
+    steps(&mut h, 2);
+    assert!(!h.state().assets.audition.state().playing && h.state().assets.audition.state().path.is_none());
+    filmcraft_ui_egui::assets::audition(h.state_mut(), &a, 0.0);
+    assert!(h.state().ui.status.contains("timeline"), "{}", h.state().ui.status);
+    h.state_mut().playback.playing = false;
 }

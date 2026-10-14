@@ -253,9 +253,8 @@ fn main() -> eframe::Result {
             app.hooks.open_path = Some(Box::new(open_path));
             // Settings ▸ General ▸ Interface Language ▸ System Language (#218).
             app.hooks.system_languages = Some(Box::new(|| sys_locale::get_locales().collect()));
-            // Window ▸ Resources: where a Finder drop lands, and ▶ on a sound (assets-dnd)
+            // Window ▸ Resources: where a Finder drop lands (assets-dnd)
             app.hooks.pointer_in_window = Some(Box::new(asset_hooks::pointer_in_window));
-            app.hooks.preview_audio = Some(Box::new(asset_hooks::preview_audio));
             app.hooks.raise_without_focus = Some(Box::new(|| {
                 window_raise::raise_without_focus();
             }));

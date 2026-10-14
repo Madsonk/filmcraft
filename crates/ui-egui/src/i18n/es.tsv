@@ -3616,3 +3616,31 @@
 	{n} title(s) converted into Graphics Templates	{n} título(s) convertido(s) en plantillas de gráficos
 	missing fonts replaced by Inter: {fonts}	fuentes ausentes sustituidas por Inter: {fonts}
 	some effects of the original title were left out (see the template's description)	algunos efectos del título original no se han conservado (ver la descripción de la plantilla)
+	0.5–2 s	0,5–2 s
+	2–10 s	2–10 s
+	< 0.5 s	< 0,5 s
+	> 10 s	> 10 s
+	Also finds the relative major / minor	Encuentra también el relativo mayor / menor
+	BPM	BPM
+	Family: {v}	Familia: {v}
+	Favourites only	Solo favoritos
+	Grid / list	Cuadrícula / lista
+	Key: {v}	Tonalidad: {v}
+	Length: {v}	Duración: {v}
+	Listen on hover	Escuchar al pasar el ratón
+	Listening is paused while the timeline plays	La escucha se pausa mientras se reproduce la línea de tiempo
+	Loops	Bucles
+	No audio output	No hay salida de audio
+	Recently used	Usados recientemente
+	Relevance	Relevancia
+	Sort: {v}	Orden: {v}
+	Tempo	Tempo
+	ambience / texture	ambiente / textura
+	dense ambience	ambiente denso
+	loading waveforms…	cargando formas de onda…
+	music	música
+	one-shot / impact	impacto / one-shot
+	pad / continuous noise	colchón / ruido continuo
+	tonal, no rhythm (pad, drone)	tonal sin ritmo (colchón, drone)
+	waveforms: {known} known	formas de onda: {known} conocidas
+	waveforms: {known} known, {queued} to read	formas de onda: {known} conocidas, {queued} por leer

@@ -12,7 +12,11 @@
 //! macOS gives no pointer position during a drag from the Finder (winit 0.30 reports the files,
 //! not where they are): the host's [`crate::HostHooks::pointer_in_window`] reads it from AppKit.
 
+pub mod audition;
+pub mod filters;
 pub mod index;
+pub mod library_state;
+pub mod peaks;
 
 use std::path::{Path, PathBuf};
 
@@ -42,6 +46,14 @@ pub struct AssetSettings {
     pub titles: String,
     /// SQLite sound index of the `/sfx` tool, used to seed the sound indexes.
     pub sound_db: String,
+    /// Folder of the waveform cache (ressources-v2): `/Volumes/Data/FilmCraft-cache/peaks` when
+    /// that disk is there (the working disk), else `<data>/assets/peaks`.
+    pub peaks_dir: String,
+    /// Listen on hover: sound effects (from the start) and music (from 30 %).
+    pub hover_sfx: bool,
+    pub hover_music: bool,
+    /// Titles shown as a grid of thumbnails (else a list).
+    pub titles_grid: bool,
 }
 
 impl Default for AssetSettings {
@@ -58,6 +70,10 @@ impl Default for AssetSettings {
             music: here("01 MUSIC"),
             titles: if Path::new(DEFAULT_TITLES).parent().is_some_and(Path::is_dir) { DEFAULT_TITLES.into() } else { String::new() },
             sound_db: db.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default(),
+            peaks_dir: if Path::new("/Volumes/Data").is_dir() { "/Volumes/Data/FilmCraft-cache/peaks".into() } else { String::new() },
+            hover_sfx: true,
+            hover_music: true,
+            titles_grid: true,
         }
     }
 }
@@ -116,8 +132,23 @@ pub struct AssetsState {
     /// Filtered rows: (kind, snapshot rev, query) → indices.
     pub filtered: Option<((Kind, u64, String), Vec<usize>)>,
     pub drag: Option<AssetDrag>,
-    /// Sound being auditioned (path).
-    pub playing: Option<String>,
+    /// The in-app audition (one voice).
+    pub audition: audition::Audition,
+    /// Waveform thumbnails (started with the panel).
+    pub peaks: Option<peaks::PeakWorker>,
+    /// Favourites and recents (`library-state.json`), loaded once.
+    pub library: Option<library_state::LibraryState>,
+    pub filters: filters::Filters,
+    pub sort: filters::Sort,
+    /// Selected row (path) of the current tab.
+    pub selected: Option<String>,
+    /// Row under the pointer: path, since when (seconds), last pointer position.
+    pub hover: Option<(String, f64, Pos2)>,
+    /// Bumped when favourites change (the filtered rows depend on them).
+    pub library_rev: u64,
+    /// Thumbnails of titles (path → texture), loaded in the background.
+    pub thumbs: std::collections::HashMap<String, Option<egui::TextureHandle>>,
+    pub thumbs_loading: std::sync::Arc<std::sync::Mutex<Vec<(String, Option<egui::ColorImage>)>>>,
     /// LUT row under the pointer (preview).
     pub hover_lut: Option<String>,
     pub preview: LookPreview,
@@ -130,6 +161,9 @@ pub struct AssetsState {
 }
 
 impl AssetsState {
+    fn library_path(app_dir: Option<&Path>) -> Option<PathBuf> {
+        app_dir.map(|d| d.join("assets").join("library-state.json"))
+    }
     fn settings_path(app_dir: Option<&Path>) -> Option<PathBuf> {
         app_dir.map(|d| d.join("assets").join("settings.json"))
     }
@@ -295,10 +329,82 @@ pub fn drop_files(app: &mut FilmcraftApp, paths: Vec<String>, pos: Option<Pos2>)
         Err(e) if e.to_string().contains("not on a sound") => tl!("A LUT goes on a video clip, not on a sound").to_string(),
         Err(e) => e.to_string(),
     };
+    if let Ok(v) = &r {
+        note_used(app, v);
+    }
     app.assets.last_drop = Some(match r {
         Ok(v) => json!({"params": q, "result": v}),
         Err(e) => json!({"params": q, "error": e.to_string()}),
     });
+}
+
+/// Favourites and recents, loaded on first use.
+pub fn library_state(app: &mut FilmcraftApp) -> &mut library_state::LibraryState {
+    if app.assets.library.is_none() {
+        let st = AssetsState::library_path(data_dir(app).as_deref()).map(|p| library_state::LibraryState::load(&p)).unwrap_or_default();
+        app.assets.library = Some(st);
+    }
+    app.assets.library.get_or_insert_with(Default::default)
+}
+
+pub fn save_library_state(app: &mut FilmcraftApp) {
+    app.assets.library_rev += 1;
+    if let (Some(p), Some(st)) = (AssetsState::library_path(data_dir(app).as_deref()), app.assets.library.as_ref()) {
+        st.save(&p);
+    }
+}
+
+/// The resources an `assets.place` answer placed become "recent".
+pub fn note_used(app: &mut FilmcraftApp, answer: &Value) {
+    let used: Vec<String> = answer["placed"]
+        .as_array()
+        .map(|a| a.iter().filter(|p| p["action"] != "imported").filter_map(|p| p["path"].as_str().map(str::to_string)).collect())
+        .unwrap_or_default();
+    if used.is_empty() {
+        return;
+    }
+    let st = library_state(app);
+    for p in &used {
+        st.used(p);
+    }
+    save_library_state(app);
+}
+
+/// The waveform store and its worker, started the first time a sound tab is shown.
+pub fn peak_worker(app: &mut FilmcraftApp) -> Option<&peaks::PeakWorker> {
+    if app.assets.peaks.is_none() {
+        ensure_settings(app);
+        let dir = if app.assets.settings.peaks_dir.is_empty() {
+            data_dir(app).map(|d| d.join("assets").join("peaks")).unwrap_or_else(|| std::env::temp_dir().join("filmcraft-peaks"))
+        } else {
+            PathBuf::from(&app.assets.settings.peaks_dir)
+        };
+        let db = Some(PathBuf::from(&app.assets.settings.sound_db)).filter(|p| !p.as_os_str().is_empty());
+        app.assets.peaks = Some(peaks::PeakWorker::start(dir, db, app.session.media.clone(), app.session.services.clone()));
+    }
+    app.assets.peaks.as_ref()
+}
+
+/// Whether the timeline or the Source monitor is playing (the audition and the waveform worker
+/// give way to them).
+pub fn other_playing(app: &FilmcraftApp) -> bool {
+    app.playback.playing || app.source_playback.clock.playing
+}
+
+/// Audition `path` from `frac` of its length.
+pub fn audition(app: &mut FilmcraftApp, path: &str, frac: f32) {
+    if other_playing(app) {
+        app.ui.status = tl!("Listening is paused while the timeline plays").to_string();
+        return;
+    }
+    let (media, services) = (app.session.media.clone(), app.session.services.clone());
+    let Some(out) = app.audio.as_deref_mut() else {
+        app.ui.status = tl!("No audio output").to_string();
+        return;
+    };
+    if let Err(e) = app.assets.audition.play(out, media, services, path, frac) {
+        app.ui.status = tlf!("Could not play {path}", path = e);
+    }
 }
 
 fn mogrt_message() -> String {
@@ -354,6 +460,14 @@ fn status_of(v: &Value) -> String {
 /// Each frame, after the panels: the drag ghost of a resource and its drop, the hint of a drag
 /// from the Finder, and the control channel's drop.
 pub fn after_panels(app: &mut FilmcraftApp, ctx: &egui::Context) {
+    let busy = other_playing(app);
+    app.assets.audition.tick(app.audio.as_mut(), busy);
+    if let Some(w) = app.assets.peaks.as_ref() {
+        w.set_paused(busy);
+    }
+    if app.assets.audition.state().playing {
+        ctx.request_repaint_after(std::time::Duration::from_millis(30));
+    }
     if let Some((paths, pos)) = app.assets.synthetic_drop.take() {
         drop_files(app, paths, Some(pos));
     }

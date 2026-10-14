@@ -151,9 +151,6 @@ pub struct HostHooks {
     /// The pointer in the window's content (logical points, top-left origin) while files are
     /// dragged in from the Finder: winit reports the files but not where they are (assets-dnd).
     pub pointer_in_window: Option<Box<dyn FnMut() -> Option<(f32, f32)>>>,
-    /// Audition a sound file (Window ▸ Resources ▸ ▶): `Some(path)` plays it (stopping the
-    /// previous one) and says whether it started, `None` stops.
-    pub preview_audio: Option<Box<dyn FnMut(Option<&str>) -> bool>>,
 }
 
 /// The command a [`HostHooks::pick_file_for_relink`] caller runs with the chosen file, for hosts
@@ -1214,6 +1211,10 @@ impl FilmcraftApp {
         }
         if ctx.egui_wants_keyboard_input() || self.dialog == Some(Dialog::Shortcuts) {
             return;
+        }
+        // Window ▸ Resources has the keyboard when focused: ↑↓ Space Enter Esc F / (ressources-v2)
+        if self.ui.focused == PanelKind::Resources {
+            panels::resources::keyboard(self, ctx);
         }
         // Esc cancels a dynamic trim in progress
         if self.session.trim_play.dynamic.is_some() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
