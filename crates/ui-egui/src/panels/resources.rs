@@ -167,6 +167,8 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         .as_deref()
                         .map(|p| display_name(std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p)).0.to_string())
                         .unwrap_or_default();
+                    // a long LUT name would run over the "Before" label: keep it under its picture
+                    let name = elide_middle(ui, &name, b.width());
                     ui.painter().text(pos2(b.center().x, lbl_y), Align2::CENTER_CENTER, name, Tokens::ui(10.0), t.text);
                 } else {
                     ui.painter().rect_stroke(b, 2.0, egui::Stroke::new(1.0, t.separator), egui::StrokeKind::Inside);
