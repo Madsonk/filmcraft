@@ -3531,9 +3531,9 @@
 	Dust & Scratches	Polvo y rayas
 	Film Grain	Grano de película
 	Roughness	Aspereza
-	Shadows Response	Respuesta de sombras
-	Midtones Response	Respuesta de medios tonos
-	Highlights Response	Respuesta de altas luces
+	Shadows Response	Resp. sombras
+	Midtones Response	Resp. medios tonos
+	Highlights Response	Resp. altas luces
 	Colour Grain	Grano de color
 	Animated	Animado
 	Wide Spread	Dispersión amplia
@@ -3542,12 +3542,12 @@
 	Halation Only	Solo halación
 	Scatter	Dispersión
 	Bloom Color	Color del resplandor
-	Anamorphic Streak	Destello anamórfico
-	Streak Length	Longitud del destello
+	Anamorphic Streak	Destello anamórf.
+	Streak Length	Longitud destello
 	Streak Color	Color del destello
 	Bloom Only	Solo resplandor
 	Diffusion Filter	Filtro de difusión
-	Highlight Bias	Prioridad a altas luces
+	Highlight Bias	Prioridad altas luces
 	Warmth	Calidez
 	Black Lift	Elevación de negros
 	Film Stock	Emulsión de película
@@ -3559,12 +3559,12 @@
 	Tungsten Night	Noche tungsteno
 	Vintage 70s	Años 70
 	Silver B&W	B/N plata
-	Highlight Roll-off	Atenuación de altas luces
+	Highlight Roll-off	Suavizado altas luces
 	Weave	Inestabilidad
 	Breathing	Respiración
 	Dust	Polvo
 	Dust Size	Tamaño del polvo
-	Dark Dust Share	Proporción de polvo oscuro
+	Dark Dust Share	Polvo oscuro
 	Hairs	Pelos
 	Scratches	Rayas
 	Lens Character	Carácter del objetivo
@@ -3603,3 +3603,4 @@
 	{n} of {total}	{n} de {total}
 	{n} of {total} · indexing in the background ({dirs} folders read)…	{n} de {total} · indexando en segundo plano ({dirs} carpetas leídas)…
 	{n} resource(s) placed on the timeline	{n} recurso(s) colocado(s) en la línea de tiempo
+	Weave & Flicker	Temblor

@@ -220,6 +220,20 @@ pub fn target_at(app: &FilmcraftApp, pos: Pos2) -> (Value, String) {
                     .unwrap_or_default();
                 return (json!({"track": track, "time": t(&h["time"])}), name);
             }
+            // a transition sits on its clips' edges: the drop goes to the incoming clip (the
+            // outgoing one for a fade to nothing) at the transition's middle, not into the bin
+            Some("transition") => {
+                let found = app.session.active_sequence().and_then(|q| {
+                    let tr = q.track(filmcraft_project::TrackId(h["track"].as_u64()?))?;
+                    let x = tr.transitions.iter().find(|x| Some(x.id.0) == h["transition"].as_u64())?;
+                    let clip = x.to.or(x.from)?;
+                    let name = q.find_item(clip).map(|(_, it)| it.name.clone()).unwrap_or_default();
+                    Some((clip.0, x.start.0 + x.duration.0 / 2, name))
+                });
+                if let Some((clip, mid, name)) = found {
+                    return (json!({"clip": clip, "time": rate.snap_nearest(Tick(mid.max(0))).0}), name);
+                }
+            }
             Some("ruler") => return (json!({"time": t(&h["time"])}), String::new()),
             _ => {}
         }

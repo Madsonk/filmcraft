@@ -355,3 +355,25 @@ fn the_resources_panel_lists_previews_and_drags_luts_sounds_and_titles() {
         q.video_tracks.iter().map(|t| t.items.iter().map(|i| i.name.clone()).collect::<Vec<_>>()).collect::<Vec<_>>()
     );
 }
+
+/// A drop over a transition (the striped block on a cut) goes to the incoming clip, not into the
+/// Project bin (seen in the running app: a sound dragged near a cut was only imported).
+#[test]
+fn a_drop_over_a_transition_lands_on_its_clip() {
+    let mut h = harness();
+    let d = tmp("transition");
+    let lut = cube(&d, "Over the cut", true);
+    let snd = wav(&d, "Whoosh on the cut");
+    let tr = h.state().session.active_sequence().unwrap().video_tracks[0].transitions.first().cloned().expect("the demo has a transition on V1");
+    let clip = tr.to.or(tr.from).unwrap();
+    let from = tr.from.unwrap_or(clip);
+    let (x, y) = filmcraft_ui_egui::panels::timeline::locate(h.state(), from.0, Some("out")).expect("clip visible");
+    let at = egui::pos2(x, y);
+    let hit = filmcraft_ui_egui::panels::timeline::hit_json(h.state(), at, egui::Modifiers::NONE);
+    assert_eq!(hit["hit"], "transition", "the point is over the transition: {hit}");
+    let audio0 = audio_clip_count(&h);
+    os_drop(&mut h, &lut, at);
+    assert!(look_of(&h, clip).is_some(), "LUT on the clip of the transition: {}", h.state().ui.status);
+    os_drop(&mut h, &snd, at);
+    assert_eq!(audio_clip_count(&h), audio0 + 1, "the sound is placed on the timeline: {}", h.state().ui.status);
+}

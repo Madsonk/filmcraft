@@ -171,7 +171,10 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 } else {
                     ui.painter().rect_stroke(b, 2.0, egui::Stroke::new(1.0, t.separator), egui::StrokeKind::Inside);
                     let msg = if hovered.is_some() { tl!("Reading the LUT…") } else { tl!("Hover a LUT to preview it") };
-                    ui.painter().text(b.center(), Align2::CENTER_CENTER, msg, Tokens::ui(10.5), t.text_dim);
+                    // wrapped inside the empty frame (the French line is wider than the frame)
+                    let galley = ui.painter().layout(msg.to_string(), Tokens::ui(10.5), t.text_dim, (b.width() - 12.0).max(20.0));
+                    let g = galley.size();
+                    ui.painter().galley(pos2(b.center().x - g.x / 2.0, b.center().y - g.y / 2.0), galley, t.text_dim);
                 }
             }
             _ => {
@@ -229,14 +232,19 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             let rw = right.chars().count() as f32 * 6.0 + 8.0;
             let name_w = (r.max.x - x - rw - 6.0).max(20.0);
             let shown = if tab == Kind::Titles && !e.dir.is_empty() { format!("{name} — {}", e.dir) } else { name.to_string() };
+            // long names (the library prefixes them with their folders) keep their end: the
+            // part that tells the files apart (".. LogC to ACEScct")
+            let shown = elide_middle(ui, &shown, name_w);
             let galley = ui.painter().layout_no_wrap(shown, Tokens::ui(11.5), t.text);
             let clip = Rect::from_min_size(pos2(x, r.min.y), vec2(name_w, ROW_H));
             ui.painter().with_clip_rect(clip).galley(pos2(x, r.center().y - galley.size().y / 2.0), galley, t.text);
             ui.painter().text(pos2(r.max.x - 6.0, r.center().y), Align2::RIGHT_CENTER, &right, Tokens::ui(10.5), t.text_dim);
+            // the full name first (the row may be elided), then the folder and the tags
+            let head = if e.dir.is_empty() { name.to_string() } else { format!("{name}\n{}", e.dir) };
             let resp = match (tags, &e.family) {
-                (Some(tg), _) => resp.on_hover_text(format!("{}\n{tg}", e.dir)),
-                (None, Some(f)) => resp.on_hover_text(format!("{}\n{f}", e.dir)),
-                _ => resp.on_hover_text(&e.dir),
+                (Some(tg), _) => resp.on_hover_text(format!("{head}\n{tg}")),
+                (None, Some(f)) => resp.on_hover_text(format!("{head}\n{f}")),
+                _ => resp.on_hover_text(head),
             };
             if resp.double_clicked() {
                 action = Some((n, "apply"));
@@ -319,4 +327,29 @@ mod tests {
         assert_eq!(duration_text(83.0), "1:23");
         assert_eq!(duration_text(1.44), "1.4 s");
     }
+}
+
+/// `text` shortened in the middle ("start … end") to fit `width` at the row font.
+fn elide_middle(ui: &egui::Ui, text: &str, width: f32) -> String {
+    let w = |s: &str| ui.painter().layout_no_wrap(s.to_string(), Tokens::ui(11.5), egui::Color32::WHITE).size().x;
+    let full = w(text);
+    if full <= width {
+        return text.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let cut = |keep: usize| -> String {
+        let head = keep * 2 / 5;
+        let tail = keep - head;
+        chars[..head].iter().chain(['…'].iter()).chain(chars[chars.len() - tail..].iter()).collect()
+    };
+    // start from the proportional guess, then trim a few characters until it fits
+    let mut keep = ((chars.len() as f32 * width / full) as usize).min(chars.len().saturating_sub(1));
+    while keep > 4 {
+        let s = cut(keep);
+        if w(&s) <= width {
+            return s;
+        }
+        keep -= 2;
+    }
+    cut(keep.max(1))
 }

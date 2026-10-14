@@ -3531,8 +3531,8 @@
 	Film Grain	Grain de pellicule
 	Roughness	Rugosité
 	Shadows Response	Réponse des ombres
-	Midtones Response	Réponse des tons moyens
-	Highlights Response	Réponse des hautes lumières
+	Midtones Response	Réponse tons moyens
+	Highlights Response	Réponse hautes lum.
 	Colour Grain	Grain coloré
 	Animated	Animé
 	Wide Spread	Diffusion large
@@ -3541,12 +3541,12 @@
 	Halation Only	Halation seule
 	Scatter	Dispersion
 	Bloom Color	Couleur de l'éclat
-	Anamorphic Streak	Traînée anamorphique
-	Streak Length	Longueur de la traînée
+	Anamorphic Streak	Traînée anamorph.
+	Streak Length	Longueur traînée
 	Streak Color	Couleur de la traînée
 	Bloom Only	Éclat seul
 	Diffusion Filter	Filtre de diffusion
-	Highlight Bias	Priorité aux hautes lumières
+	Highlight Bias	Priorité hautes lum.
 	Warmth	Chaleur
 	Black Lift	Relèvement des noirs
 	Film Stock	Émulsion de pellicule
@@ -3558,12 +3558,12 @@
 	Tungsten Night	Nuit tungstène
 	Vintage 70s	Années 70
 	Silver B&W	N&B argentique
-	Highlight Roll-off	Adoucissement des hautes lumières
+	Highlight Roll-off	Douceur hautes lum.
 	Weave	Instabilité
 	Breathing	Respiration
 	Dust	Poussières
 	Dust Size	Taille des poussières
-	Dark Dust Share	Part de poussières sombres
+	Dark Dust Share	Poussières sombres
 	Hairs	Cheveux
 	Scratches	Rayures
 	Lens Character	Caractère d'objectif
@@ -3602,3 +3602,4 @@
 	{n} of {total}	{n} sur {total}
 	{n} of {total} · indexing in the background ({dirs} folders read)…	{n} sur {total} · indexation en tâche de fond ({dirs} dossiers lus)…
 	{n} resource(s) placed on the timeline	{n} ressource(s) posée(s) sur la timeline
+	Weave & Flicker	Tremblement
