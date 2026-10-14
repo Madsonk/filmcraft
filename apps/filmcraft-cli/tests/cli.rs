@@ -314,12 +314,13 @@ fn talk_wav(parts: &[(f64, bool)]) -> Vec<u8> {
 }
 
 /// The bundled extensions of this build, by id (the folder names of `extensions-bundled/`).
-const ALL_BUNDLED: [&str; 20] = [
+const ALL_BUNDLED: [&str; 22] = [
     "autoedit",
     "beat-edit",
     "copy-pasta",
     "doublage-voix",
     "export-en-un-clic",
+    "lut-premiere",
     "ml-models",
     "nettoyage-voix",
     "person-matte",
@@ -331,6 +332,7 @@ const ALL_BUNDLED: [&str; 20] = [
     "sous-titres-animes",
     "stabilizer-l1",
     "storyboard-maker",
+    "sync-madvision",
     "tics-de-langage",
     "traduction-sous-titres",
     "upscale-video",
@@ -354,6 +356,7 @@ fn extensions_install_list_validate_pack_remove() {
             "copy-pasta",
             "doublage-voix",
             "export-en-un-clic",
+            "lut-premiere",
             "ml-models",
             "nettoyage-voix",
             "person-matte",
@@ -365,6 +368,7 @@ fn extensions_install_list_validate_pack_remove() {
             "sous-titres-animes",
             "stabilizer-l1",
             "storyboard-maker",
+            "sync-madvision",
             "tics-de-langage",
             "traduction-sous-titres",
             "upscale-video",
@@ -385,6 +389,7 @@ fn extensions_install_list_validate_pack_remove() {
             "Doublage vocal",
             "Détourage de personne (RVM)",
             "Export en un clic",
+            "LUT vers Premiere",
             "Modèles IA optionnels",
             "Nettoyage de la voix",
             "Ralenti et images par seconde (RIFE)",
@@ -395,6 +400,7 @@ fn extensions_install_list_validate_pack_remove() {
             "Sous-titres animés",
             "Stabilisation L1 (trajectoire optimale)",
             "Storyboard Maker",
+            "Synchro audio MadVision",
             "Tics de langage",
             "Traduction des sous-titres",
             "Voix et musique (HT Demucs)"

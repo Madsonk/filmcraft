@@ -1,0 +1,41 @@
+{
+  "formatVersion": 1,
+  "id": "lut-premiere",
+  "name": "LUT vers Premiere",
+  "version": "1.0.0",
+  "category": "export",
+  "description": "Copies LUTs into Premiere Pro's LUT folders (Adobe/Common/LUTs/Creative for looks, Input for input LUTs), which Premiere watches: no restart needed. Each LUT is written as a 64x64x64 .cube, the size Premiere resamples LUTs to, and FilmCraft renders that same table. A different file of the same name is never replaced (the copy gets ' (FilmCraft)'). Each copy is logged in premiere-luts.log in the FilmCraft data folder.",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Envoyer les LUT de la séquence à Premiere",
+      "description": "Every LUT the Lumetri effects of the active sequence use (Creative Look → Creative, Input LUT → Input); with none, the whole project LUT library.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "lut.depositPremiere",
+            "params": {}
+          }
+        ]
+      }
+    },
+    {
+      "label": "Envoyer toute la bibliothèque de LUT à Premiere",
+      "description": "Every LUT of the project's LUT library, as Creative looks.",
+      "requires": [],
+      "action": {
+        "commands": [
+          {
+            "id": "lut.depositPremiere",
+            "params": {
+              "library": true
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

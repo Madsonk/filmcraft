@@ -58,6 +58,12 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
         query("lut.list", "List LUTs", "{}", list),
         spec("lut.remove", "Remove LUT", &[], r#"{"id":str}"#, always, remove),
         query("lut.export", "Export LUT", r#"{"lut":"lib:<id>"|"builtin:<id>","path":str,"format":"cube"|"3dl"?}"#, export),
+        query(
+            "lut.depositPremiere",
+            "Send LUTs to Premiere Pro",
+            r#"{"lut":"lib:<id>"|"builtin:<id>"?,"library":bool?,"slot":"creative"|"input"?,"dir":str?,"journal":str?}"#,
+            deposit_premiere,
+        ),
         spec("lumetri.setInputLut", "Set Input LUT", &[], r#"{"clip":id?,"lut":"lib:<id>"|"builtin:<id>"|""?,"path":str?}"#, has_seq, |s, p| {
             set_lut(s, p, "input_lut")
         }),
@@ -160,6 +166,133 @@ fn export(s: &mut Session, p: &Value) -> Result<Value> {
     };
     std::fs::write(path, &text).map_err(|e| bad("lut.export", format!("{path}: {e}")))?;
     Ok(json!({"path": path, "bytes": text.len()}))
+}
+
+/// Premiere Pro's user LUT folder (`…/Adobe/Common/LUTs`, with `Creative` and `Input` inside);
+/// `FILMCRAFT_PREMIERE_LUTS_DIR` overrides it.
+fn premiere_luts_dir() -> Option<std::path::PathBuf> {
+    let env = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(std::path::PathBuf::from);
+    env("FILMCRAFT_PREMIERE_LUTS_DIR").or_else(|| env("HOME").map(|h| h.join("Library/Application Support/Adobe/Common/LUTs")))
+}
+
+/// A file name Premiere shows as the LUT's name: no path separators or control characters.
+fn premiere_file_stem(name: &str) -> String {
+    let s: String = name.chars().map(|c| if c == '/' || c == ':' || c == '\\' || c.is_control() { '-' } else { c }).collect();
+    let s = s.trim().trim_start_matches('.').trim().to_string();
+    if s.is_empty() { "FilmCraft LUT".into() } else { s.chars().take(120).collect() }
+}
+
+/// Write `text` as `<dir>/<stem>.cube` without ever replacing a different file: the same content
+/// already there is reused; otherwise ` (FilmCraft)`, ` (FilmCraft 2)`… is added to the name.
+fn write_unique_cube(dir: &std::path::Path, stem: &str, text: &str) -> std::io::Result<(std::path::PathBuf, &'static str)> {
+    std::fs::create_dir_all(dir)?;
+    for n in 0..1000u32 {
+        let name = match n {
+            0 => format!("{stem}.cube"),
+            1 => format!("{stem} (FilmCraft).cube"),
+            n => format!("{stem} (FilmCraft {n}).cube"),
+        };
+        let path = dir.join(&name);
+        match std::fs::read(&path) {
+            Ok(have) if have == text.as_bytes() => return Ok((path, "reused")),
+            Ok(_) => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // write beside, then move in only if the name is still free (never replace)
+                let tmp = dir.join(format!(".{name}.filmcraft-tmp"));
+                std::fs::write(&tmp, text)?;
+                let r = std::fs::hard_link(&tmp, &path);
+                let _ = std::fs::remove_file(&tmp);
+                match r {
+                    Ok(()) => return Ok((path, if n == 0 { "written" } else { "renamed" })),
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(e) => return Err(e),
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::other("no free name"))
+}
+
+/// `lut.depositPremiere`: copy LUTs, resampled to Premiere's 64³, into Premiere Pro's user LUT
+/// folders (`Creative` for looks, `Input` for input LUTs), which Premiere watches: they appear in
+/// Lumetri's menus without a restart. Without `lut`: every LUT the active sequence's Lumetri
+/// effects use (else, or with `library: true`, the whole project library). A different file of
+/// the same name is never replaced (the new one gets a ` (FilmCraft)` suffix); each copy is
+/// logged to `journal` (default `<data dir>/premiere-luts.log`, one JSON line per file).
+fn deposit_premiere(s: &mut Session, p: &Value) -> Result<Value> {
+    const CMD: &str = "lut.depositPremiere";
+    let root = match str_p(p, "dir") {
+        Some(d) => std::path::PathBuf::from(d),
+        None => premiere_luts_dir().ok_or_else(|| bad(CMD, "no home folder"))?,
+    };
+    // (reference, slot)
+    let mut wanted: Vec<(String, &'static str)> = Vec::new();
+    match str_p(p, "lut") {
+        Some(r) => {
+            let slot = match str_p(p, "slot") {
+                None | Some("creative") => "Creative",
+                Some("input") => "Input",
+                Some(o) => return Err(bad(CMD, format!("unknown slot `{o}` (creative, input)"))),
+            };
+            wanted.push((r.trim().to_string(), slot));
+        }
+        None if bool_p(p, "library") == Some(true) => {
+            wanted = s.project.luts.iter().map(|l| (format!("lib:{}", l.id), "Creative")).collect();
+        }
+        None => {
+            if let Some(q) = s.active_sequence() {
+                for it in q.all_tracks().flat_map(|t| t.items.iter()) {
+                    for e in it.effects.iter().filter(|e| e.effect == "lumetri") {
+                        for (param, slot) in [("look_lut", "Creative"), ("input_lut", "Input")] {
+                            if let Some(ParamValue::Text(t)) = e.param(param).map(|v| &v.value)
+                                && !t.is_empty()
+                                && !wanted.iter().any(|w| w.0 == *t && w.1 == slot)
+                            {
+                                wanted.push((t.clone(), slot));
+                            }
+                        }
+                    }
+                }
+            }
+            if wanted.is_empty() {
+                wanted = s.project.luts.iter().map(|l| (format!("lib:{}", l.id), "Creative")).collect();
+            }
+        }
+    }
+    if wanted.is_empty() {
+        return Err(bad(CMD, "no LUT to send: the sequence uses none and the project library is empty"));
+    }
+    let journal = match str_p(p, "journal") {
+        Some(j) => Some(std::path::PathBuf::from(j)),
+        None => crate::autosave::default_data_dir().map(|d| d.join("premiere-luts.log")),
+    };
+    let mut out = Vec::new();
+    for (r, slot) in wanted {
+        let lut = filmcraft_render::luts::resolve(Some(&s.project), &r).ok_or_else(|| bad(CMD, format!("unknown LUT `{r}`")))?;
+        let name = filmcraft_render::luts::label(Some(&s.project), &r);
+        let cube = lut.resampled(filmcraft_color::lut::PREMIERE_SIZE).map_err(|e| bad(CMD, format!("{name}: {e}")))?;
+        let mut l = Lut::from_cube(cube);
+        l.title = name.clone();
+        let text = l.to_cube();
+        let dir = root.join(slot);
+        let (path, action) = write_unique_cube(&dir, &premiere_file_stem(&name), &text).map_err(|e| bad(CMD, format!("{}: {e}", dir.display())))?;
+        let row = json!({"lut": r, "name": name, "slot": slot, "path": path.to_string_lossy(), "action": action, "size": filmcraft_color::lut::PREMIERE_SIZE, "bytes": text.len()});
+        if let Some(j) = &journal {
+            use std::io::Write as _;
+            let line = json!({"at": crate::autosave::unix_now(), "deposit": row.clone()}).to_string();
+            let w = j
+                .parent()
+                .map(std::fs::create_dir_all)
+                .transpose()
+                .and_then(|_| std::fs::OpenOptions::new().create(true).append(true).open(j).and_then(|mut f| writeln!(f, "{line}")));
+            if let Err(e) = w {
+                log::warn!("{CMD}: journal {}: {e}", j.display());
+            }
+        }
+        out.push(row);
+    }
+    Ok(json!({"dir": root.to_string_lossy(), "luts": out, "journal": journal.map(|j| j.to_string_lossy().to_string())}))
 }
 
 /// The target clip and the index of its Lumetri effect (applying Lumetri when missing).

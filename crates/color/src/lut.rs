@@ -15,6 +15,9 @@
 
 use std::fmt::Write as _;
 
+/// The 3D grid size Premiere Pro resamples LUTs to (64³).
+pub const PREMIERE_SIZE: usize = 64;
+
 /// A per-channel 1D table.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Lut1d {
@@ -434,6 +437,35 @@ impl Lut {
         }
     }
 
+    /// The 3D table resampled to `size³` points of this LUT (over the cube's own domain when there
+    /// is no shaper, over 0..1 otherwise). A lone 1D table is sampled the same way.
+    pub fn resampled(&self, size: usize) -> Result<Lut3d, String> {
+        if !(2..=256).contains(&size) {
+            return Err("size must be 2–256".into());
+        }
+        match (&self.shaper, &self.cube) {
+            (None, None) => Err("empty LUT".into()),
+            (None, Some(c)) if c.size == size => Ok(c.clone()),
+            (None, Some(c)) => {
+                let (lo, hi) = (c.domain_min, c.domain_max);
+                let grid = Lut3d::from_fn(size, |g| std::array::from_fn(|k| lo[k] + g[k] * (hi[k] - lo[k]))).data;
+                Ok(Lut3d { title: self.title.clone(), size, domain_min: lo, domain_max: hi, data: grid.into_iter().map(|x| c.apply(x)).collect() })
+            }
+            _ => Ok(Lut3d { title: self.title.clone(), ..Lut3d::from_fn(size, |c| self.apply(c)) }),
+        }
+    }
+
+    /// The LUT as Premiere Pro uses it: Premiere resamples every 3D LUT to [`PREMIERE_SIZE`]³
+    /// internally (its project files carry a 64³ float table per LUT, observed 14 Oct 2026), so
+    /// FilmCraft renders and exports the same 64³ table to show the same look. A 1D-only LUT is
+    /// returned unchanged (no 3D table to resample for rendering).
+    pub fn premiere_parity(&self) -> Lut {
+        match &self.cube {
+            Some(_) => self.resampled(PREMIERE_SIZE).map(Lut::from_cube).unwrap_or_else(|_| self.clone()),
+            None => self.clone(),
+        }
+    }
+
     #[inline]
     pub fn apply(&self, rgb: [f32; 3]) -> [f32; 3] {
         let mut c = rgb;
@@ -624,5 +656,41 @@ mod tests {
         assert!(Lut::parse(&swap.to_cube(), None).is_ok());
         assert!(Lut::parse(&text, None).is_ok());
         assert_eq!(LutFormat::from_path("a/b/Look.CUBE"), Some(LutFormat::Cube));
+    }
+
+    #[test]
+    fn premiere_parity_is_a_64_cube_close_to_the_original() {
+        // a 33³ non-linear LUT: the 64³ resample keeps its grid points' neighbourhood within interpolation error
+        let src = Lut::from_cube(wild(33));
+        let p = src.premiere_parity();
+        let c = p.cube.as_ref().unwrap();
+        assert_eq!((c.size, c.data.len(), p.shaper.is_none()), (PREMIERE_SIZE, 64 * 64 * 64, true));
+        let mut max = 0f32;
+        for i in 0..2000u32 {
+            let x = [(i * 37 % 1000) as f32 / 999.0, (i * 91 % 1000) as f32 / 999.0, (i * 53 % 1000) as f32 / 999.0];
+            let (a, b) = (src.apply(x), p.apply(x));
+            max = (0..3).fold(max, |m, k| m.max((a[k] - b[k]).abs()));
+        }
+        assert!(max < 0.01, "max error {max}");
+        // an affine LUT is resampled exactly (tetrahedral interpolation is exact on affine maps)
+        let aff = Lut::from_cube(Lut3d::from_fn(17, |c| [0.1 + 0.8 * c[0], c[1] * 0.5 + c[2] * 0.25, 1.0 - c[2]]));
+        let q = aff.premiere_parity();
+        for x in [[0.13, 0.77, 0.42], [0.0, 1.0, 0.5], [0.999, 0.001, 0.31]] {
+            let (a, b) = (aff.apply(x), q.apply(x));
+            assert!((0..3).all(|k| (a[k] - b[k]).abs() < 1e-5), "{a:?} vs {b:?}");
+        }
+        // a 64³ unit-domain cube is kept as is; a non-unit domain is kept; a 1D-only LUT is left alone
+        let same = Lut::from_cube(wild(64));
+        assert_eq!(same.premiere_parity(), same);
+        let mut wide = wild(9);
+        wide.domain_max = [2.0; 3];
+        let w = Lut::from_cube(wide.clone()).premiere_parity();
+        assert_eq!(w.cube.as_ref().unwrap().domain_max, [2.0; 3]);
+        assert!((0..3).all(|k| (w.apply([1.5, 0.2, 1.9])[k] - wide.apply([1.5, 0.2, 1.9])[k]).abs() < 0.02));
+        let one_d = Lut { title: String::new(), shaper: Some(Lut1d::identity(1024)), cube: None };
+        assert_eq!(one_d.premiere_parity(), one_d);
+        // the .cube text round-trips at 64³
+        let back = Lut::parse_cube(&p.to_cube()).unwrap();
+        assert_eq!(back.cube.unwrap().size, 64);
     }
 }
