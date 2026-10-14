@@ -12,6 +12,8 @@
 
 pub mod aaf_omf;
 pub mod assets;
+pub mod mogrt_fixtures;
+pub mod mogrt_import;
 pub mod auto_reframe;
 pub mod autosave;
 pub mod beats;
@@ -1048,6 +1050,8 @@ const MAX_SUBCLIP_CHAIN: usize = 16;
 mod aaf_omf_tests;
 #[cfg(test)]
 mod assets_tests;
+#[cfg(test)]
+mod mogrt_import_tests;
 #[cfg(test)]
 mod audio_effects_tests;
 #[cfg(test)]

@@ -192,23 +192,44 @@ fn a_title_dropped_on_a_shot_goes_above_it() {
 }
 
 #[test]
-fn a_mogrt_is_refused_with_the_way_to_convert_it_and_is_never_read() {
+fn an_after_effects_mogrt_is_refused_as_preview_only_and_a_premiere_one_is_placed_as_a_title() {
+    use crate::mogrt_fixtures::{Spec, after_effects, premiere};
     let mut s = demo();
     let d = tmp_dir("assets-mogrt");
-    let m = d.join("Lower third.mogrt");
-    std::fs::write(&m, b"PK\x03\x04not read").unwrap();
+    s.prefs_path = Some(d.join("prefs.json"));
+    let ae = d.join("Lower third AE.mogrt");
+    std::fs::write(&ae, after_effects().unwrap()).unwrap();
     let undo0 = s.history.undo.len();
-    let e = s.execute("assets.place", json!({"paths": [m.to_string_lossy()], "time": 0})).unwrap_err().to_string();
-    assert!(e.contains("mogrt_to_alpha") && e.contains("Resources"), "{e}");
+    let e = s.execute("assets.place", json!({"paths": [ae.to_string_lossy()], "time": 0})).unwrap_err().to_string();
+    assert!(e.contains("After Effects") && e.contains("preview only"), "{e}");
     assert_eq!(s.history.undo.len(), undo0);
-    // mixed with a usable file: the usable one goes in, the mogrt is listed as refused
+    // mixed with a usable file: the usable one goes in, the After Effects title is listed as refused
     let w = wav(&d, "ok.wav");
-    let r = s.execute("assets.place", json!({"paths": [m.to_string_lossy(), w]})).unwrap();
-    assert_eq!(r["refused"][0]["code"], "mogrt", "{r}");
+    let r = s.execute("assets.place", json!({"paths": [ae.to_string_lossy(), w]})).unwrap();
+    assert_eq!(r["refused"][0]["code"], "afterEffects", "{r}");
     assert_eq!(r["placed"][0]["action"], "imported", "{r}");
-    // Essential Graphics gives the same guidance
-    let e = s.execute("graphics.template.install", json!({"path": m.to_string_lossy()})).unwrap_err().to_string();
-    assert!(e.contains("mogrt_to_alpha"), "{e}");
+    let e = s.execute("graphics.template.install", json!({"path": ae.to_string_lossy()})).unwrap_err().to_string();
+    assert!(e.contains("After Effects"), "{e}");
+    // a Premiere title dropped on a shot: converted, placed above it, one undo step
+    let pr = d.join("Lower third PR.mogrt");
+    std::fs::write(&pr, premiere(&Spec { text: "Hello Title", font: "Inter-Bold", second_run_size: None, opacity_keys: false, extra_effect: false }).unwrap()).unwrap();
+    let original = std::fs::read(&pr).unwrap();
+    let (clip, t) = first_video_clip(&s);
+    let v1 = clip_count(&s, TrackKind::Video, 0);
+    let undo0 = s.history.undo.len();
+    let r = s.execute("assets.place", json!({"paths": [pr.to_string_lossy()], "clip": clip.0, "time": t.0})).unwrap();
+    let placed = &r["placed"][0];
+    assert_eq!(placed["action"], "placed", "{r}");
+    let (kind, idx) = track_index(&s, placed["track"].as_u64().unwrap());
+    assert_eq!((kind, idx > 0), (TrackKind::Video, true), "{r}");
+    assert_eq!(clip_count(&s, TrackKind::Video, 0), v1, "V1 untouched");
+    assert_eq!(s.history.undo.len(), undo0 + 1, "one undo step");
+    let c = ClipId(placed["clip"].as_u64().unwrap());
+    let it = s.active_sequence().unwrap().find_item(c).unwrap().1.clone();
+    let link = it.graphic.as_ref().and_then(|g| g.template.clone()).expect("template link");
+    assert!(link.controls.iter().any(|c| c.param == "text"), "{link:?}");
+    // the source was only read
+    assert_eq!(std::fs::read(&pr).unwrap(), original);
 }
 
 #[test]

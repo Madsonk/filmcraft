@@ -6,8 +6,10 @@
 //!   project. Double-click = Creative Look of that shot. Drag = drop on any shot.
 //! - **Sound effects / Music**: ▶ auditions the file (host player), double-click places it at the
 //!   playhead on a free audio track, drag = place where dropped.
-//! - **Titles**: the `.mogrt` converted by `mogrt_to_alpha` into videos with transparency; a title
-//!   not converted yet shows its preview (a reference only) and says so.
+//! - **Titles**: the `.mogrt` of the library. One made in Premiere becomes an editable FilmCraft
+//!   title when it is dropped (converted once, `graphics.template.importMogrt`; text, colours and
+//!   fonts in Essential Graphics); "Convert all shown" converts the listed ones in the background.
+//!   One made in After Effects is "preview only": its preview can be dropped as a reference.
 //!
 //! Indexes are built in the background ([`crate::assets::index`]); the panel never lists a folder
 //! itself. Automation ids: `resources.tab.<luts|sfx|music|titles>`, `resources.search`,
@@ -186,12 +188,14 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
     }
     if tab == Kind::Titles {
-        let note =
-            tl!("Titles = .mogrt converted to video with transparency (mogrt_to_alpha). “preview only” = not converted yet: a reference, not the title.");
+        let note = tl!(
+            "Titles made in Premiere become editable titles (text, colours, fonts) when dropped. After Effects titles are “preview only”: a reference, not the title."
+        );
         let nr = Rect::from_min_size(pos2(rect.min.x + 8.0, top), vec2(rect.width() - 16.0, 28.0));
         let galley = ui.painter().layout(note.to_string(), Tokens::ui(10.0), t.text_dim, nr.width());
         top += galley.size().y + 4.0;
         ui.painter().galley(nr.min, galley, t.text_dim);
+        top = convert_all_row(app, ui, &snap, &rows, rect, top);
     }
     // ---- rows
     let list = Rect::from_min_max(pos2(rect.min.x, top), rect.max);
@@ -228,6 +232,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             let (name, tags) = display_name(&e.name);
             let right = match (tab, e.dur) {
                 (Kind::Titles, _) if !e.ready => tl!("preview only").to_string(),
+                (Kind::Titles, _) if e.path.to_ascii_lowercase().ends_with(".mogrt") => tl!("editable").to_string(),
                 (_, Some(d)) => duration_text(d),
                 _ => String::new(),
             };
@@ -264,13 +269,86 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             "play" => toggle_play(app, &e.path),
             "drag" => {
                 if tab == Kind::Titles && !e.ready {
-                    app.ui.status = tl!("Not converted yet: the preview is dropped as a reference, not the title itself").to_string();
+                    app.ui.status = tl!("After Effects title: only its preview is dropped, as a reference (FilmCraft can't convert it)").to_string();
                 }
                 app.assets.drag = Some(AssetDrag { paths: vec![e.path.clone()], label: e.name.clone() });
             }
             _ => apply(app, tab, &e.path),
         }
     }
+}
+
+/// Progress of "Convert all shown" (Titles).
+#[derive(Clone, Debug, Default)]
+pub struct ConvertJob {
+    pub total: usize,
+    pub done: usize,
+    pub failed: usize,
+    pub running: bool,
+    pub last_error: Option<String>,
+}
+
+/// "Convert all shown (N)" and its progress: converts the listed Premiere titles into the user's
+/// graphics templates in a background thread (the library may be on a slow disk). Returns the new
+/// top of the list.
+fn convert_all_row(app: &mut FilmcraftApp, ui: &mut egui::Ui, snap: &index::Snapshot, rows: &[usize], rect: Rect, top: f32) -> f32 {
+    let t = app.tokens;
+    let todo: Vec<String> =
+        rows.iter().map(|&i| &snap.entries[i]).filter(|e| e.ready && e.path.to_ascii_lowercase().ends_with(".mogrt")).map(|e| e.path.clone()).collect();
+    let job = app.assets.convert_job.as_ref().map(|j| j.lock().unwrap_or_else(|e| e.into_inner()).clone());
+    let r = Rect::from_min_size(pos2(rect.min.x + 6.0, top), vec2((rect.width() - 12.0).min(260.0), 20.0));
+    let running = job.as_ref().is_some_and(|j| j.running);
+    let label = match &job {
+        Some(j) if j.running => tlf!("Converting {done} of {total}…", done = j.done, total = j.total),
+        _ => tlf!("Convert all shown ({n})", n = todo.len()),
+    };
+    let resp = ui.interact(r, egui::Id::new("res-convert-all"), Sense::click());
+    app.auto.add("resources.convertAll", r, &label);
+    let enabled = !running && !todo.is_empty();
+    ui.painter().rect_filled(r, 4.0, if resp.hovered() && enabled { t.accent_hover } else if enabled { t.accent } else { t.tab_bg });
+    ui.painter().text(r.center(), Align2::CENTER_CENTER, &label, Tokens::ui(11.0), egui::Color32::WHITE);
+    let mut y = r.max.y + 4.0;
+    if let Some(j) = job.filter(|j| !j.running && j.total > 0) {
+        let msg = match &j.last_error {
+            Some(e) => tlf!("{done} converted, {failed} not converted ({error})", done = j.done - j.failed, failed = j.failed, error = e),
+            None => tlf!("{done} converted into Graphics Templates", done = j.done),
+        };
+        let g = ui.painter().layout(msg.to_string(), Tokens::ui(10.0), t.text_dim, rect.width() - 16.0);
+        ui.painter().galley(pos2(rect.min.x + 8.0, y), g.clone(), t.text_dim);
+        y += g.size().y + 4.0;
+    }
+    if running {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
+    }
+    if resp.clicked() && enabled {
+        match filmcraft_engine::graphic_templates::user_templates_dir(&app.session) {
+            Some(dir) => {
+                let job = std::sync::Arc::new(std::sync::Mutex::new(ConvertJob { total: todo.len(), running: true, ..Default::default() }));
+                app.assets.convert_job = Some(job.clone());
+                let ctx = ui.ctx().clone();
+                let spawned = std::thread::Builder::new().name("titles-convert".into()).spawn(move || {
+                    for p in todo {
+                        let r = filmcraft_engine::graphic_templates::convert_mogrt_file(&p, &dir);
+                        let mut j = job.lock().unwrap_or_else(|e| e.into_inner());
+                        j.done += 1;
+                        if let Err(e) = r {
+                            j.failed += 1;
+                            j.last_error = Some(e);
+                        }
+                        ctx.request_repaint();
+                    }
+                    job.lock().unwrap_or_else(|e| e.into_inner()).running = false;
+                    ctx.request_repaint();
+                });
+                if spawned.is_err() {
+                    app.ui.status = tl!("Could not start the conversion").to_string();
+                    app.assets.convert_job = None;
+                }
+            }
+            None => app.ui.status = tl!("No data folder for graphics templates").to_string(),
+        }
+    }
+    y
 }
 
 /// Double-click: a LUT → Creative Look of the preview shot; a sound or a title → at the playhead.

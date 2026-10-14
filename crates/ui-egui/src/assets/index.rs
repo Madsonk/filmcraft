@@ -333,6 +333,8 @@ struct TitleRec {
     thumb: Option<String>,
     duration: Option<f32>,
     app: Option<String>,
+    /// `project.prgraphic` (Premiere: convertible) or `project.aegraphic` (After Effects).
+    template: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -349,9 +351,15 @@ fn load_titles(root: &str, shared: &Mutex<Snapshot>) -> Result<(), String> {
         .items
         .into_iter()
         .filter_map(|t| {
+            // a Premiere title is dropped as its .mogrt (FilmCraft converts it into an editable
+            // title); an After Effects one only as its preview (a reference)
+            let premiere = t.template.as_deref() == Some("project.prgraphic") || t.app.as_deref() == Some("ppro");
             let video = t.video.filter(|v| Path::new(v).exists());
-            let ready = video.is_some();
-            let path = video.or(t.preview).or(t.thumb)?;
+            let (path, ready) = match (premiere, video) {
+                (true, _) => (t.source.clone(), true),
+                (false, Some(v)) => (v, true),
+                (false, None) => (t.preview.or(t.thumb)?, false),
+            };
             Some(Entry { path, name: t.name, dir: t.pack, dur: t.duration, family: t.app, source: Some(t.source), ready })
         })
         .collect();
@@ -465,14 +473,17 @@ mod tests {
         let idx = serde_json::json!({"version": 1, "items": [
             {"source": "/lib/Pack/Title B.mogrt", "pack": "Pack", "name": "Title B", "video": null, "preview": "/x/b.mp4", "duration": 3.0, "app": "aefx"},
             {"source": "/lib/Pack/Title A.mogrt", "pack": "Pack", "name": "Title A", "video": video.to_string_lossy(), "preview": "/x/a.mp4", "duration": 2.0, "app": "aefx"},
-            {"source": "/lib/Pack/Title C.mogrt", "pack": "Pack", "name": "Title C"}
+            {"source": "/lib/Pack/Title C.mogrt", "pack": "Pack", "name": "Title C"},
+            {"source": "/lib/Pack/Title D.mogrt", "pack": "Pack", "name": "Title D", "preview": "/x/d.mp4", "app": "ppro", "template": "project.prgraphic"}
         ]});
         std::fs::write(root.join("index.json"), idx.to_string()).unwrap();
         let lib = Library::start(Kind::Titles, &root.to_string_lossy(), None, None);
         let s = lib.wait(std::time::Duration::from_secs(5));
-        assert_eq!(s.entries.len(), 2, "an entry with nothing to show is left out");
+        assert_eq!(s.entries.len(), 3, "an entry with nothing to show is left out");
         assert!(s.entries[0].ready && s.entries[0].name == "Title A");
-        assert_eq!(s.entries[1].path, "/x/b.mp4");
-        assert_eq!(s.entries[1].source.as_deref(), Some("/lib/Pack/Title B.mogrt"));
+        // a Premiere title is dropped as its .mogrt (converted on the drop)
+        assert!(s.entries[1].ready && s.entries[1].path == "/lib/Pack/Title D.mogrt", "{:?}", s.entries[1]);
+        assert_eq!(s.entries[2].path, "/x/b.mp4");
+        assert_eq!(s.entries[2].source.as_deref(), Some("/lib/Pack/Title B.mogrt"));
     }
 }

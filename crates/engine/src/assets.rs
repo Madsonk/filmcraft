@@ -11,8 +11,10 @@
 //! - **Picture** (video, still, a title rendered with transparency): imported, then placed at the
 //!   drop time on the video track dropped on if it is free there, else on the next free video track
 //!   **above** (a title dropped on a shot goes over it), else on a new video track.
-//! - **`.mogrt`** (Adobe template: an After Effects or Premiere project inside a ZIP): refused with
-//!   the way to convert it (`mogrt_to_alpha`, docs/assets.md), never opened.
+//! - **`.mogrt`** made in **Premiere**: converted once into a native graphics template
+//!   (`graphics.template.importMogrt`, editable text, colours, fonts) and placed like a title, on
+//!   a free video track above. One made in **After Effects** is refused ("preview only"): it would
+//!   need After Effects.
 //!
 //! A drop never overwrites a clip already on the timeline, and all its steps (import, new track,
 //! placement) are one undo step. Nothing is written to the dropped files.
@@ -61,10 +63,6 @@ impl AssetKind {
         }
     }
 }
-
-/// The message given for a `.mogrt`, here and in Essential Graphics.
-pub const MOGRT_GUIDE: &str = "FilmCraft does not read Adobe .mogrt templates (an After Effects or Premiere project inside a ZIP). \
-Convert it to a video with transparency with mogrt_to_alpha (docs/assets.md), then drop the video, or use the Titles tab of Window ▸ Resources";
 
 pub(crate) fn commands() -> Vec<CommandSpec> {
     vec![CommandSpec {
@@ -166,7 +164,19 @@ fn place(s: &mut Session, p: &Value) -> Result<Value> {
     for path in &paths {
         let kind = AssetKind::of(path);
         let r: Result<Value> = (|| match kind {
-            AssetKind::Mogrt => Err(bad(CMD, MOGRT_GUIDE)),
+            AssetKind::Mogrt => {
+                let (entry, info) = crate::graphic_templates::import_mogrt(s, path)?;
+                let id = entry.template.id.clone();
+                let (Some(t), true) = (time, has_seq) else {
+                    summary.push(format!("Title “{}” converted into Graphics Templates", entry.template.name));
+                    return Ok(json!({"path": path, "kind": "mogrt", "action": "converted", "template": id, "conversion": info}));
+                };
+                let v = destination(s, TrackKind::Video, hovered, t, entry.template.duration)?;
+                let index = s.active_sequence().and_then(|q| q.video_tracks.iter().position(|x| x.id == v)).unwrap_or(0);
+                let r = s.execute("graphics.template.apply", json!({"template": id, "time": t.0, "track": index}))?;
+                summary.push(format!("Title “{}” placed on a video track", entry.template.name));
+                Ok(json!({"path": path, "kind": "mogrt", "action": "placed", "template": id, "clip": r["clip"], "track": v.0, "time": t.0, "conversion": info}))
+            }
             AssetKind::Lut => match (hovered_clip, clip) {
                 (Some((_, TrackKind::Video, _)), Some(c)) => {
                     let r = s.execute("lumetri.setLook", json!({"clip": c.0, "path": path}))?;
@@ -216,6 +226,7 @@ fn place(s: &mut Session, p: &Value) -> Result<Value> {
             Ok(v) => results.push(v),
             Err(e) => {
                 let code = match kind {
+                    AssetKind::Mogrt if e.to_string().contains("After Effects") => "afterEffects",
                     AssetKind::Mogrt => "mogrt",
                     AssetKind::Lut if hovered_clip.is_some() => "lutOnSound",
                     _ => "failed",

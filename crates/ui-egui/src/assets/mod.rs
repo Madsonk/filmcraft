@@ -4,8 +4,9 @@
 //! - Where a drop lands is decided here (Timeline under the pointer: clip, track, time; anywhere
 //!   else: the Project panel's bin), what it does is `assets.place` in the engine (LUT → Creative
 //!   Look or LUT library, sound → a free audio track, picture/title → a free video track above).
-//! - A `.mogrt` is swapped for its converted video when `mogrt_to_alpha` made one (Titles index),
-//!   else the engine refuses it with the way to convert it.
+//! - A `.mogrt` made in Premiere becomes an editable FilmCraft title (the engine converts it once,
+//!   `graphics.template.importMogrt`); one made in After Effects is refused ("preview only"),
+//!   unless the Titles index has a video rendered from it.
 //! - Library folders and indexes live in `<data>/assets/` (`settings.json`, `index-<kind>.json`).
 //!
 //! macOS gives no pointer position during a drag from the Finder (winit 0.30 reports the files,
@@ -122,6 +123,8 @@ pub struct AssetsState {
     pub preview: LookPreview,
     /// A drop made by the control channel (`ui.dropFiles`): paths and window point.
     pub synthetic_drop: Option<(Vec<String>, Pos2)>,
+    /// Titles ▸ Convert all shown.
+    pub convert_job: Option<std::sync::Arc<std::sync::Mutex<crate::panels::resources::ConvertJob>>>,
     /// Last drop's result, for the control channel and tests.
     pub last_drop: Option<Value>,
 }
@@ -182,6 +185,11 @@ pub fn refresh(app: &mut FilmcraftApp, k: Kind) {
     app.assets.libs.remove(&k);
     app.assets.filtered = None;
     let _ = library(app, k);
+}
+
+/// Whether the Titles index says this `.mogrt` was made in After Effects (unknown = no).
+fn title_is_after_effects(app: &FilmcraftApp, mogrt: &str) -> bool {
+    app.assets.libs.get(&Kind::Titles).is_some_and(|l| l.snapshot().entries.iter().any(|e| e.source.as_deref() == Some(mogrt) && e.family.as_deref() == Some("aefx")))
 }
 
 /// The converted video of a `.mogrt`, from the Titles index.
@@ -250,7 +258,9 @@ pub fn describe(app: &FilmcraftApp, paths: &[String], pos: Pos2) -> String {
     match (kind, on_clip, on_timeline) {
         (AssetKind::Lut, true, _) => tlf!("Creative Look on {clip}", clip = name),
         (AssetKind::Lut, false, _) => tl!("Add to the LUT library").to_string(),
-        (AssetKind::Mogrt, _, _) => tl!("Adobe template: needs converting (see Resources ▸ Titles)").to_string(),
+        (AssetKind::Mogrt, _, _) if title_is_after_effects(app, &paths[0]) => tl!("After Effects title: preview only, FilmCraft can't convert it").to_string(),
+        (AssetKind::Mogrt, _, true) => tl!("Editable title on a free video track at this time").to_string(),
+        (AssetKind::Mogrt, _, false) => tl!("Convert into an editable title (Graphics Templates)").to_string(),
         (AssetKind::Sound, _, true) => tl!("On a free audio track at this time").to_string(),
         (AssetKind::Picture, _, true) => tl!("On a free video track at this time").to_string(),
         _ => tlf!("Import into {bin}", bin = name),
@@ -278,7 +288,7 @@ pub fn drop_files(app: &mut FilmcraftApp, paths: Vec<String>, pos: Option<Pos2>)
     let r = app.session.execute("assets.place", q.clone());
     app.ui.status = match &r {
         Ok(v) => status_of(v),
-        Err(e) if assets.iter().any(|p| AssetKind::of(p) == AssetKind::Mogrt) && e.to_string().contains("mogrt_to_alpha") => mogrt_message(),
+        Err(e) if assets.iter().any(|p| AssetKind::of(p) == AssetKind::Mogrt) && e.to_string().contains("After Effects") => mogrt_message(),
         Err(e) if e.to_string().contains("not on a sound") => tl!("A LUT goes on a video clip, not on a sound").to_string(),
         Err(e) => e.to_string(),
     };
@@ -289,7 +299,7 @@ pub fn drop_files(app: &mut FilmcraftApp, paths: Vec<String>, pos: Option<Pos2>)
 }
 
 fn mogrt_message() -> String {
-    tl!("FilmCraft can't read Adobe .mogrt templates: convert it into a video with transparency (mogrt_to_alpha, see Window ▸ Resources ▸ Titles), then drop the video").to_string()
+    tl!("This title was made in After Effects: FilmCraft can't convert it (preview only). Titles made in Premiere become editable titles.").to_string()
 }
 
 fn status_of(v: &Value) -> String {
@@ -309,15 +319,26 @@ fn status_of(v: &Value) -> String {
     if count("imported") > 0 {
         parts.push(tlf!("{n} file(s) imported", n = count("imported")));
     }
-    if refused.iter().any(|r| r["code"] == "mogrt") {
+    let titles: Vec<&Value> = placed.iter().filter(|p| p["kind"] == "mogrt").collect();
+    if titles.iter().any(|p| p["action"] == "converted") {
+        parts.push(tlf!("{n} title(s) converted into Graphics Templates", n = titles.iter().filter(|p| p["action"] == "converted").count()));
+    }
+    let fonts: Vec<String> = titles.iter().flat_map(|p| p["conversion"]["missingFonts"].as_array().cloned().unwrap_or_default()).filter_map(|f| f.as_str().map(str::to_string)).collect();
+    if !fonts.is_empty() {
+        parts.push(tlf!("missing fonts replaced by Inter: {fonts}", fonts = fonts.join(", ")));
+    }
+    if titles.iter().any(|p| p["conversion"]["lost"].as_array().is_some_and(|a| !a.is_empty())) {
+        parts.push(tl!("some effects of the original title were left out (see the template's description)").to_string());
+    }
+    if refused.iter().any(|r| r["code"] == "afterEffects") {
         parts.push(mogrt_message());
     }
-    let other = refused.iter().filter(|r| r["code"] != "mogrt").count();
+    let other = refused.iter().filter(|r| r["code"] != "afterEffects").count();
     if other > 0 {
         parts.push(tlf!(
             "{n} file(s) refused: {why}",
             n = other,
-            why = refused.iter().find(|r| r["code"] != "mogrt").and_then(|r| r["message"].as_str()).unwrap_or("")
+            why = refused.iter().find(|r| r["code"] != "afterEffects").and_then(|r| r["message"].as_str()).unwrap_or("")
         ));
     }
     parts.join(" · ")

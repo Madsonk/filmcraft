@@ -3571,15 +3571,12 @@
 	Resources	Ressources
 	A LUT goes on a video clip, not on a sound	Une LUT se pose sur un plan vidéo, pas sur un son
 	Add to the LUT library	Ajouter à la bibliothèque de LUT
-	Adobe template: needs converting (see Resources ▸ Titles)	Modèle Adobe : à convertir (voir Ressources ▸ Titres)
 	Before	Avant
 	Choose the folder…	Choisir le dossier…
-	FilmCraft can't read Adobe .mogrt templates: convert it into a video with transparency (mogrt_to_alpha, see Window ▸ Resources ▸ Titles), then drop the video	FilmCraft ne lit pas les modèles Adobe .mogrt : convertissez-le en vidéo avec transparence (mogrt_to_alpha, voir Fenêtre ▸ Ressources ▸ Titres), puis glissez la vidéo
 	Hover a LUT to preview it	Survolez une LUT pour l'aperçu
 	LUTs	LUT
 	Listening is not available in this build	L'écoute n'est pas disponible dans cette version
 	No folder chosen: click the folder icon.	Aucun dossier choisi : cliquez sur l'icône de dossier.
-	Not converted yet: the preview is dropped as a reference, not the title itself	Pas encore converti : c'est l'aperçu qui est posé, comme repère, pas le titre lui-même
 	On a free audio track at this time	Sur une piste audio libre à cet instant
 	On a free video track at this time	Sur une piste vidéo libre à cet instant
 	Reading the LUT…	Lecture de la LUT…
@@ -3587,7 +3584,6 @@
 	Select a video clip (or put the playhead on one) to preview LUTs on it.	Sélectionnez un plan vidéo (ou placez la tête de lecture dessus) pour y prévisualiser les LUT.
 	Select a video clip first: the LUT becomes its Creative Look.	Sélectionnez d'abord un plan vidéo : la LUT devient son Look créatif.
 	Sound Effects	Bruitages
-	Titles = .mogrt converted to video with transparency (mogrt_to_alpha). “preview only” = not converted yet: a reference, not the title.	Titres = .mogrt convertis en vidéo avec transparence (mogrt_to_alpha). « aperçu seul » = pas encore converti : un repère, pas le titre.
 	Update the index (only changed folders are read again)	Mettre à jour l'index (seuls les dossiers modifiés sont relus)
 	preview only	aperçu seul
 	Could not play {path}	Impossible de lire {path}
@@ -3603,3 +3599,19 @@
 	{n} of {total} · indexing in the background ({dirs} folders read)…	{n} sur {total} · indexation en tâche de fond ({dirs} dossiers lus)…
 	{n} resource(s) placed on the timeline	{n} ressource(s) posée(s) sur la timeline
 	Weave & Flicker	Tremblement
+	Titles made in Premiere become editable titles (text, colours, fonts) when dropped. After Effects titles are “preview only”: a reference, not the title.	Les titres faits dans Premiere deviennent des titres modifiables (texte, couleurs, polices) quand on les dépose. Les titres After Effects sont « aperçu seul » : un repère, pas le titre.
+	editable	modifiable
+	After Effects title: only its preview is dropped, as a reference (FilmCraft can't convert it)	Titre After Effects : seul son aperçu est posé, comme repère (FilmCraft ne peut pas le convertir)
+	Converting {done} of {total}…	Conversion {done} sur {total}…
+	Convert all shown ({n})	Convertir tous les titres affichés ({n})
+	{done} converted, {failed} not converted ({error})	{done} convertis, {failed} non convertis ({error})
+	{done} converted into Graphics Templates	{done} convertis dans Modèles d'animations graphiques
+	Could not start the conversion	Impossible de lancer la conversion
+	No data folder for graphics templates	Aucun dossier de données pour les modèles graphiques
+	After Effects title: preview only, FilmCraft can't convert it	Titre After Effects : aperçu seul, FilmCraft ne peut pas le convertir
+	Editable title on a free video track at this time	Titre modifiable sur une piste vidéo libre à cet instant
+	Convert into an editable title (Graphics Templates)	Convertir en titre modifiable (Modèles graphiques)
+	This title was made in After Effects: FilmCraft can't convert it (preview only). Titles made in Premiere become editable titles.	Ce titre a été fait dans After Effects : FilmCraft ne peut pas le convertir (aperçu seul). Les titres faits dans Premiere deviennent des titres modifiables.
+	{n} title(s) converted into Graphics Templates	{n} titre(s) converti(s) dans les modèles graphiques
+	missing fonts replaced by Inter: {fonts}	polices absentes remplacées par Inter : {fonts}
+	some effects of the original title were left out (see the template's description)	certains effets du titre d'origine n'ont pas été repris (voir la description du modèle)

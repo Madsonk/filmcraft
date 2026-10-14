@@ -1922,13 +1922,16 @@ dependencies = [
  "filmcraft-text",
  "filmcraft-time",
  "filmcraft-voice",
+ "flate2",
  "image",
  "log",
  "rayon",
+ "roxmltree",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
  "web-time",
+ "zip",
 ]
 
 [[package]]

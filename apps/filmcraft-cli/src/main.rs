@@ -104,7 +104,7 @@ OPTIONS
   --save                        save the project back to --project when done
   --save-as <p.fcproj>          save the project to this path when done
   --bridge <127.0.0.1:PORT>     send commands to the running app (`filmcraft --control PORT`)
-  --data-dir <dir>              FilmCraft data directory for user export presets (headless;
+  --data-dir <dir>              FilmCraft data directory for user export presets and graphics templates (headless;
                                 default: the app's data directory)
   --keep-going                  `run`: report failing lines and continue
   --compact                     one-line JSON output
@@ -149,6 +149,11 @@ impl Backend {
         // user export presets (and other per-user libraries) from the data directory
         if let Some(dir) = a.opt("--data-dir").map(std::path::PathBuf::from).or_else(filmcraft_engine::autosave::default_data_dir) {
             s.export_presets.set_dir(&dir);
+        }
+        // an explicit data directory also holds the user's graphics templates (`Graphics
+        // Templates/`, where `graphics.template.importMogrt` / `install` write)
+        if let Some(dir) = a.opt("--data-dir") {
+            s.prefs_path = Some(std::path::Path::new(dir).join("preferences.json"));
         }
         if let Some(p) = a.opt("--project") {
             if let Err(e) = s.execute("file.open", json!({"path": p})) {

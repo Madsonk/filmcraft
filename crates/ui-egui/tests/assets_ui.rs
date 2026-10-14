@@ -195,13 +195,13 @@ fn a_sound_from_the_finder_on_a_shot_lands_on_a_free_audio_track_and_a_mogrt_is_
     assert_eq!(placed["action"], "placed", "{last}");
     let t = placed["time"].as_i64().unwrap();
     assert!(t >= start.0, "placed at the drop time, not at 0: {last}");
-    // a .mogrt that was never converted: refused with the way to convert it, nothing changes
+    // a .mogrt made in After Effects: refused ("preview only"), nothing changes
     let m = d.join("Lower third.mogrt");
-    std::fs::write(&m, b"PK\x03\x04").unwrap();
+    std::fs::write(&m, filmcraft_engine::mogrt_fixtures::after_effects().unwrap()).unwrap();
     let undo = h.state().session.history.undo.len();
     os_drop(&mut h, &m.to_string_lossy(), at);
     assert_eq!(h.state().session.history.undo.len(), undo);
-    assert!(h.state().ui.status.contains("mogrt_to_alpha"), "{}", h.state().ui.status);
+    assert!(h.state().ui.status.contains("After Effects") && h.state().ui.status.contains("preview only"), "{}", h.state().ui.status);
 }
 
 #[test]
@@ -381,4 +381,78 @@ fn a_drop_over_a_transition_lands_on_its_clip() {
     assert!(look_of(&h, clip).is_some(), "LUT on the incoming clip of {tr:?}: {:?}", h.state().assets.last_drop);
     os_drop(&mut h, &snd, at);
     assert_eq!(audio_clip_count(&h), audio0 + 1, "the sound is placed on the timeline: {}", h.state().ui.status);
+}
+
+/// titles-native: the Titles tab lists a Premiere title as editable and an After Effects one as
+/// preview only; dragging the Premiere one onto a shot converts it and places an editable title
+/// above; "Convert all shown" converts in the background into the user's graphics templates.
+#[test]
+fn a_premiere_title_from_the_titles_tab_becomes_an_editable_title_above_the_shot() {
+    use filmcraft_engine::mogrt_fixtures::{Spec, after_effects, premiere};
+    let mut h = harness();
+    let root = tmp("titles-native");
+    h.state_mut().session.prefs_path = Some(root.join("data/prefs.json"));
+    let titles = root.join("TITLES");
+    std::fs::create_dir_all(&titles).unwrap();
+    let pr = root.join("Lower third PR.mogrt");
+    std::fs::write(&pr, premiere(&Spec { text: "Madson Kurtis", font: "Inter-Bold", second_run_size: None, opacity_keys: true, extra_effect: false }).unwrap()).unwrap();
+    let ae = root.join("Lower third AE.mogrt");
+    std::fs::write(&ae, after_effects().unwrap()).unwrap();
+    let preview = root.join("ae-preview.png");
+    image::RgbaImage::from_fn(32, 18, |_, _| image::Rgba([200, 200, 200, 255])).save(&preview).unwrap();
+    let idx = json!({"version": 1, "items": [
+        {"source": pr.to_string_lossy(), "pack": "Pack", "name": "Premiere title", "app": "ppro", "template": "project.prgraphic", "duration": 5.0},
+        {"source": ae.to_string_lossy(), "pack": "Pack", "name": "AE title", "app": "aefx", "template": "project.aegraphic", "thumb": preview.to_string_lossy()}
+    ]});
+    std::fs::write(titles.join("index.json"), idx.to_string()).unwrap();
+    open_resources(&mut h, &root, &root, &titles);
+    h.state_mut().assets.tab = Some(filmcraft_ui_egui::assets::index::Kind::Titles);
+    h.state_mut().assets.filtered = None;
+    wait_for(&mut h, "title rows", |h| {
+        let els = &h.state().auto.elements;
+        els.iter().any(|e| e.id == "resources.row.0" && e.label == "Premiere title") && els.iter().any(|e| e.id == "resources.row.1" && e.label == "AE title")
+    });
+    snapshot(&mut h, "05-titles-editable-vs-preview");
+    let entries = h.state().assets.libs.get(&filmcraft_ui_egui::assets::index::Kind::Titles).unwrap().snapshot().entries;
+    assert!(entries[0].ready && entries[0].path.ends_with(".mogrt") && !entries[1].ready, "{entries:?}");
+    // drag the Premiere title onto a shot
+    let clip = first_v1_clip(&h);
+    let to = over_clip(&h, clip);
+    let v1 = h.state().session.active_sequence().unwrap().video_tracks[0].items.len();
+    let row = rect(&h, "resources.row.0").unwrap();
+    drag_to(&mut h, row.center(), to);
+    let q = h.state().session.active_sequence().unwrap();
+    assert_eq!(q.video_tracks[0].items.len(), v1, "V1 untouched");
+    let placed = q
+        .video_tracks
+        .iter()
+        .skip(1)
+        .flat_map(|t| &t.items)
+        .find(|it| it.graphic.as_ref().and_then(|g| g.template.as_ref()).is_some_and(|l| l.name == "Test Lower Third"))
+        .cloned()
+        .unwrap_or_else(|| panic!("editable title above; status: {} drop: {:?}", h.state().ui.status, h.state().assets.last_drop));
+    let link = placed.graphic.as_ref().unwrap().template.clone().unwrap();
+    assert!(link.controls.iter().any(|c| c.param == "text"));
+    // its text is editable (Essential Graphics ▸ Edit uses graphics.template.set)
+    let ctl = link.controls.iter().find(|c| c.param == "text").unwrap().id.clone();
+    let ctx = h.ctx.clone();
+    filmcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "graphics.template.set", json!({"clip": placed.id.0, "control": ctl, "value": "Bonjour"})).unwrap();
+    // the After Effects one: its preview, as a reference, with the reason said
+    let row = rect(&h, "resources.row.1").unwrap();
+    drag_to(&mut h, row.center(), to);
+    assert!(h.state().ui.status.contains("After Effects") || h.state().ui.status.contains("placed"), "{}", h.state().ui.status);
+    // convert all shown: one Premiere title → one .fcgt in the user's templates
+    wait_for(&mut h, "convert button", |h| rect(h, "resources.convertAll").is_some());
+    let b = rect(&h, "resources.convertAll").unwrap().center();
+    h.input_mut().events.push(egui::Event::PointerMoved(b));
+    step(&mut h);
+    h.input_mut().events.push(egui::Event::PointerButton { pos: b, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.input_mut().events.push(egui::Event::PointerButton { pos: b, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    steps(&mut h, 2);
+    wait_for(&mut h, "conversion done", |h| h.state().assets.convert_job.as_ref().is_some_and(|j| !j.lock().unwrap().running));
+    let j = h.state().assets.convert_job.as_ref().unwrap().lock().unwrap().clone();
+    assert_eq!((j.total, j.done, j.failed), (1, 1, 0), "{j:?}");
+    let fcgt: Vec<_> = std::fs::read_dir(root.join("data/Graphics Templates")).unwrap().filter_map(|e| e.ok()).filter(|e| e.path().extension().is_some_and(|x| x == "fcgt")).collect();
+    assert_eq!(fcgt.len(), 1);
+    snapshot(&mut h, "06-titles-converted");
 }
