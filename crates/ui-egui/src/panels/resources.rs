@@ -314,21 +314,6 @@ pub fn toggle_play(app: &mut FilmcraftApp, path: &str) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sound_tags_go_to_the_tooltip() {
-        let (n, t) = display_name("SFX · Hits · boom [impact · court · 1.4s].wav");
-        assert_eq!(n, "SFX · Hits · boom");
-        assert_eq!(t, Some("impact · court · 1.4s"));
-        assert_eq!(display_name("AG X AL_Drive.cube"), ("AG X AL_Drive", None));
-        assert_eq!(duration_text(83.0), "1:23");
-        assert_eq!(duration_text(1.44), "1.4 s");
-    }
-}
-
 /// `text` shortened in the middle ("start … end") to fit `width` at the row font.
 fn elide_middle(ui: &egui::Ui, text: &str, width: f32) -> String {
     let w = |s: &str| ui.painter().layout_no_wrap(s.to_string(), Tokens::ui(11.5), egui::Color32::WHITE).size().x;
@@ -352,4 +337,19 @@ fn elide_middle(ui: &egui::Ui, text: &str, width: f32) -> String {
         keep -= 2;
     }
     cut(keep.max(1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sound_tags_go_to_the_tooltip() {
+        let (n, t) = display_name("SFX · Hits · boom [impact · court · 1.4s].wav");
+        assert_eq!(n, "SFX · Hits · boom");
+        assert_eq!(t, Some("impact · court · 1.4s"));
+        assert_eq!(display_name("AG X AL_Drive.cube"), ("AG X AL_Drive", None));
+        assert_eq!(duration_text(83.0), "1:23");
+        assert_eq!(duration_text(1.44), "1.4 s");
+    }
 }
