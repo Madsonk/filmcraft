@@ -122,7 +122,7 @@ fn the_bundled_extensions_are_valid_and_complete() {
         assert!(!m.description.is_empty() && !m.entries.is_empty());
         // only the Storyboard Maker starts a program (a script of its own folder: check_files above
         // proved it exists); every other bundled extension is a plain list of commands
-        assert_eq!(m.runs_programs(), m.id == "storyboard-maker" || m.id == "doublage-voix", "{}: runs_programs", m.id);
+        assert_eq!(m.runs_programs(), m.id == "storyboard-maker" || m.id == "doublage-voix" || m.id == "sync-madvision", "{}: runs_programs", m.id);
         seen.push(m.id);
     }
     seen.sort();
@@ -134,6 +134,7 @@ fn the_bundled_extensions_are_valid_and_complete() {
             "copy-pasta",
             "doublage-voix",
             "export-en-un-clic",
+            "lut-premiere",
             "ml-models",
             "nettoyage-voix",
             "person-matte",
@@ -145,6 +146,7 @@ fn the_bundled_extensions_are_valid_and_complete() {
             "sous-titres-animes",
             "stabilizer-l1",
             "storyboard-maker",
+            "sync-madvision",
             "tics-de-langage",
             "traduction-sous-titres",
             "upscale-video",

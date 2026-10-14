@@ -1,0 +1,47 @@
+{
+  "formatVersion": 1,
+  "id": "sync-madvision",
+  "name": "Synchro audio MadVision",
+  "version": "1.0.0",
+  "category": "audio",
+  "description": "Aligns the selected clips on a master clip by their sound with the local MadVision sync service (/sync/analyze on 127.0.0.1:8765: audio fingerprints and consensus), then moves them in one undo step. Master = the longest selected clip, or --var master=<clip id>. Clips the service cannot place, whose new place is taken, or not at 100 % speed stay put and are named. Reads the saved .fcproj: save first. Needs the MadVision service and its token (~/.madvision/config.json, never shown).",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Caler les clips sélectionnés sur le master",
+      "description": "Analyse, then move each clip the service syncs; a summary of offsets and the service's answer is written to sync-madvision-last.json in the data folder.",
+      "requires": [
+        "sequence",
+        "project",
+        "selection"
+      ],
+      "action": {
+        "exec": {
+          "program": "scripts/sync.sh",
+          "args": [
+            "apply"
+          ],
+          "timeoutSeconds": 3600
+        }
+      }
+    },
+    {
+      "label": "Analyser la synchro sans rien déplacer",
+      "description": "Only reports each clip's offset on the master.",
+      "requires": [
+        "sequence",
+        "project",
+        "selection"
+      ],
+      "action": {
+        "exec": {
+          "program": "scripts/sync.sh",
+          "args": [
+            "analyze"
+          ],
+          "timeoutSeconds": 3600
+        }
+      }
+    }
+  ]
+}

@@ -558,7 +558,8 @@ pub fn update_preview(app: &mut FilmcraftApp, ctx: &egui::Context, lut: Option<&
                 let _ = std::thread::Builder::new().name("assets-lut-read".into()).spawn(move || {
                     let r = std::fs::read_to_string(&path)
                         .map_err(|e| e.to_string())
-                        .and_then(|t| filmcraft_color::Lut::parse(&t, filmcraft_color::LutFormat::from_path(&path)));
+                        .and_then(|t| filmcraft_color::Lut::parse(&t, filmcraft_color::LutFormat::from_path(&path)))
+                        .map(|l| l.premiere_parity()); // the 64³ table the timeline renders
                     sink.lock().unwrap_or_else(|e| e.into_inner()).push((path, r));
                     ctx2.request_repaint();
                 });

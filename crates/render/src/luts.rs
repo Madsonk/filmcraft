@@ -8,6 +8,8 @@
 //!   LUTs expect) and the procedural Creative looks.
 //!
 //! Parsed LUTs are cached by content, so a library LUT is parsed once however many clips use it.
+//! A library LUT with a 3D table renders from its 64³ resample ([`Lut::premiere_parity`]), the
+//! table Premiere Pro builds from the same file, so a look matches in both; built-ins are unchanged.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -109,7 +111,8 @@ pub fn resolve(project: Option<&Project>, spec: &str) -> Option<Arc<Lut>> {
     let entry = project?.luts.iter().find(|l| l.id == id)?;
     let key = format!("lib:{:016x}", hash(&entry.text));
     let fmt = LutFormat::from_path(&format!("x.{}", entry.format));
-    cached(key, || Lut::parse(&entry.text, fmt).ok())
+    // Premiere parity: a library LUT renders from its 64³ resample, the table Premiere Pro uses
+    cached(key, || Lut::parse(&entry.text, fmt).ok().map(|l| l.premiere_parity()))
 }
 
 fn hash(s: &str) -> u64 {
