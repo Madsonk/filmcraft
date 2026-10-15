@@ -57,6 +57,7 @@ pub mod settings;
 pub mod shortcut_presets;
 pub mod shortcuts;
 pub mod shot_match;
+pub mod sound_previews;
 pub mod source_monitor;
 mod summaries;
 pub mod sync;

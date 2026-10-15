@@ -1896,6 +1896,7 @@ dependencies = [
 name = "filmcraft-engine"
 version = "0.5.0-ext-all-v6.4"
 dependencies = [
+ "filmcraft-aac",
  "filmcraft-audio-dsp",
  "filmcraft-captions",
  "filmcraft-codecs",
@@ -1906,6 +1907,7 @@ dependencies = [
  "filmcraft-frame",
  "filmcraft-geom",
  "filmcraft-interchange",
+ "filmcraft-isobmff",
  "filmcraft-media",
  "filmcraft-ml",
  "filmcraft-mlfetch",

@@ -36,6 +36,8 @@ filmcraft-audio-dsp = { workspace = true }
 filmcraft-export = { workspace = true }
 filmcraft-mxf = { workspace = true }
 filmcraft-format = { workspace = true }
+filmcraft-aac = { workspace = true }
+filmcraft-isobmff = { workspace = true }
 filmcraft-interchange = { workspace = true }
 filmcraft-captions = { workspace = true }
 filmcraft-speech = { workspace = true }
