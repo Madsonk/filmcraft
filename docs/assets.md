@@ -24,6 +24,17 @@ macOS reports no pointer position during a drag from the Finder (winit 0.30): th
 target is the clip actually under the pointer. While files hover the window a hint says what the
 drop will do ("Creative Look on PANA6668", "On a free audio track at this time").
 
+## Dropping on an empty place: a new track
+
+As in Premiere, a drop in the room **above the top video track** (or on its top edge) makes a new
+video track there, a drop **below the last audio track** (or on its bottom edge) a new audio track,
+and a drop **on the edge between two tracks** of the same kind inserts a track between them. An
+accent line shows where while the pointer is there, and the hint says "On a new video track V3".
+The track and the placement are **one undo step**. This works for Window ▸ Resources (LUT library
+excepted: a LUT needs a shot), files from the Finder, and items from the Project panel
+(`assets.place` / `timeline.place` take `newTrack: {kind: "video"|"audio", index}`, index = how
+many tracks of that kind come before the new one).
+
 ## Window ▸ Resources
 
 Four tabs: **LUTs · Sound Effects · Music · Titles**, a search field (every word must match the
