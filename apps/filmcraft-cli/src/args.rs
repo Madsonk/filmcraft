@@ -21,6 +21,11 @@ const VALUED: &[&str] = &[
     "--settings",
     "--var",
     "--select",
+    "--kind",
+    "--limit",
+    "--root",
+    "--cache",
+    "--list",
 ];
 
 #[derive(Debug, Default)]

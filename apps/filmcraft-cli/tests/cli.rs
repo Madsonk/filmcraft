@@ -1021,3 +1021,49 @@ fn match_shot_colour_from_the_shell() {
     assert_eq!(bad.status.code(), Some(1));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn build_previews_makes_the_light_previews_of_a_folder_and_resumes() {
+    let d = std::env::temp_dir().join(format!("fc-cli-previews-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    let lib = d.join("lib/A");
+    std::fs::create_dir_all(&lib).unwrap();
+    // two short WAVs (16-bit mono silence + a click)
+    for name in ["a.wav", "b.wav"] {
+        let n = 8_000u32;
+        let mut b = Vec::new();
+        b.extend_from_slice(b"RIFF");
+        b.extend_from_slice(&(36 + n * 2).to_le_bytes());
+        b.extend_from_slice(b"WAVEfmt ");
+        b.extend_from_slice(&16u32.to_le_bytes());
+        b.extend_from_slice(&1u16.to_le_bytes());
+        b.extend_from_slice(&1u16.to_le_bytes());
+        b.extend_from_slice(&16_000u32.to_le_bytes());
+        b.extend_from_slice(&32_000u32.to_le_bytes());
+        b.extend_from_slice(&2u16.to_le_bytes());
+        b.extend_from_slice(&16u16.to_le_bytes());
+        b.extend_from_slice(b"data");
+        b.extend_from_slice(&(n * 2).to_le_bytes());
+        for i in 0..n {
+            b.extend_from_slice(&(if i == 100 { 20_000i16 } else { 0 }).to_le_bytes());
+        }
+        std::fs::write(lib.join(name), b).unwrap();
+    }
+    let root = d.join("lib");
+    let cache = d.join("cache");
+    let (r, c) = (root.to_str().unwrap(), cache.to_str().unwrap());
+    let o = cli(&["assets.buildPreviews", "--kind", "sfx", "--root", r, "--cache", c, "--limit", "1"]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let out = String::from_utf8_lossy(&o.stdout);
+    assert!(out.contains("\"done\":true") && out.contains("\"made\":1"), "{out}");
+    let o = cli(&["assets.buildPreviews", "--kind", "sfx", "--root", r, "--cache", c]);
+    let out = String::from_utf8_lossy(&o.stdout);
+    let last = out.lines().last().unwrap_or("");
+    assert!(last.contains("\"made\":1") && last.contains("\"skipped\":1"), "resumed: {last}");
+    let m4a = std::fs::read_dir(cache.join("previews")).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".m4a")).count();
+    assert_eq!(m4a, 2);
+    assert!(cache.join("peaks/peaks-v1.bin").exists());
+    let o = cli(&["assets.buildPreviews", "--kind", "nope"]);
+    assert!(!o.status.success());
+    let _ = std::fs::remove_dir_all(&d);
+}
