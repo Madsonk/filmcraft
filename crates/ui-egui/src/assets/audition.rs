@@ -6,6 +6,11 @@
 //! fades in and out (no click). Seeking inside what is already decoded is instant; further on, the
 //! decoder restarts there. The position feeds the play head drawn on the waveform.
 //!
+//! **Previews** (previews-cache): when the sound has a light preview on the local disk
+//! ([`filmcraft_engine::sound_previews`]) covering the requested point, it is read instead of the
+//! original (the library is on a slow NAS); elsewhere (outside a music excerpt, no preview yet) the
+//! original is read as before. The lookup (which reads the file's date) runs in the decoder thread.
+//!
 //! The audition never plays over the timeline or the Source monitor: when they play, it stops
 //! (and does not start). The output device is shared with them: the audition starts it with its
 //! own callback and stops it when the sound ends.
@@ -39,6 +44,8 @@ struct Voice {
     gain: f32,
     target: f32,
     error: Option<String>,
+    /// What is being read: the light preview or the original file.
+    from_preview: bool,
 }
 
 impl Voice {
@@ -91,6 +98,8 @@ pub struct Audition {
     /// The audition started the output device (and must stop it).
     owns_output: bool,
     media: Option<(Arc<MediaPool>, Arc<dyn Services>)>,
+    /// Where the light previews are (None = always the original).
+    previews: Option<Arc<filmcraft_engine::sound_previews::PreviewStore>>,
 }
 
 /// What the panel needs each frame.
@@ -103,6 +112,8 @@ pub struct AuditionState {
     /// Fraction of the file (when its length is known).
     pub progress: Option<f32>,
     pub error: Option<String>,
+    /// The light preview is being read (else the original).
+    pub from_preview: bool,
 }
 
 impl Audition {
@@ -119,11 +130,26 @@ impl Audition {
             position,
             progress: v.total.filter(|t| *t > 0).map(|t| (v.pos as f64 / t as f64).clamp(0.0, 1.0) as f32),
             error: v.error.clone(),
+            from_preview: v.from_preview,
         }
     }
 
     /// Play `path` from `frac` (0-1) of its length on `out`. Media layer from the session.
     pub fn play(&mut self, out: &mut dyn crate::AudioOut, media: Arc<MediaPool>, services: Arc<dyn Services>, path: &str, frac: f32) -> Result<(), String> {
+        self.play_with(out, media, services, None, path, frac)
+    }
+
+    /// [`play`](Self::play), reading the light preview of `path` from `previews` when there is one.
+    pub fn play_with(
+        &mut self,
+        out: &mut dyn crate::AudioOut,
+        media: Arc<MediaPool>,
+        services: Arc<dyn Services>,
+        previews: Option<Arc<filmcraft_engine::sound_previews::PreviewStore>>,
+        path: &str,
+        frac: f32,
+    ) -> Result<(), String> {
+        self.previews = previews;
         let sr = out.sample_rate();
         if sr == 0 {
             return Err("no audio output".into());
@@ -156,6 +182,7 @@ impl Audition {
     /// (Re)start decoding `path` at absolute frame `at` (or at `frac` of its length).
     fn start_decoder(&mut self, path: String, at: Option<u64>, frac: f32) {
         let Some((media, services)) = self.media.clone() else { return };
+        let previews = self.previews.clone();
         let generation = self.gens.fetch_add(1, Ordering::SeqCst) + 1;
         let voice = self.voice.clone();
         {
@@ -171,24 +198,42 @@ impl Audition {
         }
         let _ = std::thread::Builder::new().name("resources-audition".into()).spawn(move || {
             let sr = voice.lock().unwrap_or_else(|e| e.into_inner()).sr;
-            let src = match media.open_file(&path, &*services) {
-                Ok(s) => s,
-                Err(e) => {
-                    let mut v = voice.lock().unwrap_or_else(|e| e.into_inner());
-                    if v.generation == generation {
-                        v.error = Some(e.to_string());
-                        v.playing = false;
-                    }
-                    return;
+            let fail = |e: String| {
+                let mut v = voice.lock().unwrap_or_else(|e| e.into_inner());
+                if v.generation == generation {
+                    v.error = Some(e);
+                    v.playing = false;
                 }
             };
-            let total = (src.info().duration.seconds() * sr as f64).round() as u64;
+            // the light preview when it covers the starting point: frames of the original
+            // [offset, end) are read from the preview at (frame - offset)
+            let preview = previews.as_ref().and_then(|p| p.get(&path)).filter(|(_, r)| {
+                let start_s = match at {
+                    Some(a) => a as f64 / sr as f64,
+                    None => frac.clamp(0.0, 0.99) as f64 * r.duration,
+                };
+                start_s >= r.start - 1e-3 && start_s < r.start + r.len - 0.05
+            });
+            let opened = match &preview {
+                Some((file, r)) => media.open_file(&file.to_string_lossy(), &*services).map(|s| {
+                    (s, (r.duration * sr as f64).round() as u64, (r.start * sr as f64).round() as u64, ((r.start + r.len) * sr as f64).round() as u64)
+                }),
+                None => media.open_file(&path, &*services).map(|s| {
+                    let t = (s.info().duration.seconds() * sr as f64).round() as u64;
+                    (s, t, 0, t)
+                }),
+            };
+            let (src, total, offset, end) = match opened {
+                Ok(o) => o,
+                Err(e) => return fail(e.to_string()),
+            };
             let mut cursor = {
                 let mut v = voice.lock().unwrap_or_else(|e| e.into_inner());
                 if v.generation != generation {
                     return;
                 }
                 v.total = Some(total);
+                v.from_preview = preview.is_some();
                 if at.is_none() {
                     let start = ((frac.clamp(0.0, 0.99) as f64) * total as f64) as u64;
                     v.base = start;
@@ -197,7 +242,7 @@ impl Audition {
                 v.base
             };
             let chunk = (sr as usize / 4).max(1024);
-            while cursor < total {
+            while cursor < end {
                 // stay a little ahead of the play position
                 loop {
                     let v = voice.lock().unwrap_or_else(|e| e.into_inner());
@@ -210,8 +255,8 @@ impl Audition {
                     drop(v);
                     std::thread::sleep(std::time::Duration::from_millis(50));
                 }
-                let n = chunk.min((total - cursor) as usize);
-                let Ok(b) = src.audio(cursor as i64, n, sr) else { break };
+                let n = chunk.min((end - cursor) as usize);
+                let Ok(b) = src.audio(cursor.saturating_sub(offset) as i64, n, sr) else { break };
                 let l = b.channels.first().cloned().unwrap_or_default();
                 let r = b.channels.get(1).cloned().unwrap_or_else(|| l.clone());
                 let frames = l.len().min(r.len());

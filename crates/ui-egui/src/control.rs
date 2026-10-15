@@ -7,6 +7,7 @@
 //! - `engine.execute {command, params}` / `ui.menu.invoke {id}`: run any engine or UI command
 //! - `engine.commands`: list engine commands; `ui.menu.list`: menu tree with enablement
 //! - `ui.inspect`: UI state + every registered widget (`elements`: id, label, rect)
+//! - `ui.assets.clearPreviews`: empty the light preview cache of Window ▸ Resources
 //! - `ui.elements {prefix?}`: registered widgets (optionally filtered by id prefix)
 //! - `ui.set {tool?, workspace?, mode?, theme?, focused?, playbackRes?, timeline?:{pps,scroll}}`
 //! - `ui.panel.show {panel}` / `ui.panel.close {panel}`
@@ -376,6 +377,10 @@ pub fn handle(app: &mut FilmcraftApp, ctx: &egui::Context, req: &ControlRequest)
             app.assets.last_drop = None;
             Outcome::AfterInput
         }
+        "ui.assets.clearPreviews" => match app.assets.peaks.as_ref().and_then(|w| w.previews()) {
+            Some(store) => ok(json!({"freed": store.clear(), "dir": store.dir})),
+            None => err("no preview store (open a sound tab of Window ▸ Resources first)"),
+        },
         "ui.assets" => ok(json!({
             "lastDrop": app.assets.last_drop,
             "tab": app.assets.tab.map(|k| k.id()),
@@ -443,14 +448,19 @@ pub fn handle(app: &mut FilmcraftApp, ctx: &egui::Context, req: &ControlRequest)
 
 fn audition_json(app: &FilmcraftApp) -> Value {
     let a = app.assets.audition.state();
-    json!({"path": a.path, "playing": a.playing, "position": a.position, "progress": a.progress, "error": a.error})
+    json!({"path": a.path, "playing": a.playing, "position": a.position, "progress": a.progress, "error": a.error, "fromPreview": a.from_preview})
 }
 
 fn peaks_json(app: &FilmcraftApp) -> Value {
     match app.assets.peaks.as_ref() {
         Some(w) => {
             let st = w.stats();
-            json!({"known": st.known, "computed": st.computed, "failed": st.failed, "queued": st.queued, "visiblePending": st.visible_pending, "loaded": st.loaded, "lastMs": st.last_ms, "dir": w.dir, "errors": w.errors()})
+            let previews = w.previews().map(|p| {
+                use crate::assets::peaks::PreviewKind;
+                let ((sfx, sb), (music, mb)) = (p.stats(PreviewKind::Sfx), p.stats(PreviewKind::Music));
+                json!({"dir": p.dir, "sfx": sfx, "music": music, "bytes": sb + mb})
+            });
+            json!({"known": st.known, "computed": st.computed, "failed": st.failed, "queued": st.queued, "visiblePending": st.visible_pending, "loaded": st.loaded, "lastMs": st.last_ms, "dir": w.dir, "errors": w.errors(), "previews": previews})
         }
         None => Value::Null,
     }

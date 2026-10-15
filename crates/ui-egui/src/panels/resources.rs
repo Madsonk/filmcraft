@@ -299,9 +299,17 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     } else {
         tlf!("{n} of {total}", n = rows.len(), total = snap.entries.len())
     };
+    let mut previews = None;
     if sound && let Some(w) = assets_mod::peak_worker(app) {
         w.set_repaint(&ctx);
         let st = w.stats();
+        // light previews of this tab: made / sounds in the library
+        if let Some(store) = w.previews() {
+            let kind = if tab == Kind::Music { assets_mod::peaks::PreviewKind::Music } else { assets_mod::peaks::PreviewKind::Sfx };
+            let (made, bytes) = store.stats(kind);
+            state.push_str(&format!(" · {}", tlf!("previews: {made}/{total}", made = made, total = snap.entries.len())));
+            previews = Some((store, bytes));
+        }
         if !st.loaded {
             state.push_str(&format!(" · {}", tl!("loading waveforms…")));
         } else if st.queued > 0 {
@@ -314,7 +322,20 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             w.want_background(snap.entries.iter().map(|e| e.path.clone()));
         }
     }
-    ui.painter().text(status_r.left_center(), Align2::LEFT_CENTER, &state, Tokens::ui(10.5), t.text_dim);
+    ui.painter().with_clip_rect(status_r).text(status_r.left_center(), Align2::LEFT_CENTER, &state, Tokens::ui(10.5), t.text_dim);
+    if let Some((store, bytes)) = previews {
+        // right-click on the status line: empty the preview cache (the waveforms are kept)
+        let r = ui
+            .interact(status_r, egui::Id::new("res-status"), Sense::click())
+            .on_hover_text(format!("{state}\n{}", tl!("Right-click: empty the preview cache")));
+        r.context_menu(|ui| {
+            let label = tlf!("Empty the preview cache ({mb} MB)", mb = format!("{:.1}", bytes as f64 / 1e6));
+            if ui.button(label).clicked() {
+                clear_previews(app, store.clone());
+                ui.close();
+            }
+        });
+    }
     if snap.running {
         ctx.request_repaint_after(std::time::Duration::from_millis(500));
     }
@@ -828,6 +849,16 @@ pub fn keyboard(app: &mut FilmcraftApp, ctx: &egui::Context) {
     if slash {
         ctx.memory_mut(|m| m.request_focus(egui::Id::new("res-search")));
     }
+}
+
+/// Empty the light preview cache in a background thread (the waveforms are kept); the previews
+/// are made again while browsing.
+pub fn clear_previews(app: &mut FilmcraftApp, store: std::sync::Arc<assets_mod::peaks::PreviewStore>) {
+    let _ = std::thread::Builder::new().name("resources-previews-clear".into()).spawn(move || {
+        let freed = store.clear();
+        log::info!("preview cache emptied: {freed} bytes in {}", store.dir.display());
+    });
+    app.ui.status = tl!("Preview cache emptied").to_string();
 }
 
 /// Progress of "Convert all shown" (Titles).

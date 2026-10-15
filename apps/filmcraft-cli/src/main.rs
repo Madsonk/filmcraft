@@ -74,6 +74,12 @@ SUBCOMMANDS
   commands [filter] [--json]    list commands (id, label, shortcut, params)
   describe <id>                 one command as JSON (menu, shortcut, params, enabled now)
   inspect [project|sequence]    project tree or active sequence as JSON (default: both)
+  assets.buildPreviews --kind sfx|music [--limit N] [--root DIR] [--cache DIR]
+                                make the light audio previews (and waveforms) of Window ▸ Resources,
+                                one file at a time, resumable (what is made is skipped); for a
+                                night run. Defaults: the library's 02 SFX / 01 MUSIC folders and
+                                /Volumes/Data/FilmCraft-cache. Stops after the current file when
+                                <cache>/previews/STOP exists; Ctrl-C is safe (atomic writes)
   import <file>...              import media into the project
   export <out> [--preset name] [--format f] [--range r] [--start s --end s] [--settings json]
          [--scale f] [--quality 0-100] [--no-audio] [--queue]
@@ -227,6 +233,40 @@ async fn main() {
     }
 }
 
+/// `assets.buildPreviews`: the night run of the Resources panel's light previews.
+fn build_previews(a: &Args) {
+    use filmcraft_engine::sound_previews::{BuildOptions, PreviewKind, build};
+    const LIBRARY: &str = "/Volumes/Qnap bureau/6. Garden/Ressources";
+    let kind = match a.opt("--kind") {
+        Some("sfx") => PreviewKind::Sfx,
+        Some("music") => PreviewKind::Music,
+        _ => usage("assets.buildPreviews --kind sfx|music [--limit N] [--root DIR] [--cache DIR]"),
+    };
+    let root = a
+        .opt("--root")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(LIBRARY).join(if kind == PreviewKind::Music { "01 MUSIC" } else { "02 SFX" }));
+    let cache = a.opt("--cache").map(std::path::PathBuf::from).unwrap_or_else(|| "/Volumes/Data/FilmCraft-cache".into());
+    let limit = a.opt("--limit").map(|v| v.parse().unwrap_or_else(|_| usage("--limit N"))).unwrap_or(0);
+    if !root.is_dir() {
+        fail(format!("{}: not a folder (is the library mounted?)", root.display()));
+    }
+    let s = Session::default();
+    let stop = cache.join("previews").join("STOP");
+    let o = BuildOptions { kind, root, cache, limit };
+    let p = build(&s.media, &*s.services, &o, |p| {
+        outln!(
+            "{}",
+            json!({"made": p.made, "failed": p.failed, "skipped": p.skipped, "total": p.total, "lastMs": p.last_ms, "seconds": (p.seconds * 10.0).round() / 10.0, "last": p.last})
+        );
+        !stop.exists()
+    });
+    outln!(
+        "{}",
+        json!({"done": true, "kind": kind, "made": p.made, "failed": p.failed, "skipped": p.skipped, "total": p.total, "bytes": p.bytes, "seconds": (p.seconds * 10.0).round() / 10.0})
+    );
+}
+
 async fn cli() {
     if matches!(std::env::args().nth(1).as_deref(), Some("--version" | "-V")) {
         outln!("filmcraft-cli {}", env!("CARGO_PKG_VERSION"));
@@ -328,6 +368,7 @@ async fn cli() {
                 std::process::exit(1);
             }
         }
+        "assets.buildPreviews" => build_previews(&a),
         "inspect" => {
             let mut b = Backend::open(&a);
             let what = a.pos(1).unwrap_or("all");

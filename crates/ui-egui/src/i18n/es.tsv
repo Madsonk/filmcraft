@@ -3645,3 +3645,7 @@
 	waveforms: {known} known	formas de onda: {known} conocidas
 	waveforms: {known} known, {queued} to read	formas de onda: {known} conocidas, {queued} por leer
 	not a readable sound	no es un sonido legible
+	previews: {made}/{total}	vistas previas: {made}/{total}
+	Right-click: empty the preview cache	Clic derecho: vaciar la caché de vistas previas
+	Empty the preview cache ({mb} MB)	Vaciar la caché de vistas previas ({mb} MB)
+	Preview cache emptied	Caché de vistas previas vaciada

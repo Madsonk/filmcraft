@@ -19,6 +19,7 @@ pub mod library_state;
 pub mod peaks;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use egui::{Color32, Pos2, Rect, vec2};
 use filmcraft_engine::assets::AssetKind;
@@ -49,6 +50,12 @@ pub struct AssetSettings {
     /// Folder of the waveform cache (ressources-v2): `/Volumes/Data/FilmCraft-cache/peaks` when
     /// that disk is there (the working disk), else `<data>/assets/peaks`.
     pub peaks_dir: String,
+    /// Light previews of the sounds (previews-cache): made in the same reading as the waveforms,
+    /// listened to instead of the originals. `/Volumes/Data/FilmCraft-cache/previews` when that
+    /// disk is there, else `<data>/assets/previews`.
+    pub previews_dir: String,
+    /// Make previews while browsing (on by default).
+    pub previews: bool,
     /// Listen on hover: sound effects (from the start) and music (from 30 %).
     pub hover_sfx: bool,
     pub hover_music: bool,
@@ -71,6 +78,8 @@ impl Default for AssetSettings {
             titles: if Path::new(DEFAULT_TITLES).parent().is_some_and(Path::is_dir) { DEFAULT_TITLES.into() } else { String::new() },
             sound_db: db.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default(),
             peaks_dir: if Path::new("/Volumes/Data").is_dir() { "/Volumes/Data/FilmCraft-cache/peaks".into() } else { String::new() },
+            previews_dir: if Path::new("/Volumes/Data").is_dir() { "/Volumes/Data/FilmCraft-cache/previews".into() } else { String::new() },
+            previews: true,
             hover_sfx: true,
             hover_music: true,
             titles_grid: true,
@@ -380,7 +389,16 @@ pub fn peak_worker(app: &mut FilmcraftApp) -> Option<&peaks::PeakWorker> {
             PathBuf::from(&app.assets.settings.peaks_dir)
         };
         let db = Some(PathBuf::from(&app.assets.settings.sound_db)).filter(|p| !p.as_os_str().is_empty());
-        app.assets.peaks = Some(peaks::PeakWorker::start(dir, db, app.session.media.clone(), app.session.services.clone()));
+        let previews = app.assets.settings.previews.then(|| {
+            let d = if app.assets.settings.previews_dir.is_empty() {
+                data_dir(app).map(|d| d.join("assets").join("previews")).unwrap_or_else(|| std::env::temp_dir().join("filmcraft-previews"))
+            } else {
+                PathBuf::from(&app.assets.settings.previews_dir)
+            };
+            Arc::new(peaks::PreviewStore::open(&d))
+        });
+        let music = app.assets.settings.music.clone();
+        app.assets.peaks = Some(peaks::PeakWorker::start(dir, db, app.session.media.clone(), app.session.services.clone(), previews, music));
     }
     app.assets.peaks.as_ref()
 }
@@ -402,7 +420,8 @@ pub fn audition(app: &mut FilmcraftApp, path: &str, frac: f32) {
         app.ui.status = tl!("No audio output").to_string();
         return;
     };
-    if let Err(e) = app.assets.audition.play(out, media, services, path, frac) {
+    let previews = app.assets.peaks.as_ref().and_then(|w| w.previews());
+    if let Err(e) = app.assets.audition.play_with(out, media, services, previews, path, frac) {
         app.ui.status = tlf!("Could not play {path}", path = e);
     }
 }

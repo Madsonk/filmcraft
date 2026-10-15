@@ -14,120 +14,21 @@
 //!   modification time changed.
 //! - Sounds the `/sfx` index already analysed bring their peaks from `audio_index.db` (read with
 //!   the system `sqlite3`, read only): the NAS is read once for them.
+//! - **Previews** (previews-cache): when a preview store is given, the same single reading also
+//!   makes the sound's light preview ([`filmcraft_engine::sound_previews`]); a sound whose peaks
+//!   are known but whose preview is missing is read once more for it.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
-/// Columns of a waveform thumbnail.
-pub const COLUMNS: usize = 1000;
-const MAGIC: &[u8; 4] = b"FCPK";
-const PACK_MAGIC: &[u8; 8] = b"FCPKPAK1";
+pub use filmcraft_engine::sound_previews::{COLUMNS, Peaks, PreviewKind, PreviewStore};
+use filmcraft_engine::sound_previews::{append_pack, hash, read_pack, stamp};
 
-/// A waveform thumbnail: min/max per column, in [-1, 1].
-#[derive(Clone, Debug, PartialEq)]
-pub struct Peaks {
-    pub duration: f32,
-    pub cols: Vec<(i8, i8)>,
-}
-
-impl Peaks {
-    /// The `FCPK` blob.
-    pub fn to_blob(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(12 + self.cols.len() * 2);
-        b.extend_from_slice(MAGIC);
-        b.push(1);
-        b.push(1);
-        b.extend_from_slice(&(self.cols.len() as u16).to_le_bytes());
-        b.extend_from_slice(&self.duration.to_le_bytes());
-        for (lo, hi) in &self.cols {
-            b.push(*lo as u8);
-            b.push(*hi as u8);
-        }
-        b
-    }
-
-    /// Read a `FCPK` blob (None if it is not one).
-    pub fn from_blob(b: &[u8]) -> Option<Peaks> {
-        if b.len() < 12 || &b[..4] != MAGIC || b[4] != 1 {
-            return None;
-        }
-        let n = u16::from_le_bytes([b[6], b[7]]) as usize;
-        let duration = f32::from_le_bytes([b[8], b[9], b[10], b[11]]);
-        let body = b.get(12..12 + n * 2)?;
-        let cols = body.as_chunks::<2>().0.iter().map(|c| (c[0] as i8, c[1] as i8)).collect();
-        duration.is_finite().then_some(Peaks { duration, cols })
-    }
-
-    /// Min/max of the columns falling in `[a, b)` (fractions of the duration), in [-1, 1].
-    pub fn range(&self, a: f32, b: f32) -> (f32, f32) {
-        let n = self.cols.len();
-        if n == 0 {
-            return (0.0, 0.0);
-        }
-        let i0 = ((a.clamp(0.0, 1.0) * n as f32) as usize).min(n - 1);
-        let i1 = ((b.clamp(0.0, 1.0) * n as f32).ceil() as usize).clamp(i0 + 1, n);
-        let (mut lo, mut hi) = (0i8, 0i8);
-        for (l, h) in &self.cols[i0..i1] {
-            lo = lo.min(*l);
-            hi = hi.max(*h);
-        }
-        (lo as f32 / 127.0, hi as f32 / 127.0)
-    }
-}
-
-/// Min/max per column of planar samples (any number of channels), `total` frames in all,
-/// `offset` = index of the first frame of `chunk` in the file.
-fn accumulate(cols: &mut [(f32, f32)], chunk: &[Vec<f32>], offset: u64, total: u64) {
-    let n = cols.len() as u64;
-    let frames = chunk.iter().map(Vec::len).min().unwrap_or(0);
-    for i in 0..frames {
-        let c = (((offset + i as u64) * n) / total.max(1)).min(n - 1) as usize;
-        for ch in chunk {
-            let v = ch[i];
-            let e = &mut cols[c];
-            e.0 = e.0.min(v);
-            e.1 = e.1.max(v);
-        }
-    }
-}
-
-fn quantise(cols: &[(f32, f32)], duration: f32) -> Peaks {
-    let q = |v: f32| (v.clamp(-1.0, 1.0) * 127.0).round() as i8;
-    Peaks { duration, cols: cols.iter().map(|(lo, hi)| (q(*lo), q(*hi))).collect() }
-}
-
-/// Decode a sound through FilmCraft's media layer and make its thumbnail (reads the whole file).
+/// Make the thumbnail of a sound (reads the whole file; no preview).
 pub fn compute(media: &filmcraft_engine::media_pool::MediaPool, services: &dyn filmcraft_engine::Services, path: &str) -> Result<Peaks, String> {
-    let src = media.open_file(path, services).map_err(|e| e.to_string())?;
-    let info = src.info().clone();
-    let stream = info.audio_streams.first().ok_or_else(|| format!("{path}: no sound"))?;
-    // decode at a reduced rate: the thumbnail needs 1 000 columns, not every sample
-    let sr = stream.sample_rate.clamp(8_000, 22_050);
-    let duration = info.duration.seconds() as f32;
-    let total = ((info.duration.seconds()) * sr as f64).round().max(1.0) as u64;
-    let mut cols = vec![(0f32, 0f32); COLUMNS];
-    let step = sr as usize * 4;
-    let mut at = 0u64;
-    while at < total {
-        let n = step.min((total - at) as usize);
-        let buf = src.audio(at as i64, n, sr).map_err(|e| e.to_string())?;
-        accumulate(&mut cols, &buf.channels, at, total);
-        at += n as u64;
-    }
-    Ok(quantise(&cols, duration))
-}
-
-fn hash(path: &str) -> u64 {
-    path.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3))
-}
-
-fn stamp(path: &str) -> Option<(u64, i64)> {
-    let m = std::fs::metadata(path).ok()?;
-    let t = m.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64;
-    Some((m.len(), t))
+    filmcraft_engine::sound_previews::analyse(media, services, path, None).map(|a| a.peaks)
 }
 
 #[derive(Clone, Debug)]
@@ -167,6 +68,25 @@ struct Shared {
     last_ms: AtomicUsize,
     wake: (Mutex<bool>, std::sync::Condvar),
     repaint: Mutex<Option<egui::Context>>,
+    /// The light previews made in the same reading (none = waveforms only).
+    previews: Option<Arc<PreviewStore>>,
+    /// Files under this folder are music (preview = an excerpt), the others sound effects.
+    music_root: String,
+}
+
+impl Shared {
+    fn kind_of(&self, path: &str) -> PreviewKind {
+        if !self.music_root.is_empty() && path.starts_with(&self.music_root) { PreviewKind::Music } else { PreviewKind::Sfx }
+    }
+
+    /// Whether a row on screen still needs a reading: no waveform, or no preview yet (a cheap
+    /// test: the index is not asked for the file's date, which would read the slow disk).
+    fn wants(&self, m: &HashMap<u64, Rec>, path: &str) -> bool {
+        if self.previews.as_ref().is_some_and(|p| p.failed_before(path)) {
+            return false; // not a readable sound: recorded once, not read again at every session
+        }
+        !m.contains_key(&hash(path)) || self.previews.as_ref().is_some_and(|p| !p.knows(path))
+    }
 }
 
 /// Waveform thumbnails of the libraries: the store and its single worker thread.
@@ -180,44 +100,6 @@ impl Drop for PeakWorker {
         self.shared.quit.store(true, Ordering::Relaxed);
         self.poke();
     }
-}
-
-fn read_pack(path: &Path, map: &mut HashMap<u64, Rec>) {
-    let Ok(mut f) = std::fs::File::open(path) else { return };
-    let mut b = Vec::new();
-    if f.read_to_end(&mut b).is_err() || b.len() < 8 || &b[..8] != PACK_MAGIC {
-        return;
-    }
-    let mut i = 8;
-    while i + 28 <= b.len() {
-        let u64_at = |o: usize| u64::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3], b[o + 4], b[o + 5], b[o + 6], b[o + 7]]);
-        let (h, size, mtime) = (u64_at(i), u64_at(i + 8), u64_at(i + 16) as i64);
-        let len = u32::from_le_bytes([b[i + 24], b[i + 25], b[i + 26], b[i + 27]]) as usize;
-        let Some(blob) = b.get(i + 28..i + 28 + len) else { break };
-        if let Some(p) = Peaks::from_blob(blob) {
-            map.insert(h, Rec { size, mtime, peaks: Arc::new(p) });
-        }
-        i += 28 + len;
-    }
-}
-
-fn append(path: &Path, h: u64, size: u64, mtime: i64, p: &Peaks) -> std::io::Result<()> {
-    let new = !path.exists();
-    if let Some(d) = path.parent() {
-        std::fs::create_dir_all(d)?;
-    }
-    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
-    let blob = p.to_blob();
-    let mut rec = Vec::with_capacity(36 + blob.len());
-    if new {
-        rec.extend_from_slice(PACK_MAGIC);
-    }
-    rec.extend_from_slice(&h.to_le_bytes());
-    rec.extend_from_slice(&size.to_le_bytes());
-    rec.extend_from_slice(&mtime.to_le_bytes());
-    rec.extend_from_slice(&(blob.len() as u32).to_le_bytes());
-    rec.extend_from_slice(&blob);
-    f.write_all(&rec)
 }
 
 /// Peaks stored in `audio_index.db` (column `peaks`), by path. Missing column or tool = none.
@@ -252,6 +134,8 @@ impl PeakWorker {
         db: Option<PathBuf>,
         media: Arc<filmcraft_engine::media_pool::MediaPool>,
         services: Arc<dyn filmcraft_engine::Services>,
+        previews: Option<Arc<PreviewStore>>,
+        music_root: String,
     ) -> PeakWorker {
         let shared = Arc::new(Shared {
             map: RwLock::new(HashMap::new()),
@@ -268,6 +152,8 @@ impl PeakWorker {
             last_ms: AtomicUsize::new(0),
             wake: (Mutex::new(false), std::sync::Condvar::new()),
             repaint: Mutex::new(None),
+            previews,
+            music_root,
         });
         let w = PeakWorker { shared: shared.clone(), dir: dir.clone() };
         let pack = dir.join("peaks-v1.bin");
@@ -279,7 +165,9 @@ impl PeakWorker {
                     map.insert(hash(&p), Rec { size: 0, mtime: 0, peaks: Arc::new(pk) });
                 }
             }
-            read_pack(&pack, &mut map);
+            let mut packed = HashMap::new();
+            read_pack(&pack, &mut packed);
+            map.extend(packed.into_iter().map(|(h, r)| (h, Rec { size: r.size, mtime: r.mtime, peaks: Arc::new(r.peaks) })));
             *shared.map.write().unwrap_or_else(|e| e.into_inner()) = map;
             shared.loaded.store(true, Ordering::Relaxed);
             Self::repaint(&shared);
@@ -302,23 +190,32 @@ impl PeakWorker {
                 // a visible row is computed when unknown; the background sweep also re-checks a
                 // known file and computes it again only if its size or date changed (records
                 // from the sound database carry no size: trusted)
-                let skip = match shared.map.read().unwrap_or_else(|e| e.into_inner()).get(&h) {
-                    None => false,
-                    Some(_) if !background => true,
-                    Some(r) => r.size == 0 || st.is_none_or(|(size, mtime)| r.size == size && r.mtime == mtime),
+                let need_peaks = match shared.map.read().unwrap_or_else(|e| e.into_inner()).get(&h) {
+                    None => true,
+                    Some(_) if !background => false,
+                    Some(r) => !(r.size == 0 || st.is_none_or(|(size, mtime)| r.size == size && r.mtime == mtime)),
                 };
-                if skip {
+                let need_preview = shared.previews.as_ref().is_some_and(|p| match (background, st) {
+                    (false, _) => !p.knows(&path),
+                    (true, Some((size, mtime))) => p.record(&path, size, mtime).is_none(),
+                    (true, None) => false,
+                });
+                if !need_peaks && !need_preview {
                     continue;
                 }
                 let t0 = web_time::Instant::now();
-                match compute(&media, &*services, &path) {
-                    Ok(p) => {
-                        let (size, mtime) = st.unwrap_or((0, 0));
-                        let _ = append(&pack, h, size, mtime, &p);
-                        shared.map.write().unwrap_or_else(|e| e.into_inner()).insert(h, Rec { size, mtime, peaks: Arc::new(p) });
+                // ONE reading of the file: the waveform and the preview together
+                let previews = shared.previews.as_deref().map(|p| (p, shared.kind_of(&path)));
+                match filmcraft_engine::sound_previews::analyse(&media, &*services, &path, previews) {
+                    Ok(a) => {
+                        let _ = append_pack(&pack, h, a.size, a.mtime, &a.peaks);
+                        shared.map.write().unwrap_or_else(|e| e.into_inner()).insert(h, Rec { size: a.size, mtime: a.mtime, peaks: Arc::new(a.peaks) });
                         shared.computed.fetch_add(1, Ordering::Relaxed);
                     }
                     Err(e) => {
+                        if let (Some(p), Some((size, mtime))) = (&shared.previews, st) {
+                            let _ = p.record_failure(&path, size, mtime, &e);
+                        }
                         let mut errs = shared.errors.lock().unwrap_or_else(|x| x.into_inner());
                         if errs.len() < 20 {
                             errs.push((path.clone(), e));
@@ -349,7 +246,7 @@ impl PeakWorker {
             let m = s.map.read().unwrap_or_else(|e| e.into_inner());
             while let Some(p) = v.pop() {
                 let h = hash(&p);
-                if !m.contains_key(&h) && !failed.contains(&h) {
+                if s.wants(&m, &p) && !failed.contains(&h) {
                     return Some((p, false));
                 }
             }
@@ -376,6 +273,11 @@ impl PeakWorker {
         }
     }
 
+    /// The preview store fed by this worker (None = waveforms only).
+    pub fn previews(&self) -> Option<Arc<PreviewStore>> {
+        self.shared.previews.clone()
+    }
+
     /// The thumbnail of `path`, if known.
     pub fn get(&self, path: &str) -> Option<Arc<Peaks>> {
         self.shared.map.read().unwrap_or_else(|e| e.into_inner()).get(&hash(path)).map(|r| r.peaks.clone())
@@ -386,7 +288,7 @@ impl PeakWorker {
         let failed = self.shared.failed.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let missing: Vec<String> = {
             let m = self.shared.map.read().unwrap_or_else(|e| e.into_inner());
-            paths.into_iter().rev().filter(|p| !m.contains_key(&hash(p)) && !failed.contains(&hash(p))).collect()
+            paths.into_iter().rev().filter(|p| self.shared.wants(&m, p) && !failed.contains(&hash(p))).collect()
         };
         let changed = {
             let mut v = self.shared.visible.lock().unwrap_or_else(|e| e.into_inner());
@@ -439,6 +341,7 @@ impl PeakWorker {
     /// Whether `path` could not be read (not a sound FilmCraft decodes, or damaged).
     pub fn failed(&self, path: &str) -> bool {
         self.shared.failed.lock().unwrap_or_else(|e| e.into_inner()).contains(&hash(path))
+            || self.shared.previews.as_ref().is_some_and(|p| p.failed_before(path))
     }
 
     /// The last files that could not be read, with the reason.
@@ -478,43 +381,5 @@ mod tests {
         assert!((lo + 1.0).abs() < 1e-6 && (hi - 1.0).abs() < 1e-6);
         let (lo, hi) = p.range(0.34, 0.66);
         assert_eq!((lo, hi), (0.0, 0.0));
-    }
-
-    #[test]
-    fn columns_follow_the_signal() {
-        // a sound silent in its first half and loud in its second
-        let total = 2000u64;
-        let ch: Vec<f32> = (0..total)
-            .map(|i| {
-                if i < 1000 {
-                    0.0
-                } else if i % 2 == 0 {
-                    0.5
-                } else {
-                    -0.5
-                }
-            })
-            .collect();
-        let mut cols = vec![(0f32, 0f32); 10];
-        accumulate(&mut cols, &[ch[..700].to_vec()], 0, total);
-        accumulate(&mut cols, &[ch[700..].to_vec()], 700, total);
-        let p = quantise(&cols, 2.0);
-        assert_eq!(p.cols[0], (0, 0));
-        assert_eq!(p.cols[9], (-64, 64));
-    }
-
-    #[test]
-    fn the_pack_keeps_the_last_record_of_a_path() {
-        let d = std::env::temp_dir().join(format!("fc-peaks-{}-{}", std::process::id(), line!()));
-        let _ = std::fs::remove_dir_all(&d);
-        let pack = d.join("peaks-v1.bin");
-        append(&pack, 1, 10, 20, &Peaks { duration: 1.0, cols: vec![(0, 1)] }).unwrap();
-        append(&pack, 2, 10, 20, &Peaks { duration: 2.0, cols: vec![(0, 2)] }).unwrap();
-        append(&pack, 1, 11, 21, &Peaks { duration: 3.0, cols: vec![(0, 3)] }).unwrap();
-        let mut m = HashMap::new();
-        read_pack(&pack, &mut m);
-        assert_eq!(m.len(), 2);
-        assert_eq!(m[&1].peaks.duration, 3.0);
-        assert_eq!((m[&1].size, m[&1].mtime), (11, 21));
     }
 }

@@ -258,6 +258,11 @@ impl PreviewStore {
         m.values().filter(|r| r.failed.is_none() && r.kind == Some(kind)).fold((0, 0), |(n, b), r| (n + 1, b + r.bytes))
     }
 
+    /// Whether the last reading of `path` failed (any version of the file).
+    pub fn failed_before(&self, path: &str) -> bool {
+        self.map.read().unwrap_or_else(|e| e.into_inner()).get(&hash(path)).is_some_and(|r| r.failed.is_some())
+    }
+
     /// Whether the index knows `path` at all (made or failed, any version): a cheap test for the
     /// rows on screen, without reading the file's date on the slow disk.
     pub fn knows(&self, path: &str) -> bool {
@@ -620,6 +625,29 @@ mod tests {
         let p = build(&s.media, &*s.services, &o2, |_| false);
         assert_eq!(p.made + p.failed, 1);
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn columns_follow_the_signal() {
+        // a sound silent in its first half and loud in its second
+        let total = 2000u64;
+        let ch: Vec<f32> = (0..total)
+            .map(|i| {
+                if i < 1000 {
+                    0.0
+                } else if i % 2 == 0 {
+                    0.5
+                } else {
+                    -0.5
+                }
+            })
+            .collect();
+        let mut cols = vec![(0f32, 0f32); 10];
+        accumulate(&mut cols, &[ch[..700].to_vec()], 0, total);
+        accumulate(&mut cols, &[ch[700..].to_vec()], 700, total);
+        let p = quantise(&cols, 2.0);
+        assert_eq!(p.cols[0], (0, 0));
+        assert_eq!(p.cols[9], (-64, 64));
     }
 
     #[test]
