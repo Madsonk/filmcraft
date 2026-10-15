@@ -419,6 +419,8 @@ pub struct BuildOptions {
     pub cache: PathBuf,
     /// At most this many sounds read in this run (0 = no limit).
     pub limit: usize,
+    /// These files instead of walking `root` (a sample, a list prepared elsewhere).
+    pub files: Option<Vec<String>>,
 }
 
 /// Progress of a batch run, after each sound.
@@ -476,7 +478,7 @@ pub fn build(media: &MediaPool, services: &dyn Services, o: &BuildOptions, mut p
     let pack = o.cache.join("peaks").join("peaks-v1.bin");
     let mut known = HashMap::new();
     read_pack(&pack, &mut known);
-    let sounds = list_sounds(&o.root);
+    let sounds = o.files.clone().unwrap_or_else(|| list_sounds(&o.root));
     let mut p = BuildProgress { total: sounds.len(), ..Default::default() };
     let t0 = web_time::Instant::now();
     for path in sounds {
@@ -607,7 +609,7 @@ mod tests {
         std::fs::write(lib.join("A/._a.wav"), b"Mac OS X junk").unwrap();
         std::fs::write(lib.join("A/broken.wav"), b"not a wav").unwrap();
         let s = crate::Session::default();
-        let o = BuildOptions { kind: PreviewKind::Sfx, root: lib.clone(), cache: d.join("cache"), limit: 1 };
+        let o = BuildOptions { kind: PreviewKind::Sfx, root: lib.clone(), cache: d.join("cache"), limit: 1, files: None };
         let p = build(&s.media, &*s.services, &o, |_| true);
         assert_eq!((p.total, p.made + p.failed), (3, 1), "{p:?}");
         // the next run goes on where the first stopped; the broken file fails once

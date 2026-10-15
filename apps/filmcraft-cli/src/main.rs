@@ -74,12 +74,13 @@ SUBCOMMANDS
   commands [filter] [--json]    list commands (id, label, shortcut, params)
   describe <id>                 one command as JSON (menu, shortcut, params, enabled now)
   inspect [project|sequence]    project tree or active sequence as JSON (default: both)
-  assets.buildPreviews --kind sfx|music [--limit N] [--root DIR] [--cache DIR]
+  assets.buildPreviews --kind sfx|music [--limit N] [--root DIR] [--cache DIR] [--list FILE]
                                 make the light audio previews (and waveforms) of Window ▸ Resources,
                                 one file at a time, resumable (what is made is skipped); for a
                                 night run. Defaults: the library's 02 SFX / 01 MUSIC folders and
                                 /Volumes/Data/FilmCraft-cache. Stops after the current file when
-                                <cache>/previews/STOP exists; Ctrl-C is safe (atomic writes)
+                                <cache>/previews/STOP exists; Ctrl-C is safe (atomic writes).
+                                --list: these files (one path per line) instead of the folder
   import <file>...              import media into the project
   export <out> [--preset name] [--format f] [--range r] [--start s --end s] [--settings json]
          [--scale f] [--quality 0-100] [--no-audio] [--queue]
@@ -248,12 +249,20 @@ fn build_previews(a: &Args) {
         .unwrap_or_else(|| std::path::Path::new(LIBRARY).join(if kind == PreviewKind::Music { "01 MUSIC" } else { "02 SFX" }));
     let cache = a.opt("--cache").map(std::path::PathBuf::from).unwrap_or_else(|| "/Volumes/Data/FilmCraft-cache".into());
     let limit = a.opt("--limit").map(|v| v.parse().unwrap_or_else(|_| usage("--limit N"))).unwrap_or(0);
-    if !root.is_dir() {
+    let files = a.opt("--list").map(|l| {
+        std::fs::read_to_string(l)
+            .unwrap_or_else(|e| fail(format!("{l}: {e}")))
+            .lines()
+            .filter(|x| !x.trim().is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    });
+    if files.is_none() && !root.is_dir() {
         fail(format!("{}: not a folder (is the library mounted?)", root.display()));
     }
     let s = Session::default();
     let stop = cache.join("previews").join("STOP");
-    let o = BuildOptions { kind, root, cache, limit };
+    let o = BuildOptions { kind, root, cache, limit, files };
     let p = build(&s.media, &*s.services, &o, |p| {
         outln!(
             "{}",
