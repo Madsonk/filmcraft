@@ -7,6 +7,7 @@
 //! - `engine.execute {command, params}` / `ui.menu.invoke {id}`: run any engine or UI command
 //! - `engine.commands`: list engine commands; `ui.menu.list`: menu tree with enablement
 //! - `ui.inspect`: UI state + every registered widget (`elements`: id, label, rect)
+//! - `ui.assets.audition {path, frac?}`: listen to a file as hover / ▶ do
 //! - `ui.assets.clearPreviews`: empty the light preview cache of Window ▸ Resources
 //! - `ui.elements {prefix?}`: registered widgets (optionally filtered by id prefix)
 //! - `ui.set {tool?, workspace?, mode?, theme?, focused?, playbackRes?, timeline?:{pps,scroll}}`
@@ -376,6 +377,16 @@ pub fn handle(app: &mut FilmcraftApp, ctx: &egui::Context, req: &ControlRequest)
             app.assets.synthetic_drop = Some((paths, pos));
             app.assets.last_drop = None;
             Outcome::AfterInput
+        }
+        "ui.assets.audition" => {
+            // what hover / ▶ do for a row, for a given file (measurements, tests)
+            let Some(path) = s("path") else { return err("missing `path`") };
+            let frac = p.get("frac").and_then(Value::as_f64).unwrap_or(0.0) as f32;
+            if crate::assets::peak_worker(app).is_none() {
+                return err("no sound library");
+            }
+            crate::assets::audition(app, path, frac);
+            ok(audition_json(app))
         }
         "ui.assets.clearPreviews" => match app.assets.peaks.as_ref().and_then(|w| w.previews()) {
             Some(store) => ok(json!({"freed": store.clear(), "dir": store.dir})),

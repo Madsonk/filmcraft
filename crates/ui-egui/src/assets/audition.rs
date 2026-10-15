@@ -191,6 +191,7 @@ impl Audition {
             v.buf.clear();
             v.complete = false;
             v.error = None;
+            v.from_preview = false;
             if let Some(a) = at {
                 v.base = a;
                 v.pos = a;
