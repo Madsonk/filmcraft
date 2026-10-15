@@ -451,11 +451,37 @@ fn lerp_col(a: Color32, b: Color32, f: f32) -> Color32 {
 
 /// Curve editor: drag points, click the curve to add, double-click a point to remove.
 #[allow(clippy::too_many_arguments)]
+/// Height of a curve for the panel's width: square for the RGB curve, flat for the hue /
+/// saturation curves, both capped so a wide panel does not push everything down.
+pub fn curve_size(avail: f32, centred: bool) -> egui::Vec2 {
+    let w = (avail - 4.0).max(120.0);
+    let h = if centred { (w * 0.42).clamp(90.0, 190.0) } else { (w * 0.8).clamp(140.0, 300.0) };
+    vec2(w, h)
+}
+
+/// Points of a curve closer than this (points) to the pointer are grabbed.
+pub const CURVE_GRAB: f32 = 14.0;
+
+/// A curve editor (Lumetri ▸ Curves): fills the panel's width; drag a point (or the empty curve
+/// to add one and drag it), double-click a point to remove it, double-click elsewhere to add one;
+/// the values under the pointer are shown; ↺ resets this curve.
 fn curve_editor(ui: &mut egui::Ui, e: &EffectInstance, id: &str, hue: bool, col: Color32, t: &Tokens, actions: &mut Actions, clip: ClipId, idx: usize) {
     let pts: Vec<[f32; 2]> = e.param(id).and_then(|p| p.value.as_curve().map(|c| c.to_vec())).unwrap_or_default();
-    let w = ui.available_width().min(260.0);
-    let h = if hue { w * 0.45 } else { w };
-    let (area, resp) = ui.allocate_exact_size(vec2(w, h), Sense::click_and_drag());
+    // the hue curves wrap around (red at both ends); luma / saturation curves do not
+    let wraps = id.starts_with("hue_");
+    let identity = if hue { pts.is_empty() } else { pts.is_empty() || pts == vec![[0.0, 0.0], [1.0, 1.0]] };
+    // ↺ reset, right-aligned above the curve (only when it was changed)
+    let reset_rect = Rect::from_min_size(pos2(ui.max_rect().max.x - 22.0, ui.cursor().min.y - 20.0), vec2(18.0, 18.0));
+    if !identity {
+        let r = ui.interact(reset_rect, egui::Id::new(("curve-reset", clip.0, id)), Sense::click()).on_hover_text(tl!("Reset this curve"));
+        ui.painter().text(reset_rect.center(), Align2::CENTER_CENTER, "↺", Tokens::ui(13.0), if r.hovered() { t.hot_text } else { t.text_dim });
+        if r.clicked() {
+            let v: Vec<Value> = if hue { Vec::new() } else { vec![json!([0.0, 0.0]), json!([1.0, 1.0])] };
+            actions.push(json!({"clip": clip.0, "effect": idx, "param": id, "value": v}));
+        }
+    }
+    let size = curve_size(ui.available_width(), hue);
+    let (area, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
     let p = ui.painter();
     p.rect_filled(area, 2.0, Color32::from_rgb(0x16, 0x16, 0x16));
     for i in 1..4 {
@@ -469,15 +495,15 @@ fn curve_editor(ui: &mut egui::Ui, e: &EffectInstance, id: &str, hue: bool, col:
             Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2a, 0x2a)),
         );
     }
-    if hue {
-        let n = 36;
+    if wraps {
+        let n = 72;
         for i in 0..n {
             let f0 = i as f32 / n as f32;
             let rgb = filmcraft_color::hsl_to_rgb(f0, 0.8, 0.5);
             let c = Color32::from_rgb((rgb[0] * 255.0) as u8, (rgb[1] * 255.0) as u8, (rgb[2] * 255.0) as u8);
             p.rect_filled(
                 Rect::from_min_max(
-                    pos2(area.min.x + area.width() * f0, area.max.y - 6.0),
+                    pos2(area.min.x + area.width() * f0, area.max.y - 8.0),
                     pos2(area.min.x + area.width() * (f0 + 1.0 / n as f32) + 0.5, area.max.y),
                 ),
                 0.0,
@@ -489,7 +515,7 @@ fn curve_editor(ui: &mut egui::Ui, e: &EffectInstance, id: &str, hue: bool, col:
     let from_screen = |s: Pos2| [((s.x - area.min.x) / area.width()).clamp(0.0, 1.0), ((area.max.y - s.y) / area.height()).clamp(0.0, 1.0)];
     // curve polyline
     let draw_pts: Vec<[f32; 2]> = if hue && pts.is_empty() { vec![[0.0, 0.5], [1.0, 0.5]] } else { pts.clone() };
-    let lut = if hue && !pts.is_empty() {
+    let lut = if wraps && !pts.is_empty() {
         let mut ext = Vec::new();
         for off in [-1.0f32, 0.0, 1.0] {
             for q in &pts {
@@ -502,21 +528,26 @@ fn curve_editor(ui: &mut egui::Ui, e: &EffectInstance, id: &str, hue: bool, col:
         filmcraft_render::effects::curve_lut(&draw_pts, 128)
     };
     let line: Vec<Pos2> = lut.iter().enumerate().map(|(i, y)| to_screen([i as f32 / 127.0, y.clamp(0.0, 1.0)])).collect();
-    p.add(egui::Shape::line(line, Stroke::new(1.5, col)));
+    p.add(egui::Shape::line(line, Stroke::new(2.0, col)));
     let drag_key = egui::Id::new(("curve-drag", clip.0, id));
     let mut dragging: Option<usize> = ui.data(|d| d.get_temp(drag_key));
     let mut new_pts = pts.clone();
     let mut changed = false;
+    let hover = resp.hover_pos();
+    let near = |pos: Pos2| {
+        pts.iter().enumerate().map(|(i, q)| (i, to_screen(*q).distance(pos))).filter(|(_, d)| *d < CURVE_GRAB).min_by(|a, b| a.1.total_cmp(&b.1)).map(|x| x.0)
+    };
+    let hovered_pt = hover.and_then(near);
     for (i, q) in pts.iter().enumerate() {
         let sp = to_screen(*q);
-        p.circle_filled(sp, 4.0, if dragging == Some(i) { t.hot_text } else { col });
+        let hot = dragging == Some(i) || (dragging.is_none() && hovered_pt == Some(i));
+        p.circle_filled(sp, if hot { 7.0 } else { 5.5 }, if hot { t.hot_text } else { col });
+        p.circle_stroke(sp, if hot { 7.0 } else { 5.5 }, Stroke::new(1.0, Color32::from_black_alpha(160)));
     }
     if resp.drag_started()
         && let Some(pos) = resp.interact_pointer_pos()
     {
-        let near =
-            pts.iter().enumerate().map(|(i, q)| (i, to_screen(*q).distance(pos))).filter(|(_, d)| *d < 9.0).min_by(|a, b| a.1.total_cmp(&b.1)).map(|x| x.0);
-        dragging = near.or_else(|| {
+        dragging = near(pos).or_else(|| {
             new_pts.push(from_screen(pos));
             changed = true;
             Some(new_pts.len() - 1)
@@ -526,7 +557,12 @@ fn curve_editor(ui: &mut egui::Ui, e: &EffectInstance, id: &str, hue: bool, col:
         && let (Some(i), Some(pos)) = (dragging, resp.interact_pointer_pos())
         && i < new_pts.len()
     {
-        new_pts[i] = from_screen(pos);
+        let mut q = from_screen(pos);
+        // the ends of the RGB curve stay at the left and right edges
+        if !hue && (i == 0 || i == pts.len().saturating_sub(1)) && pts.len() >= 2 {
+            q[0] = pts[i][0];
+        }
+        new_pts[i] = q;
         changed = true;
     }
     if resp.drag_stopped() {
@@ -534,16 +570,40 @@ fn curve_editor(ui: &mut egui::Ui, e: &EffectInstance, id: &str, hue: bool, col:
     }
     if resp.double_clicked()
         && let Some(pos) = resp.interact_pointer_pos()
-        && let Some(i) = pts.iter().position(|q| to_screen(*q).distance(pos) < 9.0)
     {
-        let endpoint = !hue && (i == 0 || i == pts.len() - 1);
-        if !endpoint {
-            new_pts.remove(i);
-            changed = true;
+        match near(pos) {
+            Some(i) => {
+                let endpoint = !hue && (i == 0 || i == pts.len() - 1);
+                if !endpoint {
+                    new_pts.remove(i);
+                    changed = true;
+                }
+            }
+            None => {
+                // double-click on the curve's area adds a point there (the RGB curve starts from
+                // its two ends when it had none)
+                if !hue && new_pts.is_empty() {
+                    new_pts = vec![[0.0, 0.0], [1.0, 1.0]];
+                }
+                new_pts.push(from_screen(pos));
+                changed = true;
+            }
         }
-    } else if resp.double_clicked() && !hue {
-        new_pts = vec![[0.0, 0.0], [1.0, 1.0]];
-        changed = true;
+    }
+    // the values under the pointer (or of the point being dragged)
+    let shown = dragging.and_then(|i| new_pts.get(i).copied()).or_else(|| hover.map(from_screen));
+    if let Some(q) = shown {
+        let label = if !hue {
+            tlf!("In {x} → Out {y}", x = (q[0] * 255.0).round() as i32, y = (q[1] * 255.0).round() as i32)
+        } else if wraps {
+            tlf!("Hue {x}° · {y}", x = (q[0] * 360.0).round() as i32, y = format!("{:+.0} %", (q[1] - 0.5) * 200.0))
+        } else {
+            tlf!("{x} % · {y}", x = (q[0] * 100.0).round() as i32, y = format!("{:+.0} %", (q[1] - 0.5) * 200.0))
+        };
+        let g = p.layout_no_wrap(label, Tokens::ui(10.5), t.text);
+        let at = pos2(area.min.x + 6.0, area.min.y + 4.0);
+        p.rect_filled(Rect::from_min_size(at - vec2(3.0, 1.0), g.size() + vec2(6.0, 2.0)), 3.0, Color32::from_black_alpha(170));
+        p.galley(at, g, t.text);
     }
     ui.data_mut(|d| {
         if let Some(i) = dragging {
@@ -556,7 +616,7 @@ fn curve_editor(ui: &mut egui::Ui, e: &EffectInstance, id: &str, hue: bool, col:
         let v: Vec<Value> = new_pts.iter().map(|q| json!([q[0], q[1]])).collect();
         actions.push(json!({"clip": clip.0, "effect": idx, "param": id, "value": v}));
     }
-    ui.add_space(6.0);
+    ui.add_space(8.0);
 }
 
 /// Colour wheel: hue ring, draggable puck (offset), lightness slider on the left.
@@ -656,4 +716,21 @@ fn match_controls(ui: &mut egui::Ui, app: &mut FilmcraftApp, out: &mut Vec<(&'st
         d.insert_temp(key, tc);
         d.insert_temp(fd_key, face);
     });
+}
+
+#[cfg(test)]
+mod curve_tests {
+    use super::*;
+
+    #[test]
+    fn curves_fill_the_panel_width_with_a_capped_height() {
+        // a 660 pt panel: the curve takes the width, not a 260 pt thumbnail
+        let s = curve_size(660.0, false);
+        assert!(s.x >= 650.0 && s.y <= 300.0 && s.y >= 140.0, "{s:?}");
+        let h = curve_size(660.0, true);
+        assert!(h.x >= 650.0 && h.y <= 190.0 && h.y >= 90.0, "{h:?}");
+        // narrow panels keep a usable size
+        assert!(curve_size(150.0, false).x >= 120.0);
+        assert!(CURVE_GRAB >= 12.0, "points are easy to grab");
+    }
 }

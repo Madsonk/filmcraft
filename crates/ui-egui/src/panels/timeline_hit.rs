@@ -292,6 +292,8 @@ mod tests {
             pps: 100.0,
             scroll: 0.0,
             split_y: TOP + 60.0,
+            video_top: TOP,
+            audio_bottom: TOP + 60.0,
         };
         (seq, layout, track)
     }
@@ -431,5 +433,46 @@ mod tests {
         let (seq, l, tr) = fixture(clips());
         assert_eq!(grab(&seq, &l, Tool::Selection, 303.0, Modifiers::NONE, false).hit(), edge_hit(tr, 2, Edge::In));
         assert_eq!(grab(&seq, &l, Tool::Razor, 303.0, Modifiers::NONE, false).hit(), edge_hit(tr, 2, Edge::In));
+    }
+
+    #[test]
+    fn new_track_zones_above_below_and_between_tracks() {
+        use super::super::timeline::Row;
+        // video area 100..300 (V2 160-220, V1 220-280 + 20 px headroom at the top), audio 300..500 (A1 304-364, A2 364-424)
+        let r = |kind, index, y0: f32, y1: f32| Row {
+            track: TrackId(index as u64 + if kind == TrackKind::Video { 1 } else { 10 }),
+            kind,
+            index,
+            rect: Rect::from_min_max(pos2(0.0, y0), pos2(2000.0, y1)),
+        };
+        let l = Layout {
+            content: Rect::from_min_max(pos2(0.0, 100.0), pos2(2000.0, 500.0)),
+            ruler: Rect::from_min_max(pos2(0.0, 60.0), pos2(2000.0, 100.0)),
+            rows: vec![
+                r(TrackKind::Video, 0, 220.0, 280.0),
+                r(TrackKind::Video, 1, 160.0, 220.0),
+                r(TrackKind::Audio, 0, 304.0, 364.0),
+                r(TrackKind::Audio, 1, 364.0, 424.0),
+            ],
+            pps: 100.0,
+            scroll: 0.0,
+            split_y: 300.0,
+            video_top: 100.0,
+            audio_bottom: 500.0,
+        };
+        // above V2 (empty headroom and the top band of V2): a new V3
+        assert_eq!(l.new_track_zone(pos2(50.0, 120.0)).map(|z| (z.0, z.1)), Some((TrackKind::Video, 2)));
+        assert_eq!(l.new_track_zone(pos2(50.0, 163.0)).map(|z| (z.0, z.1)), Some((TrackKind::Video, 2)));
+        // in V2 / V1: no zone, the track itself
+        assert_eq!(l.new_track_zone(pos2(50.0, 190.0)), None);
+        assert_eq!(l.new_track_zone(pos2(50.0, 250.0)), None);
+        // the edge between V2 and V1: a track inserted at index 1
+        assert_eq!(l.new_track_zone(pos2(50.0, 221.0)), Some((TrackKind::Video, 1, 220.0)));
+        // below A2 (empty room): a new A3; the edge A1/A2: index 1
+        assert_eq!(l.new_track_zone(pos2(50.0, 460.0)).map(|z| (z.0, z.1)), Some((TrackKind::Audio, 2)));
+        assert_eq!(l.new_track_zone(pos2(50.0, 365.0)), Some((TrackKind::Audio, 1, 364.0)));
+        assert_eq!(l.new_track_zone(pos2(50.0, 330.0)), None);
+        // outside the tracks area
+        assert_eq!(l.new_track_zone(pos2(50.0, 80.0)), None);
     }
 }

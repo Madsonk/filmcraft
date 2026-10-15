@@ -70,7 +70,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
         label: "Place Resources",
         menu: &[],
         shortcut: None,
-        params: r#"{"paths":[str],"clip":id?,"track":id|"V1"|"A1"?,"time":ticks|"seconds":f64|"frame":i64?,"bin":binId?}"#,
+        params: r#"{"paths":[str],"clip":id?,"track":id|"V1"|"A1"?,"newTrack":{"kind":"video"|"audio","index":n}?,"time":ticks|"seconds":f64|"frame":i64?,"bin":binId?}"#,
         enabled: always,
         run: place,
         journal: true,
@@ -119,6 +119,44 @@ fn destination(s: &mut Session, kind: TrackKind, hovered: Option<(TrackKind, usi
     r.get(key).and_then(Value::as_array).and_then(|a| a.first()).and_then(Value::as_u64).map(TrackId).ok_or_else(|| bad(CMD, "a new track could not be added"))
 }
 
+/// `newTrack {kind, index}`: a drop in the zone above the top video track, below the last audio
+/// track or between two tracks makes a new track there (index = how many tracks of that kind come
+/// before it), in the same undo step as the placement.
+pub(crate) fn new_track_p(p: &Value) -> Result<Option<(TrackKind, usize)>> {
+    let Some(v) = p.get("newTrack").filter(|v| !v.is_null()) else { return Ok(None) };
+    let kind = match v.get("kind").and_then(Value::as_str) {
+        Some("video") => TrackKind::Video,
+        Some("audio") => TrackKind::Audio,
+        _ => return Err(bad(CMD, "`newTrack.kind` must be \"video\" or \"audio\"")),
+    };
+    let index = v.get("index").and_then(Value::as_u64).ok_or_else(|| bad(CMD, "`newTrack.index` must be a number"))? as usize;
+    Ok(Some((kind, index)))
+}
+
+/// Make the requested new track (once) and return its id when `kind` is the one asked for.
+fn new_track(s: &mut Session, wanted: Option<(TrackKind, usize)>, made: &mut Option<TrackId>, kind: TrackKind) -> Result<Option<TrackId>> {
+    let Some((k, index)) = wanted.filter(|(k, _)| *k == kind) else { return Ok(None) };
+    if let Some(id) = made {
+        return Ok(Some(*id));
+    }
+    let id = add_track_at(s, k, index)?;
+    *made = Some(id);
+    Ok(Some(id))
+}
+
+/// Add one track of `kind` with `index` tracks of that kind before it (clamped). Its id.
+pub(crate) fn add_track_at(s: &mut Session, kind: TrackKind, index: usize) -> Result<TrackId> {
+    let len = s.active_sequence().map(|q| if kind == TrackKind::Video { q.video_tracks.len() } else { q.audio_tracks.len() }).unwrap_or(0);
+    let q = if kind == TrackKind::Video {
+        json!({"video": 1, "audio": 0, "videoAfter": index.min(len)})
+    } else {
+        json!({"video": 0, "audio": 1, "audioAfter": index.min(len)})
+    };
+    let r = s.execute("sequence.addTracks", q)?;
+    let key = if kind == TrackKind::Video { "video" } else { "audio" };
+    r.get(key).and_then(Value::as_array).and_then(|a| a.first()).and_then(Value::as_u64).map(TrackId).ok_or_else(|| bad(CMD, "a new track could not be added"))
+}
+
 fn import_one(s: &mut Session, path: &str, bin: Option<&Value>) -> Result<ItemId> {
     let mut q = json!({"paths": [path]});
     if let Some(b) = bin {
@@ -155,6 +193,8 @@ fn place(s: &mut Session, p: &Value) -> Result<Value> {
     // a clip under the pointer gives its own start when no time is given
     let time = time.or_else(|| clip.and_then(|c| s.active_sequence()?.find_item(c).map(|(_, it)| it.start)));
     let bin = p.get("bin").filter(|b| !b.is_null());
+    let wanted_track = if has_seq { new_track_p(p)? } else { None };
+    let mut made_track: Option<TrackId> = None;
 
     let n0 = s.history.undo.len();
     let mut results = Vec::new();
@@ -171,7 +211,10 @@ fn place(s: &mut Session, p: &Value) -> Result<Value> {
                     summary.push(format!("Title “{}” converted into Graphics Templates", entry.template.name));
                     return Ok(json!({"path": path, "kind": "mogrt", "action": "converted", "template": id, "conversion": info}));
                 };
-                let v = destination(s, TrackKind::Video, hovered, t, entry.template.duration)?;
+                let v = match new_track(s, wanted_track, &mut made_track, TrackKind::Video)? {
+                    Some(v) => v,
+                    None => destination(s, TrackKind::Video, hovered, t, entry.template.duration)?,
+                };
                 let index = s.active_sequence().and_then(|q| q.video_tracks.iter().position(|x| x.id == v)).unwrap_or(0);
                 let r = s.execute("graphics.template.apply", json!({"template": id, "time": t.0, "track": index}))?;
                 summary.push(format!("Title “{}” placed on a video track", entry.template.name));
@@ -202,18 +245,27 @@ fn place(s: &mut Session, p: &Value) -> Result<Value> {
                     (it.has_video(), it.has_audio(), d)
                 };
                 if has_v {
-                    let v = destination(s, TrackKind::Video, hovered, t, dur)?;
+                    let v = match new_track(s, wanted_track, &mut made_track, TrackKind::Video)? {
+                        Some(v) => v,
+                        None => destination(s, TrackKind::Video, hovered, t, dur)?,
+                    };
                     let mut q = json!({"item": item.0, "track": v.0, "time": t.0, "audio": false});
                     if has_a {
                         // the picture's own sound goes on a free audio track at the same time
-                        let a = destination(s, TrackKind::Audio, None, t, dur)?;
+                        let a = match new_track(s, wanted_track, &mut made_track, TrackKind::Audio)? {
+                            Some(a) => a,
+                            None => destination(s, TrackKind::Audio, None, t, dur)?,
+                        };
                         q = json!({"item": item.0, "track": v.0, "audioTrack": a.0, "time": t.0});
                     }
                     let placed = s.execute("timeline.place", q)?;
                     summary.push(format!("“{}” placed on a video track", name_of(path)));
                     Ok(json!({"path": path, "kind": kind.id(), "action": "placed", "item": item.0, "track": v.0, "time": t.0, "clips": placed["clips"]}))
                 } else if has_a {
-                    let a = destination(s, TrackKind::Audio, hovered, t, dur)?;
+                    let a = match new_track(s, wanted_track, &mut made_track, TrackKind::Audio)? {
+                        Some(a) => a,
+                        None => destination(s, TrackKind::Audio, hovered, t, dur)?,
+                    };
                     let placed = s.execute("timeline.place", json!({"item": item.0, "audioTrack": a.0, "time": t.0, "video": false}))?;
                     summary.push(format!("“{}” placed on an audio track", name_of(path)));
                     Ok(json!({"path": path, "kind": kind.id(), "action": "placed", "item": item.0, "track": a.0, "time": t.0, "clips": placed["clips"]}))

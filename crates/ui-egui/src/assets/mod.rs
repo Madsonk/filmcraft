@@ -254,8 +254,15 @@ pub fn target_at(app: &FilmcraftApp, pos: Pos2) -> (Value, String) {
             .is_some_and(|e| Rect::from_min_size(egui::pos2(e.rect[0], e.rect[1]), vec2(e.rect[2], e.rect[3])).contains(pos))
     };
     if over(PanelKind::Timeline) && app.session.active_sequence().is_some() {
-        let h = crate::panels::timeline::hit_json(app, pos, egui::Modifiers::NONE);
         let rate = app.session.sequence_rate();
+        // above the top video track, below the last audio track, on the edge between two
+        // tracks: a new track there (as in Premiere), never the bin
+        if let Some((kind, index, _)) = app.tl.layout.as_ref().and_then(|l| l.new_track_zone(pos)) {
+            let t = app.tl.layout.as_ref().map(|l| rate.snap_nearest(l.tick_at(pos.x).max(Tick::ZERO)).0).unwrap_or(0);
+            let (k, letter) = if kind == filmcraft_project::TrackKind::Video { ("video", 'V') } else { ("audio", 'A') };
+            return (json!({"newTrack": {"kind": k, "index": index}, "time": t}), format!("{letter}{}", index + 1));
+        }
+        let h = crate::panels::timeline::hit_json(app, pos, egui::Modifiers::NONE);
         let t = |v: &Value| v.as_i64().map(|t| rate.snap_nearest(Tick(t.max(0))).0);
         match h["hit"].as_str() {
             Some("clip") => {
@@ -299,6 +306,21 @@ pub fn target_at(app: &FilmcraftApp, pos: Pos2) -> (Value, String) {
 pub fn describe(app: &FilmcraftApp, paths: &[String], pos: Pos2) -> String {
     let (q, name) = target_at(app, pos);
     let kind = paths.first().map(|p| AssetKind::of(p)).unwrap_or(AssetKind::Other);
+    if let Some(nt) = q.get("newTrack") {
+        let video = nt["kind"] == "video";
+        let fits = match kind {
+            AssetKind::Sound => !video,
+            AssetKind::Picture | AssetKind::Mogrt => video,
+            _ => false,
+        };
+        return if fits {
+            if video { tlf!("On a new video track {track}", track = name) } else { tlf!("On a new audio track {track}", track = name) }
+        } else if kind == AssetKind::Lut {
+            tl!("Add to the LUT library").to_string()
+        } else {
+            tl!("On a free track at this time").to_string()
+        };
+    }
     let on_clip = q.get("clip").is_some();
     let on_timeline = q.get("time").is_some();
     match (kind, on_clip, on_timeline) {
@@ -495,6 +517,7 @@ pub fn after_panels(app: &mut FilmcraftApp, ctx: &egui::Context) {
     if !hovered_os.is_empty() {
         let pos = os_pointer(app, ctx).or(pointer);
         if let Some(p) = pos {
+            new_track_line(app, ctx, p);
             hint(ctx, &app.tokens, p, &hovered_os[0], &describe(app, &hovered_os, p));
         }
         ctx.request_repaint();
@@ -502,6 +525,7 @@ pub fn after_panels(app: &mut FilmcraftApp, ctx: &egui::Context) {
     let Some(drag) = app.assets.drag.clone() else { return };
     let released = ctx.input(|i| i.pointer.any_released());
     if let Some(p) = pointer {
+        new_track_line(app, ctx, p);
         hint(ctx, &app.tokens, p, &drag.label, &describe(app, &drag.paths, p));
     }
     if released {
@@ -509,6 +533,18 @@ pub fn after_panels(app: &mut FilmcraftApp, ctx: &egui::Context) {
         drop_files(app, drag.paths, pointer);
     } else if !ctx.input(|i| i.pointer.any_down()) {
         app.assets.drag = None;
+    }
+}
+
+/// The insertion line of a new track under the pointer during a drop (over the Timeline only).
+pub fn new_track_line(app: &FilmcraftApp, ctx: &egui::Context, p: Pos2) {
+    let over = app
+        .auto
+        .find(&format!("panel.{}", PanelKind::Timeline.id()))
+        .is_some_and(|e| Rect::from_min_size(egui::pos2(e.rect[0], e.rect[1]), vec2(e.rect[2], e.rect[3])).contains(p));
+    let Some(l) = app.tl.layout.as_ref().filter(|_| over) else { return };
+    if let Some((_, _, y)) = l.new_track_zone(p) {
+        crate::panels::timeline::paint_new_track_line(ctx, &app.tokens, l, y);
     }
 }
 

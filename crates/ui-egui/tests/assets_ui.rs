@@ -665,3 +665,88 @@ fn listening_reads_the_light_preview_and_the_timeline_gets_the_original() {
     assert!(store.get(&a).is_none() && h.state().assets.peaks.as_ref().unwrap().get(&a).is_some());
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// The y of the new-track zone above the top video track and below the last audio track, and an x
+/// inside the timeline's clips area.
+fn new_track_points(h: &H) -> (f32, f32, f32) {
+    let l = h.state().tl.layout.clone().expect("timeline laid out");
+    let top = l.rows.iter().filter(|r| r.kind == filmcraft_project::TrackKind::Video).map(|r| r.rect.min.y).fold(f32::MAX, f32::min);
+    let bottom = l.rows.iter().filter(|r| r.kind == filmcraft_project::TrackKind::Audio).map(|r| r.rect.max.y).fold(f32::MIN, f32::max);
+    let x = l.content.min.x + 120.0;
+    // 2 pt inside the top video track (its top band), 2 pt inside the last audio track's bottom band
+    (x, top + 2.0, bottom - 2.0)
+}
+
+#[test]
+fn dropping_above_the_top_video_track_or_below_the_last_audio_track_makes_a_new_track() {
+    let mut h = harness();
+    let root = tmp("newtrack");
+    let sfx = root.join("SFX/01 HITS");
+    std::fs::create_dir_all(&sfx).unwrap();
+    wav(&sfx, "SFX · Hits · boom.wav");
+    let luts = root.join("LUTS");
+    std::fs::create_dir_all(&luts).unwrap();
+    open_resources(&mut h, &luts, root.join("SFX").as_path(), &root);
+    h.state_mut().assets.tab = Some(filmcraft_ui_egui::assets::index::Kind::Sfx);
+    h.state_mut().assets.filtered = None;
+    wait_for(&mut h, "a sound row", |h| rect(h, "resources.row.0").is_some());
+    let (x, _top, bottom) = new_track_points(&h);
+    let (na, undo0) = {
+        let s = &h.state().session;
+        (s.active_sequence().unwrap().audio_tracks.len(), s.history.undo.len())
+    };
+    // the sound, dragged with the mouse frame by frame below the last audio track
+    let row = rect(&h, "resources.row.0").unwrap();
+    let to = egui::pos2(x, bottom);
+    h.input_mut().events.push(egui::Event::PointerMoved(row.left_center() + egui::vec2(60.0, 0.0)));
+    step(&mut h);
+    let from = row.left_center() + egui::vec2(60.0, 0.0);
+    h.input_mut().events.push(egui::Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    step(&mut h);
+    for i in 1..=12 {
+        h.input_mut().events.push(egui::Event::PointerMoved(from + (to - from) * (i as f32 / 12.0)));
+        step(&mut h);
+    }
+    // while hovering the zone: the hint says a new track, and the insertion line is drawn
+    let hint_target = filmcraft_ui_egui::assets::target_at(h.state(), to).0;
+    assert_eq!(hint_target["newTrack"]["kind"], json!("audio"), "{hint_target}");
+    snapshot(&mut h, "20-new-audio-track-line");
+    h.input_mut().events.push(egui::Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    steps(&mut h, 3);
+    let s = &h.state().session;
+    let q = s.active_sequence().unwrap();
+    assert_eq!(q.audio_tracks.len(), na + 1, "a new audio track; status: {}", h.state().ui.status);
+    assert_eq!(q.audio_tracks[na].items.len(), 1, "the sound is on it");
+    assert_eq!(s.history.undo.len(), undo0 + 1, "one undo step for the track and the sound");
+    // above the top video track: a picture makes a new V track (the hint and target say so)
+    let (x, top, _) = new_track_points(&h);
+    let t = filmcraft_ui_egui::assets::target_at(h.state(), egui::pos2(x, top)).0;
+    assert_eq!(t["newTrack"]["kind"], json!("video"), "{t}");
+    let nv = h.state().session.active_sequence().unwrap().video_tracks.len();
+    assert_eq!(t["newTrack"]["index"], json!(nv));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn the_titles_note_wraps_in_a_narrow_panel_and_blank_previews_are_detected() {
+    // an all-black preview (some packs ship one) is "blank": the tile shows the name instead
+    let black = image::RgbaImage::from_pixel(32, 18, image::Rgba([0, 0, 0, 255]));
+    assert!(filmcraft_ui_egui::panels::resources::is_blank(&black));
+    let clear = image::RgbaImage::from_pixel(32, 18, image::Rgba([255, 255, 255, 0]));
+    assert!(filmcraft_ui_egui::panels::resources::is_blank(&clear));
+    let mut text = black.clone();
+    text.put_pixel(5, 5, image::Rgba([240, 240, 240, 255]));
+    assert!(!filmcraft_ui_egui::panels::resources::is_blank(&text));
+    let mut h = harness();
+    let root = tmp("titles-note");
+    let luts = root.join("LUTS");
+    std::fs::create_dir_all(&luts).unwrap();
+    std::fs::write(root.join("index.json"), json!({"version": 1, "items": []}).to_string()).unwrap();
+    open_resources(&mut h, &luts, &luts, &root);
+    h.state_mut().assets.tab = Some(filmcraft_ui_egui::assets::index::Kind::Titles);
+    steps(&mut h, 4);
+    let note = rect(&h, "resources.titlesNote").expect("titles note");
+    let panel = rect(&h, "panel.Resources").expect("panel");
+    assert!(note.min.x >= panel.min.x && note.max.x <= panel.max.x + 0.5, "note {note:?} inside panel {panel:?}");
+    let _ = std::fs::remove_dir_all(&root);
+}

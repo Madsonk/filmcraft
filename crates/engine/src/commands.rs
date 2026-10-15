@@ -1957,7 +1957,7 @@ fn build() -> Vec<CommandSpec> {
             "Place Clip",
             [],
             None,
-            r#"{"item":id,"track":"V1"|id|"A1" (sound only)?,"audioTrack":"A1"|id?,"time":ticks|"frame":i64|"seconds":f64,"insert":bool,"sourceIn":ticks?,"duration":ticks?,"video":bool=true,"audio":bool=true}"#,
+            r#"{"item":id,"track":"V1"|id|"A1" (sound only)?,"audioTrack":"A1"|id?,"newTrack":{"kind":"video"|"audio","index":n}?,"time":ticks|"frame":i64|"seconds":f64,"insert":bool,"sourceIn":ticks?,"duration":ticks?,"video":bool=true,"audio":bool=true}"#,
             has_seq,
             |s, p| {
                 let stream_flag = |key: &str| match p.get(key) {
@@ -1971,6 +1971,18 @@ fn build() -> Vec<CommandSpec> {
                 }
                 let item = item_p(p, "item").ok_or_else(|| bad("timeline.place", "need `item`"))?;
                 let at = time_p(s, p, "").unwrap_or(s.playhead());
+                // a drop in a new-track zone (above V-top, below A-last, between two tracks): the
+                // track is made here, in the same undo step as the placement
+                let n0 = s.history.undo.len();
+                let mut p = p.clone();
+                if let Some((kind, index)) = crate::assets::new_track_p(&p)? {
+                    let has = s.project.item(item).map(|i| if kind == TrackKind::Video { i.has_video() } else { i.has_audio() }).unwrap_or(false);
+                    if has {
+                        let id = crate::assets::add_track_at(s, kind, index)?;
+                        p[if kind == TrackKind::Video { "track" } else { "audioTrack" }] = json!(id.0);
+                    }
+                }
+                let p = &p;
                 let tg = s.targeting();
                 let pi = s.project.item(item).ok_or_else(|| bad("timeline.place", "no such item"))?;
                 let is_audio = |t: TrackId| s.active_sequence().is_some_and(|q| q.audio_tracks.iter().any(|x| x.id == t));
@@ -2016,6 +2028,7 @@ fn build() -> Vec<CommandSpec> {
                 let sin = p.get("sourceIn").and_then(Value::as_i64).map(Tick).or(mi).unwrap_or_default();
                 let dur = p.get("duration").and_then(Value::as_i64).map(Tick).unwrap_or_else(|| mo.unwrap_or(full) - sin);
                 let ids = place_item(s, item, TimeRange::new(sin, dur), at, v, a, bool_p(p, "insert").unwrap_or(false), "Place Clip", None)?;
+                crate::clip_ops::collapse_history(s, n0, "Place Clip");
                 Ok(json!({"clips": ids.iter().map(|c| c.0).collect::<Vec<_>>()}))
             }
         ),

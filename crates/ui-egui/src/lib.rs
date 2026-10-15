@@ -595,7 +595,15 @@ impl FilmcraftApp {
             // reopen the workspace in use when the app last closed
             self.workspace_restored = true;
             if let Some(w) = dock::find(&self.workspaces, &self.workspaces.current) {
-                self.set_workspace(&w);
+                // the layout as it was left (panels docked by hand), else the workspace's saved one
+                let live = self.workspaces.live.clone().filter(|l| l.name == w).and_then(|l| serde_json::from_value::<dock::DockNode>(l.layout).ok());
+                match live {
+                    Some(layout) => {
+                        self.ui.workspace = w;
+                        self.ui.dock = layout;
+                    }
+                    None => self.set_workspace(&w),
+                }
             }
         }
         self.applied_prefs = Some(p);
@@ -668,11 +676,24 @@ impl FilmcraftApp {
         }
     }
 
+    /// Keep the layout changed by hand (docking) so the next launch reopens it.
+    pub fn keep_live_layout(&mut self) {
+        let Ok(layout) = serde_json::to_value(&self.ui.dock) else { return };
+        let mut next = self.workspaces.clone();
+        next.live = Some(dock::SavedWorkspace { name: self.ui.workspace.clone(), layout });
+        if let Err(e) = self.set_workspaces(next) {
+            self.ui.status = e;
+        }
+    }
+
+    /// Switch to `name` with its saved layout (Window ▸ Workspaces, Reset to Saved Layout): a
+    /// layout changed by hand is dropped.
     pub fn set_workspace(&mut self, name: &str) {
         self.ui.workspace = name.to_string();
         self.ui.dock = dock::saved_layout(&self.workspaces, name);
-        if self.workspaces.current != name {
+        if self.workspaces.current != name || self.workspaces.live.is_some() {
             let mut next = self.workspaces.clone();
+            next.live = None;
             next.current = name.to_string();
             if let Err(e) = self.set_workspaces(next) {
                 self.ui.status = e;
@@ -1570,6 +1591,9 @@ impl FilmcraftApp {
             actions.extend(dock::draw_group_chrome(ui, g, self.ui.focused, &seqs, &t, &mut self.auto));
         }
         if maximized.is_none() {
+            actions.extend(dock::drag_overlay(ui, &groups, &t));
+        }
+        if maximized.is_none() {
             self.ui.dock = dock;
         }
         for g in &groups {
@@ -1601,6 +1625,12 @@ impl FilmcraftApp {
                 dock::DockAction::MoveSequence(id, index) => {
                     if let Err(e) = self.session.execute("sequence.moveTab", json!({"item": id, "index": index})) {
                         self.ui.status = e.to_string();
+                    }
+                }
+                dock::DockAction::Dock { panel, anchor, zone } => {
+                    if self.ui.dock.dock(panel, anchor, zone) {
+                        self.ui.focused = panel;
+                        self.keep_live_layout();
                     }
                 }
                 dock::DockAction::PanelMenu(p, pos) => {

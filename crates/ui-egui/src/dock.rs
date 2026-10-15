@@ -174,6 +174,10 @@ pub const WORKSPACES_FILE: &str = "workspaces.json";
 pub struct WorkspacePrefs {
     pub saved: Vec<SavedWorkspace>,
     pub current: String,
+    /// The layout in use when it was changed by hand (panels docked elsewhere) and not saved
+    /// into the workspace: reopened at launch; Reset to Saved Layout drops it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub live: Option<SavedWorkspace>,
 }
 
 /// A named layout. `layout` is a [`DockNode`] kept as JSON, so one unreadable entry (a panel a
@@ -361,6 +365,62 @@ impl DockNode {
             *active = (*active).min(panels.len().saturating_sub(1));
         }
     }
+    /// Move panel `p` next to the group holding `anchor` (Premiere's panel docking): as a tab
+    /// (`Center` = last, `Tab(i)` = at that place: also reorders inside a group), or in a new
+    /// group split off the left/right/top/bottom of it. Empty groups left behind collapse.
+    /// False (nothing changed) when the move makes no sense (a panel onto itself alone).
+    pub fn dock(&mut self, p: PanelKind, anchor: PanelKind, zone: DropZone) -> bool {
+        if p == anchor && !matches!(zone, DropZone::Tab(_)) {
+            return false;
+        }
+        fn find(n: &mut DockNode, anchor: PanelKind) -> Option<&mut DockNode> {
+            match n {
+                DockNode::Split { a, b, .. } => {
+                    if a.contains(anchor) {
+                        find(a, anchor)
+                    } else {
+                        find(b, anchor)
+                    }
+                }
+                DockNode::Tabs { panels, .. } => panels.contains(&anchor).then_some(n),
+            }
+        }
+        // a tab moved inside its own group: a reorder only
+        if let (DropZone::Tab(i), Some(DockNode::Tabs { panels, active })) = (zone, find(self, anchor))
+            && let Some(from) = panels.iter().position(|x| *x == p)
+        {
+            panels.remove(from);
+            let to = if i > from { i - 1 } else { i }.min(panels.len());
+            panels.insert(to, p);
+            *active = to;
+            return true;
+        }
+        if p == anchor {
+            return false;
+        }
+        self.close(p);
+        let Some(n) = find(self, anchor) else { return false };
+        match zone {
+            DropZone::Center | DropZone::Tab(_) => {
+                if let DockNode::Tabs { panels, active } = n {
+                    let at = match zone {
+                        DropZone::Tab(i) => i.min(panels.len()),
+                        _ => panels.len(),
+                    };
+                    panels.insert(at, p);
+                    *active = at;
+                }
+            }
+            DropZone::Left | DropZone::Right | DropZone::Top | DropZone::Bottom => {
+                let old = n.clone();
+                let new = tabs(&[p], 0);
+                let vertical = matches!(zone, DropZone::Top | DropZone::Bottom);
+                let (a, b) = if matches!(zone, DropZone::Left | DropZone::Top) { (new, old) } else { (old, new) };
+                *n = DockNode::Split { vertical, size: SplitSize::Ratio(0.5), a: Box::new(a), b: Box::new(b) };
+            }
+        }
+        true
+    }
     /// Put the Timeline panel back where the workspaces keep it (left of the audio meters) after
     /// it was closed, so opening a sequence always has somewhere to show it.
     pub fn restore_timeline(&mut self) {
@@ -416,6 +476,119 @@ pub struct Group {
     pub active: usize,
 }
 
+/// Widest a sequence tab's name is drawn (points); longer names are cut in the middle.
+pub const SEQ_TAB_MAX: f32 = 260.0;
+
+/// Where a dragged panel tab lands in a group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DropZone {
+    /// Among the tabs, at this place.
+    Tab(usize),
+    /// As the group's last tab.
+    Center,
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+/// A panel tab being dragged (to dock it elsewhere).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct DockDrag {
+    panel: PanelKind,
+    origin: egui::Pos2,
+}
+
+fn dock_drag_id() -> egui::Id {
+    egui::Id::new("dock-drag")
+}
+
+/// The panel tab being dragged, if any.
+pub fn dragging_panel(ctx: &egui::Context) -> Option<PanelKind> {
+    ctx.data(|d| d.get_temp::<DockDrag>(dock_drag_id())).map(|d| d.panel)
+}
+
+/// The zone of `g` under `p` for a dragged panel: the tab strip → among the tabs; the outer
+/// quarter of the content → a new group on that side; the middle → a tab of the group.
+pub fn drop_zone(g: &Group, p: egui::Pos2, tab_rights: &[f32]) -> Option<DropZone> {
+    if !g.rect.contains(p) {
+        return None;
+    }
+    if p.y < g.content.min.y {
+        return Some(DropZone::Tab(tab_rights.iter().position(|r| p.x < *r).unwrap_or(tab_rights.len())));
+    }
+    let c = g.content;
+    let fx = (p.x - c.min.x) / c.width().max(1.0);
+    let fy = (p.y - c.min.y) / c.height().max(1.0);
+    // the nearest edge wins inside the outer quarter
+    let edges = [(fx, DropZone::Left), (1.0 - fx, DropZone::Right), (fy, DropZone::Top), (1.0 - fy, DropZone::Bottom)];
+    let (d, z) = edges.iter().copied().fold((f32::MAX, DropZone::Center), |acc, (d, z)| if d < acc.0 { (d, z) } else { acc });
+    Some(if d < 0.25 { z } else { DropZone::Center })
+}
+
+/// The rectangle a drop in `zone` of `g` would fill (the highlight shown while dragging).
+pub fn zone_rect(g: &Group, zone: DropZone, tab_rights: &[f32]) -> Rect {
+    let c = g.content;
+    match zone {
+        DropZone::Center => c,
+        DropZone::Left => Rect::from_min_max(c.min, pos2(c.center().x, c.max.y)),
+        DropZone::Right => Rect::from_min_max(pos2(c.center().x, c.min.y), c.max),
+        DropZone::Top => Rect::from_min_max(c.min, pos2(c.max.x, c.center().y)),
+        DropZone::Bottom => Rect::from_min_max(pos2(c.min.x, c.center().y), c.max),
+        DropZone::Tab(i) => {
+            let x = if i == 0 { g.rect.min.x + 10.0 } else { tab_rights.get(i - 1).copied().unwrap_or(g.rect.min.x + 10.0) + 2.0 };
+            Rect::from_min_max(pos2(x - 2.0, g.rect.min.y + 4.0), pos2(x + 2.0, g.content.min.y - 2.0))
+        }
+    }
+}
+
+/// While a panel tab is dragged: the drop zones of the group under the pointer, highlighted;
+/// on release, the docking action. Called once per frame after every group was drawn.
+pub fn drag_overlay(ui: &mut egui::Ui, groups: &[Group], t: &Tokens) -> Option<DockAction> {
+    let ctx = ui.ctx().clone();
+    let rights: Vec<(String, Vec<f32>)> = groups
+        .iter()
+        .map(|g| (g.path.clone(), ctx.data(|d| d.get_temp::<Vec<f32>>(egui::Id::new(("dock-tab-rights", g.path.clone())))).unwrap_or_default()))
+        .collect();
+    let drag = ctx.data(|d| d.get_temp::<DockDrag>(dock_drag_id()))?;
+    let pointer = ctx.pointer_latest_pos()?;
+    let released = ctx.input(|i| i.pointer.any_released());
+    // a few points of movement before it counts as a docking drag (a click stays a click)
+    let moved = (pointer - drag.origin).length() > 8.0;
+    let mut out = None;
+    if moved {
+        ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+        let hit = groups.iter().find_map(|g| {
+            let r = rights.iter().find(|(p, _)| *p == g.path).map(|(_, v)| v.as_slice()).unwrap_or(&[]);
+            drop_zone(g, pointer, r).map(|z| (g, z, r))
+        });
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("dock-drag-overlay")));
+        if let Some((g, z, r)) = hit {
+            let zr = zone_rect(g, z, r);
+            painter.rect_filled(zr, 4.0, t.focus.gamma_multiply(0.25));
+            painter.rect_stroke(zr, 4.0, Stroke::new(2.0, t.focus), StrokeKind::Inside);
+            let anchor = g.panels.get(g.active).copied().filter(|a| *a != drag.panel).or_else(|| g.panels.iter().copied().find(|a| *a != drag.panel));
+            let anchor = match z {
+                DropZone::Tab(_) => anchor.or(Some(drag.panel)),
+                _ => anchor,
+            };
+            if released && let Some(anchor) = anchor {
+                out = Some(DockAction::Dock { panel: drag.panel, anchor, zone: z });
+            }
+        }
+        // the panel's name follows the pointer
+        let galley = painter.layout_no_wrap(crate::i18n::t(drag.panel.title()).to_string(), Tokens::ui(12.0), t.tab_text_active);
+        let lr = Rect::from_min_size(pointer + vec2(12.0, 12.0), galley.size() + vec2(12.0, 6.0));
+        painter.rect_filled(lr, 4.0, t.panel_bg);
+        painter.rect_stroke(lr, 4.0, Stroke::new(1.0, t.focus), StrokeKind::Inside);
+        painter.galley(lr.min + vec2(6.0, 3.0), galley, t.tab_text_active);
+    }
+    if released || !ctx.input(|i| i.pointer.any_down()) {
+        ctx.data_mut(|d| d.remove::<DockDrag>(dock_drag_id()));
+    }
+    out
+}
+
 /// Actions produced by interacting with the dock chrome.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DockAction {
@@ -428,6 +601,12 @@ pub enum DockAction {
     CloseSequence(u64),
     /// A sequence tab was dragged past a neighbour: its new place among the sequence tabs.
     MoveSequence(u64, usize),
+    /// A panel tab was dragged onto a group (`anchor` = a panel of that group).
+    Dock {
+        panel: PanelKind,
+        anchor: PanelKind,
+        zone: DropZone,
+    },
 }
 
 /// Size of a split's first child in `avail` points: the requested size, keeping both children at
@@ -530,18 +709,28 @@ pub fn draw_group_chrome(
             panel: PanelKind,
             seq: Option<u64>,
             title: String,
+            /// The full name when `title` was cut (shown on hover).
+            full: String,
             active: bool,
         }
         let mut tabs: Vec<Tab> = Vec::new();
         for (i, p) in g.panels.iter().enumerate() {
             let active = i == g.active;
             if *p == PanelKind::Timeline && active && !seqs.open.is_empty() {
-                tabs.extend(seqs.open.iter().map(|(id, name)| Tab { panel: *p, seq: Some(*id), title: name.clone(), active: seqs.active == Some(*id) }));
+                tabs.extend(seqs.open.iter().map(|(id, name)| Tab {
+                    panel: *p,
+                    seq: Some(*id),
+                    title: crate::theme::elide_middle(&painter, name, 12.0, SEQ_TAB_MAX),
+                    full: name.clone(),
+                    active: seqs.active == Some(*id),
+                }));
             } else if *p == PanelKind::Timeline {
                 let name = seqs.open.iter().find(|(id, _)| seqs.active == Some(*id)).map(|(_, n)| n.clone());
-                tabs.push(Tab { panel: *p, seq: None, title: name.unwrap_or_else(|| tl!("Timeline: (no sequences)").into()), active });
+                let name = name.unwrap_or_else(|| tl!("Timeline: (no sequences)").into());
+                tabs.push(Tab { panel: *p, seq: None, title: crate::theme::elide_middle(&painter, &name, 12.0, SEQ_TAB_MAX), full: name, active });
             } else {
-                tabs.push(Tab { panel: *p, seq: None, title: crate::i18n::t(p.title()).to_string(), active });
+                let title = crate::i18n::t(p.title()).to_string();
+                tabs.push(Tab { panel: *p, seq: None, title: title.clone(), full: title, active });
             }
         }
         let activate = |tab: &Tab, actions: &mut Vec<DockAction>| match tab.seq {
@@ -591,6 +780,7 @@ pub fn draw_group_chrome(
         let mut x = strip.min.x + 12.0;
         // sequence tabs as drawn (for dragging one past its neighbours), and the one being dragged
         let mut seq_rects: Vec<(u64, Rect)> = Vec::new();
+        let mut tab_rights: Vec<f32> = Vec::new();
         let mut dragged: Option<u64> = None;
         for (i, tab) in tabs.iter().enumerate().take(last + 1).skip(first) {
             let p = &tab.panel;
@@ -602,8 +792,16 @@ pub fn draw_group_chrome(
             // a sequence tab keeps its identity when the tabs are reordered under the pointer
             let resp = match tab.seq {
                 Some(id) => ui.interact(tab_rect, egui::Id::new(("tab-seq", g.path.clone(), id)), Sense::click_and_drag()),
-                None => ui.interact(tab_rect, egui::Id::new(("tab", g.path.clone(), i)), Sense::click()),
+                None => ui.interact(tab_rect, egui::Id::new(("tab", g.path.clone(), i)), Sense::click_and_drag()),
             };
+            tab_rights.push(tab_rect.max.x);
+            let resp = if tab.full != tab.title { resp.on_hover_text(tab.full.clone()) } else { resp };
+            // dragging a panel's tab docks the panel elsewhere (a sequence tab reorders sequences;
+            // the Timeline panel itself is moved by its tab when it shows no sequence tabs)
+            if tab.seq.is_none() && resp.drag_started() {
+                let origin = resp.interact_pointer_pos().unwrap_or(tab_rect.center());
+                ui.ctx().data_mut(|d| d.insert_temp(dock_drag_id(), DockDrag { panel: tab.panel, origin }));
+            }
             if let Some(id) = tab.seq {
                 seq_rects.push((id, tab_rect));
                 if resp.dragged() {
@@ -667,6 +865,7 @@ pub fn draw_group_chrome(
             }
             x += w + 8.0;
         }
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(("dock-tab-rights", g.path.clone())), tab_rights));
         // Dragging a sequence tab sideways: it changes places with a neighbour when the pointer
         // passes that neighbour's middle.
         if let Some(id) = dragged

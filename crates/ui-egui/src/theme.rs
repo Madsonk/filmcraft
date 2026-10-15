@@ -445,3 +445,29 @@ mod tests {
         });
     }
 }
+
+/// `text` cut in the middle with "…" so it fits `width` points at `size` (the start and the end
+/// tell long names apart: "01bis STRICT (Canon…+ Kap Vie + Mallory"). Unchanged when it fits.
+pub fn elide_middle(painter: &egui::Painter, text: &str, size: f32, width: f32) -> String {
+    let w = |s: &str| painter.layout_no_wrap(s.to_string(), Tokens::ui(size), egui::Color32::WHITE).size().x;
+    let full = w(text);
+    if full <= width {
+        return text.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let cut = |keep: usize| -> String {
+        let head = keep * 2 / 5;
+        let tail = keep - head;
+        chars[..head].iter().chain(['…'].iter()).chain(chars[chars.len() - tail..].iter()).collect()
+    };
+    // start from the proportional guess, then trim a few characters until it fits
+    let mut keep = ((chars.len() as f32 * width / full) as usize).min(chars.len().saturating_sub(1));
+    while keep > 4 {
+        let s = cut(keep);
+        if w(&s) <= width {
+            return s;
+        }
+        keep -= 2;
+    }
+    cut(keep.max(1))
+}

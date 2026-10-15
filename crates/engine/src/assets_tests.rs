@@ -265,3 +265,43 @@ fn the_look_preview_frame_is_the_shot_and_an_identity_lut_keeps_it() {
     // the preview clip is the selected video clip, else the one under the playhead
     assert!(crate::assets::preview_clip(&s).is_some());
 }
+
+#[test]
+fn a_drop_in_a_new_track_zone_makes_the_track_in_the_same_undo_step() {
+    let mut s = demo();
+    let d = tmp_dir("assets-newtrack");
+    let w = wav(&d, "boom.wav");
+    let p = png(&d);
+    let (_, t) = first_video_clip(&s);
+    let (v0, a0) = {
+        let q = s.active_sequence().unwrap();
+        (q.video_tracks.len(), q.audio_tracks.len())
+    };
+    let undo0 = s.history.undo.len();
+    // above the top video track: a new V(n+1)
+    let r = s.execute("assets.place", json!({"paths": [p], "newTrack": {"kind": "video", "index": v0}, "time": t.0})).unwrap();
+    let (kind, idx) = track_index(&s, r["placed"][0]["track"].as_u64().unwrap());
+    assert_eq!((kind, idx), (TrackKind::Video, v0), "{r}");
+    assert_eq!(s.active_sequence().unwrap().video_tracks.len(), v0 + 1);
+    assert_eq!(clip_count(&s, TrackKind::Video, v0), 1);
+    assert_eq!(s.history.undo.len(), undo0 + 1, "track + placement = one undo step");
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(s.active_sequence().unwrap().video_tracks.len(), v0, "the undo removes the new track too");
+    // below the last audio track: a new A(n+1)
+    let r = s.execute("assets.place", json!({"paths": [w.clone()], "newTrack": {"kind": "audio", "index": a0}, "time": t.0})).unwrap();
+    assert_eq!(track_index(&s, r["placed"][0]["track"].as_u64().unwrap()), (TrackKind::Audio, a0));
+    s.execute("edit.undo", json!({})).unwrap();
+    // between V1 and V2: a new track at index 1, the others move up
+    let v2_before = s.active_sequence().unwrap().video_tracks.get(1).map(|t| t.id);
+    let r = s.execute("assets.place", json!({"paths": [png(&d)], "newTrack": {"kind": "video", "index": 1}, "time": t.0})).unwrap();
+    assert_eq!(track_index(&s, r["placed"][0]["track"].as_u64().unwrap()), (TrackKind::Video, 1));
+    if let Some(old) = v2_before {
+        assert_eq!(s.active_sequence().unwrap().video_tracks[2].id, old, "the old V2 is now V3");
+    }
+    // a sound dropped in a video new-track zone does not make an empty video track
+    let v_now = s.active_sequence().unwrap().video_tracks.len();
+    let r = s.execute("assets.place", json!({"paths": [w], "newTrack": {"kind": "video", "index": v_now}, "time": t.0})).unwrap();
+    assert_eq!(track_index(&s, r["placed"][0]["track"].as_u64().unwrap()).0, TrackKind::Audio);
+    assert_eq!(s.active_sequence().unwrap().video_tracks.len(), v_now);
+    assert!(s.execute("assets.place", json!({"paths": ["/x.wav"], "newTrack": {"kind": "both", "index": 0}, "time": t.0})).is_err());
+}

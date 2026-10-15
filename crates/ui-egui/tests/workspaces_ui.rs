@@ -278,3 +278,80 @@ fn save_rename_and_delete_through_the_dialogs() {
     assert!(d.app().ui.workspace_dialog.is_none(), "Close closes the dialog");
     let _ = std::fs::remove_dir_all(&data);
 }
+
+impl Driver {
+    fn rect(&mut self, id: &str) -> egui::Rect {
+        let v = self.ok("ui.elements", json!({"prefix": id}));
+        let e = v.as_array().unwrap().iter().find(|e| e["id"] == json!(id)).unwrap_or_else(|| panic!("no element {id}")).clone();
+        let r: Vec<f32> = e["rect"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap() as f32).collect();
+        egui::Rect::from_min_size(egui::pos2(r[0], r[1]), egui::vec2(r[2], r[3]))
+    }
+
+    /// A mouse drag as the OS delivers it: press, then one small move per frame, then release.
+    fn mouse_drag(&mut self, from: egui::Pos2, to: egui::Pos2) {
+        let ev = |d: &mut Driver, e: egui::Event| {
+            d.harness.input_mut().events.push(e);
+            d.frames(1);
+        };
+        ev(self, egui::Event::PointerMoved(from));
+        ev(self, egui::Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+        for i in 1..=16 {
+            ev(self, egui::Event::PointerMoved(from + (to - from) * (i as f32 / 16.0)));
+        }
+        ev(self, egui::Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+        self.frames(3);
+    }
+
+    /// The tab group holding `p`, as its panels.
+    fn group_of(&mut self, p: PanelKind) -> Vec<PanelKind> {
+        fn find(n: &filmcraft_ui_egui::dock::DockNode, p: PanelKind) -> Option<Vec<PanelKind>> {
+            match n {
+                filmcraft_ui_egui::dock::DockNode::Split { a, b, .. } => find(a, p).or_else(|| find(b, p)),
+                filmcraft_ui_egui::dock::DockNode::Tabs { panels, .. } => panels.contains(&p).then(|| panels.clone()),
+            }
+        }
+        find(&self.app().ui.dock, p).unwrap_or_default()
+    }
+}
+
+#[test]
+fn panels_dock_by_dragging_their_tab_and_the_layout_survives_a_restart() {
+    let data = data_dir("dock");
+    let mut d = Driver::launch(&data);
+    d.menu("window.workspace.editing", json!({}));
+    d.frames(3);
+    assert!(d.group_of(PanelKind::MediaBrowser).contains(&PanelKind::Project), "starts beside Project");
+    // drag the Media Browser tab onto the right quarter of the Program monitor: a new group there
+    let tab = d.rect("panel.tab.MediaBrowser");
+    let prog = d.rect("panel.Program");
+    d.mouse_drag(tab.center(), egui::pos2(prog.max.x - 20.0, prog.center().y));
+    assert_eq!(d.group_of(PanelKind::MediaBrowser), vec![PanelKind::MediaBrowser], "a group of its own");
+    assert!(d.group_of(PanelKind::Program).contains(&PanelKind::Program) && !d.group_of(PanelKind::Project).contains(&PanelKind::MediaBrowser));
+    d.snapshot("dock-right-of-program");
+    // a click on a tab is still a click (no docking)
+    let info = d.rect("panel.tab.Info");
+    d.mouse_drag(info.center(), info.center() + egui::vec2(2.0, 0.0));
+    assert!(d.group_of(PanelKind::Info).contains(&PanelKind::Project));
+    // the centre of a group: a tab of that group
+    let info = d.rect("panel.tab.Info");
+    let src = d.rect("panel.Source");
+    d.mouse_drag(info.center(), src.center());
+    assert!(d.group_of(PanelKind::Info).contains(&PanelKind::Source), "{:?}", d.group_of(PanelKind::Info));
+    // reorder inside a group: Info dragged onto the first tab's place
+    let first = d.group_of(PanelKind::Info)[0];
+    let ft = d.rect(&format!("panel.tab.{}", first.id()));
+    let info = d.rect("panel.tab.Info");
+    d.mouse_drag(info.center(), egui::pos2(ft.min.x + 4.0, ft.center().y));
+    assert_eq!(d.group_of(PanelKind::Info)[0], PanelKind::Info, "{:?}", d.group_of(PanelKind::Info));
+    // the layout is kept: a restart reopens it
+    drop(d);
+    let mut d = Driver::launch(&data);
+    d.frames(3);
+    assert_eq!(d.group_of(PanelKind::MediaBrowser), vec![PanelKind::MediaBrowser], "kept after a restart");
+    // Reset to Saved Layout puts the workspace back
+    d.menu("window.workspace.reset", json!({}));
+    d.frames(2);
+    assert!(d.group_of(PanelKind::MediaBrowser).contains(&PanelKind::Project));
+    assert!(saved_file(&data).get("live").is_none_or(Value::is_null), "the hand-made layout is dropped");
+    let _ = std::fs::remove_dir_all(&data);
+}

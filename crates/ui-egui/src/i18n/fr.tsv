@@ -3648,3 +3648,11 @@
 	Right-click: empty the preview cache	Clic droit : vider le cache des aperçus
 	Empty the preview cache ({mb} MB)	Vider le cache des aperçus ({mb} Mo)
 	Preview cache emptied	Cache des aperçus vidé
+	Reset this curve	Réinitialiser cette courbe
+	In {x} → Out {y}	Entrée {x} → Sortie {y}
+	Hue {x}° · {y}	Teinte {x}° · {y}
+	{x} % · {y}	{x} % · {y}
+	On a new video track {track}	Sur une nouvelle piste vidéo {track}
+	On a new audio track {track}	Sur une nouvelle piste audio {track}
+	On a free track at this time	Sur une piste libre à cet instant
+	no preview	aperçu vide

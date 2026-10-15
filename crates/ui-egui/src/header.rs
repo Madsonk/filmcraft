@@ -125,17 +125,18 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let left = left_end + 12.0;
         let right = r.min.x - 12.0;
         if right > left + 40.0 {
-            let mut job = egui::text::LayoutJob::simple_singleline(title, Tokens::ui(14.0), t.tab_text_active);
-            job.wrap.max_width = right - left;
-            job.wrap.max_rows = 1;
-            let galley = p.layout_job(job);
+            // a long name is cut in the middle (its start and end stay readable), full on hover
+            let shown = crate::theme::elide_middle(&p, &title, 14.0, right - left);
+            let elided = shown != title;
+            let galley = p.layout_no_wrap(shown, Tokens::ui(14.0), t.tab_text_active);
             let half = galley.size().x / 2.0;
             let center = if rect.center().x - half >= left && rect.center().x + half <= right { rect.center().x } else { (left + right) / 2.0 };
-            p.with_clip_rect(Rect::from_min_max(pos2(left, rect.min.y), pos2(right, rect.max.y))).galley(
-                pos2(center - half, rect.center().y - galley.size().y / 2.0),
-                galley,
-                t.tab_text_active,
-            );
+            let tr = Rect::from_min_size(pos2(center - half, rect.center().y - galley.size().y / 2.0), galley.size());
+            p.with_clip_rect(Rect::from_min_max(pos2(left, rect.min.y), pos2(right, rect.max.y))).galley(tr.min, galley, t.tab_text_active);
+            app.auto.add("header.title", tr, &title);
+            if elided {
+                ui.interact(tr, egui::Id::new("hdr-title"), Sense::hover()).on_hover_text(title.clone());
+            }
         }
 
         if resp.clicked() {

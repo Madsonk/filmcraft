@@ -347,8 +347,11 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let note = tl!(
             "Titles made in Premiere become editable titles (text, colours, fonts) when dropped. After Effects titles are “preview only”: a reference, not the title."
         );
-        let nr = Rect::from_min_size(pos2(rect.min.x + 8.0, top), vec2(rect.width() - 16.0, 28.0));
-        let galley = ui.painter().layout(note.to_string(), Tokens::ui(10.0), t.text_dim, nr.width());
+        // wrapped to what is visible of the panel (a narrow panel shows every word, nothing cut)
+        let vis = rect.intersect(ui.clip_rect());
+        let nr = Rect::from_min_size(pos2(vis.min.x + 8.0, top), vec2((vis.width() - 16.0).max(60.0), 28.0));
+        let galley = ui.painter().layout(note.to_string(), Tokens::ui(10.5), t.text_dim, nr.width());
+        app.auto.add("resources.titlesNote", Rect::from_min_size(nr.min, galley.size()), note);
         top += galley.size().y + 4.0;
         ui.painter().galley(nr.min, galley, t.text_dim);
         top = convert_all_row(app, ui, &snap, &rows, rect, top);
@@ -682,8 +685,11 @@ fn titles_grid(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, s
                         t.field_bg
                     },
                 );
-                let img_r = Rect::from_min_size(r.min + vec2(4.0, 4.0), vec2(TILE_W - 8.0, TILE_H - 26.0));
+                let img_r = Rect::from_min_size(r.min + vec2(4.0, 4.0), vec2(TILE_W - 8.0, TILE_H - 30.0));
                 let key = e.thumb.clone().unwrap_or_default();
+                // a neutral checkerboard behind the picture: a title on a transparent background
+                // (white or black text) stays visible
+                checker(ui.painter(), img_r);
                 match app.assets.thumbs.get(&key) {
                     Some(Some(tex)) => {
                         let sz = tex.size_vec2();
@@ -691,23 +697,33 @@ fn titles_grid(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, s
                         let ir = Rect::from_center_size(img_r.center(), sz * s);
                         ui.painter().image(tex.id(), ir, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
                     }
-                    Some(None) => {}
-                    None => {
-                        if !key.is_empty() {
-                            want.push(key);
-                        }
+                    // no picture, or an empty one (some packs ship an all-black preview): the
+                    // title's name, large, instead of a black square
+                    Some(None) | None if key.is_empty() || app.assets.thumbs.get(&key).is_some() => {
+                        let g = ui.painter().layout(display_name(&e.name).0.to_string(), Tokens::ui(13.0), Color32::from_gray(230), img_r.width() - 12.0);
+                        let at = img_r.center() - g.size() / 2.0;
+                        ui.painter().rect_filled(Rect::from_min_size(at - vec2(4.0, 2.0), g.size() + vec2(8.0, 4.0)), 3.0, Color32::from_black_alpha(140));
+                        ui.painter().with_clip_rect(img_r).galley(at, g, Color32::from_gray(230));
+                        ui.painter().text(
+                            img_r.left_bottom() + vec2(4.0, -4.0),
+                            Align2::LEFT_BOTTOM,
+                            tl!("no preview"),
+                            Tokens::ui(9.0),
+                            Color32::from_gray(200),
+                        );
                     }
+                    _ => want.push(key),
                 }
                 let badge = if e.ready { tl!("editable") } else { tl!("preview only") };
-                let name = elide_middle(ui, display_name(&e.name).0, TILE_W - 8.0);
-                ui.painter().text(pos2(r.min.x + 4.0, r.max.y - 14.0), Align2::LEFT_CENTER, name, Tokens::ui(10.5), t.text);
-                ui.painter().text(
-                    pos2(r.max.x - 6.0, r.min.y + 12.0),
-                    Align2::RIGHT_CENTER,
-                    badge,
-                    Tokens::ui(9.5),
-                    if e.ready { t.accent } else { t.text_faint },
-                );
+                // the name on two lines (cut in the middle beyond), readable
+                let nm = display_name(&e.name).0.to_string();
+                let g = ui.painter().layout(nm, Tokens::ui(11.0), t.text, TILE_W - 8.0);
+                let name_r = Rect::from_min_max(pos2(r.min.x + 4.0, img_r.max.y + 2.0), pos2(r.max.x - 4.0, r.max.y - 1.0));
+                ui.painter().with_clip_rect(name_r).galley(name_r.min, g, t.text);
+                let bg = ui.painter().layout_no_wrap(badge.to_string(), Tokens::ui(9.5), if e.ready { t.accent } else { t.text_faint });
+                let br = Rect::from_min_size(pos2(r.max.x - 8.0 - bg.size().x, r.min.y + 6.0), bg.size() + vec2(4.0, 2.0));
+                ui.painter().rect_filled(br, 3.0, Color32::from_black_alpha(170));
+                ui.painter().galley(br.min + vec2(2.0, 1.0), bg, t.accent);
                 let resp = resp.on_hover_text(format!("{}\n{}", e.name, e.dir));
                 if resp.double_clicked() {
                     action = Some((n, "apply"));
@@ -725,10 +741,12 @@ fn titles_grid(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, s
         let sink = app.assets.thumbs_loading.clone();
         let ctx2 = ctx.clone();
         let _ = std::thread::Builder::new().name("res-thumb".into()).spawn(move || {
-            let img = std::fs::read(&p).ok().and_then(|b| image::load_from_memory(&b).ok()).map(|im| {
-                let im = im.thumbnail(240, 240).to_rgba8();
-                egui::ColorImage::from_rgba_unmultiplied([im.width() as usize, im.height() as usize], im.as_raw())
-            });
+            let img = std::fs::read(&p)
+                .ok()
+                .and_then(|b| image::load_from_memory(&b).ok())
+                .map(|im| im.thumbnail(240, 240).to_rgba8())
+                .filter(|im| !is_blank(im))
+                .map(|im| egui::ColorImage::from_rgba_unmultiplied([im.width() as usize, im.height() as usize], im.as_raw()));
             sink.lock().unwrap_or_else(|e| e.into_inner()).push((p, img));
             ctx2.request_repaint();
         });
@@ -744,6 +762,26 @@ fn titles_grid(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, s
                 app.assets.drag = Some(AssetDrag { paths: vec![e.path.clone()], label: e.name.clone() });
             }
             _ => apply(app, Kind::Titles, &e.path),
+        }
+    }
+}
+
+/// A preview that shows nothing: every pixel black (or nearly), or fully transparent.
+pub fn is_blank(im: &image::RgbaImage) -> bool {
+    im.pixels().all(|p| p[3] < 8 || (p[0] < 12 && p[1] < 12 && p[2] < 12))
+}
+
+/// A neutral grey checkerboard (behind pictures that may be transparent).
+fn checker(p: &egui::Painter, r: Rect) {
+    p.rect_filled(r, 2.0, Color32::from_gray(58));
+    let s = 8.0;
+    let (nx, ny) = ((r.width() / s).ceil() as i32, (r.height() / s).ceil() as i32);
+    let p = p.with_clip_rect(r);
+    for j in 0..ny {
+        for i in 0..nx {
+            if (i + j) % 2 == 0 {
+                p.rect_filled(Rect::from_min_size(pos2(r.min.x + i as f32 * s, r.min.y + j as f32 * s), vec2(s, s)), 0.0, Color32::from_gray(74));
+            }
         }
     }
 }
@@ -984,27 +1022,7 @@ pub fn toggle_play(app: &mut FilmcraftApp, path: &str, frac: f32) {
 
 /// `text` shortened in the middle ("start … end") to fit `width` at the row font.
 fn elide_middle(ui: &egui::Ui, text: &str, width: f32) -> String {
-    let w = |s: &str| ui.painter().layout_no_wrap(s.to_string(), Tokens::ui(11.5), egui::Color32::WHITE).size().x;
-    let full = w(text);
-    if full <= width {
-        return text.to_string();
-    }
-    let chars: Vec<char> = text.chars().collect();
-    let cut = |keep: usize| -> String {
-        let head = keep * 2 / 5;
-        let tail = keep - head;
-        chars[..head].iter().chain(['…'].iter()).chain(chars[chars.len() - tail..].iter()).collect()
-    };
-    // start from the proportional guess, then trim a few characters until it fits
-    let mut keep = ((chars.len() as f32 * width / full) as usize).min(chars.len().saturating_sub(1));
-    while keep > 4 {
-        let s = cut(keep);
-        if w(&s) <= width {
-            return s;
-        }
-        keep -= 2;
-    }
-    cut(keep.max(1))
+    crate::theme::elide_middle(ui.painter(), text, 11.5, width)
 }
 
 #[cfg(test)]
