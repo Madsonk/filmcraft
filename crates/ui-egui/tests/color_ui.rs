@@ -22,12 +22,17 @@ struct Driver {
 
 impl Driver {
     fn demo() -> Self {
+        Self::demo_at(1.0 / 4.0)
+    }
+
+    /// `step_dt`: seconds per frame (1/60 for mouse gestures timed like a person's).
+    fn demo_at(step_dt: f32) -> Self {
         let mut session = Session::default();
         session.execute("file.openDemoProject", json!({})).expect("demo project");
         let (tx, rx) = channel();
         let app = FilmcraftApp::new(session).with_control(rx);
         let snapshots = std::env::var_os("FILMCRAFT_UI_SNAPSHOT_DIR").map(std::path::PathBuf::from);
-        let mut b = Harness::builder().with_size(egui::vec2(1600.0, 980.0)).with_max_steps(10_000);
+        let mut b = Harness::builder().with_size(egui::vec2(1600.0, 980.0)).with_max_steps(10_000).with_step_dt(step_dt);
         if snapshots.is_some() {
             b = b.wgpu();
         }
@@ -380,4 +385,80 @@ fn match_shot_colour_dialog_from_the_clip_menu() {
         other => panic!("{other:?}"),
     }
     d.click("colorDialog.cancel");
+}
+
+impl Driver {
+    fn rect_of(&mut self, id: &str) -> egui::Rect {
+        let r = self.element(id).unwrap_or_else(|| panic!("no {id}"));
+        egui::Rect::from_min_size(egui::pos2(r[0], r[1]), egui::vec2(r[2], r[3]))
+    }
+    fn mouse(&mut self, e: egui::Event) {
+        self.harness.input_mut().events.push(e);
+        self.frames(1);
+    }
+    fn curve(&mut self, clip: u64, id: &str) -> Vec<Value> {
+        let e = lumetri(self, clip);
+        let v = e["params"][id]["value"].as_str().unwrap_or("").to_string();
+        // Curve([[x, y], …]) as debug text: count the points
+        (0..v.matches('[').count().saturating_sub(1)).map(|_| Value::Null).collect()
+    }
+}
+
+#[test]
+fn lumetri_curves_fill_the_panel_and_take_points_by_mouse() {
+    // frames 1/60 s apart: a double-click is two clicks a few frames apart, as by hand
+    let mut d = Driver::demo_at(1.0 / 60.0);
+    d.ok("ui.set", json!({"workspace": "Color"}));
+    d.frames(3);
+    let clip = select_first_clip(&mut d);
+    d.exec("effects.apply", json!({"clips": [clip], "effect": "lumetri"}));
+    d.frames(3);
+    d.click("lumetri.section.Curves");
+    d.frames(2);
+    let panel = d.rect_of("panel.LumetriColor");
+    // scroll the panel until the RGB curve is fully on screen
+    for _ in 0..40 {
+        let r = d.rect_of("lumetri.curve.rgb");
+        if r.max.y <= panel.max.y - 4.0 {
+            break;
+        }
+        d.ok("ui.scroll", json!({"x": panel.center().x, "y": panel.center().y, "dx": 0.0, "dy": -60.0}));
+        d.frames(2);
+    }
+    let rgb = d.rect_of("lumetri.curve.rgb");
+    assert!(panel.contains_rect(rgb), "curve {rgb:?} visible in {panel:?}");
+    assert!(rgb.width() >= panel.width() * 0.8, "the RGB curve fills the panel: {rgb:?} in {panel:?}");
+    d.snapshot("color-lumetri-curves-wide", None);
+    // a double-click on the empty curve adds a point
+    let n0 = d.curve(clip, "curve_luma").len();
+    let p = rgb.center() + egui::vec2(rgb.width() * 0.2, -rgb.height() * 0.1);
+    for _ in 0..2 {
+        d.mouse(egui::Event::PointerMoved(p));
+        d.mouse(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+        d.mouse(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    }
+    d.frames(3);
+    let n1 = d.curve(clip, "curve_luma").len();
+    assert!(n1 > n0, "a point was added ({n0} → {n1}): {}", lumetri(&mut d, clip)["params"]["curve_luma"]);
+    // the point is dragged (grabbed from 10 pt away), smoothly, frame by frame
+    let grab = p + egui::vec2(10.0, 0.0);
+    d.mouse(egui::Event::PointerMoved(grab));
+    d.mouse(egui::Event::PointerButton { pos: grab, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    for i in 1..=10 {
+        d.mouse(egui::Event::PointerMoved(grab + egui::vec2(0.0, -4.0 * i as f32)));
+    }
+    d.mouse(egui::Event::PointerButton {
+        pos: grab + egui::vec2(0.0, -40.0),
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Default::default(),
+    });
+    d.frames(3);
+    assert_eq!(d.curve(clip, "curve_luma").len(), n1, "dragging moved the point, it did not add another");
+    // ↺ resets that curve
+    assert!(d.element("lumetri.curve.rgb.reset").is_some());
+    let r = d.rect_of("lumetri.curve.rgb.reset");
+    d.ok("ui.click", json!({"x": r.center().x, "y": r.center().y}));
+    d.frames(3);
+    assert!(d.curve(clip, "curve_luma").len() <= 2, "reset: {}", lumetri(&mut d, clip)["params"]["curve_luma"]);
 }

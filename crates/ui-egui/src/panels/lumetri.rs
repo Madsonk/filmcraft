@@ -146,7 +146,9 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 ("curve_green", Color32::from_rgb(80, 200, 90)),
                 ("curve_blue", Color32::from_rgb(80, 130, 250)),
             ][ch];
-            curve_editor(ui, &e, id, false, col, &t, &mut actions, clip, idx);
+            let (area, reset) = curve_editor(ui, &e, id, false, col, &t, &mut actions, clip, idx);
+            app.auto.add("lumetri.curve.rgb", area, "RGB curve");
+            app.auto.add("lumetri.curve.rgb.reset", reset, "Reset this curve");
             if hdr {
                 let r = slider(ui, &e, mt, "curves_hdr_range", tl!("HDR Range"), None, &t, &mut actions, clip, idx);
                 auto_rows.push(("lumetri.param.curves_hdr_range".into(), r, "HDR Range"));
@@ -160,7 +162,9 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 ("sat_vs_sat", tl!("Sat vs Sat")),
             ] {
                 ui.label(egui::RichText::new(label).color(t.text_dim));
-                curve_editor(ui, &e, id, true, Color32::WHITE, &t, &mut actions, clip, idx);
+                let (area, reset) = curve_editor(ui, &e, id, true, Color32::WHITE, &t, &mut actions, clip, idx);
+                app.auto.add(&format!("lumetri.curve.{id}"), area, label);
+                app.auto.add(&format!("lumetri.curve.{id}.reset"), reset, "Reset this curve");
             }
         }
         if open_section(ui, app, &e, "Color Wheels & Match", "wheels_on", "wheels", &mut sections) {
@@ -466,7 +470,17 @@ const _: () = assert!(CURVE_GRAB >= 12.0, "points are easy to grab");
 /// A curve editor (Lumetri ▸ Curves): fills the panel's width; drag a point (or the empty curve
 /// to add one and drag it), double-click a point to remove it, double-click elsewhere to add one;
 /// the values under the pointer are shown; ↺ resets this curve.
-fn curve_editor(ui: &mut egui::Ui, e: &EffectInstance, id: &str, hue: bool, col: Color32, t: &Tokens, actions: &mut Actions, clip: ClipId, idx: usize) {
+fn curve_editor(
+    ui: &mut egui::Ui,
+    e: &EffectInstance,
+    id: &str,
+    hue: bool,
+    col: Color32,
+    t: &Tokens,
+    actions: &mut Actions,
+    clip: ClipId,
+    idx: usize,
+) -> (Rect, Rect) {
     let pts: Vec<[f32; 2]> = e.param(id).and_then(|p| p.value.as_curve().map(|c| c.to_vec())).unwrap_or_default();
     // the hue curves wrap around (red at both ends); luma / saturation curves do not
     let wraps = id.starts_with("hue_");
@@ -483,6 +497,24 @@ fn curve_editor(ui: &mut egui::Ui, e: &EffectInstance, id: &str, hue: bool, col:
     }
     let size = curve_size(ui.available_width(), hue);
     let (area, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
+    // a double-click: the second click of a pair on this curve (read from the pointer state, so
+    // a pair whose clicks land a few points apart still counts)
+    let click_key = egui::Id::new(("curve-last-click", clip.0, id));
+    let mut double = resp.double_clicked();
+    if resp.clicked()
+        && let Some(pos) = resp.interact_pointer_pos()
+    {
+        let now = ui.input(|i| i.time);
+        let last: Option<(f64, Pos2)> = ui.data(|d| d.get_temp(click_key));
+        double |= last.is_some_and(|(t0, p0)| now - t0 < 0.5 && p0.distance(pos) < 8.0);
+        ui.data_mut(|d| {
+            if double {
+                d.remove::<(f64, Pos2)>(click_key);
+            } else {
+                d.insert_temp(click_key, (now, pos));
+            }
+        });
+    }
     let p = ui.painter();
     p.rect_filled(area, 2.0, Color32::from_rgb(0x16, 0x16, 0x16));
     for i in 1..4 {
@@ -569,9 +601,7 @@ fn curve_editor(ui: &mut egui::Ui, e: &EffectInstance, id: &str, hue: bool, col:
     if resp.drag_stopped() {
         dragging = None;
     }
-    if resp.double_clicked()
-        && let Some(pos) = resp.interact_pointer_pos()
-    {
+    if double && let Some(pos) = resp.interact_pointer_pos() {
         match near(pos) {
             Some(i) => {
                 let endpoint = !hue && (i == 0 || i == pts.len() - 1);
@@ -618,6 +648,7 @@ fn curve_editor(ui: &mut egui::Ui, e: &EffectInstance, id: &str, hue: bool, col:
         actions.push(json!({"clip": clip.0, "effect": idx, "param": id, "value": v}));
     }
     ui.add_space(8.0);
+    (area, reset_rect)
 }
 
 /// Colour wheel: hue ring, draggable puck (offset), lightness slider on the left.
