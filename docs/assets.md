@@ -46,6 +46,17 @@ file name or its folder), the folder button (one folder per tab) and Refresh.
   `/Volumes/Data/FilmCraft-cache/peaks`, setting `peaksDir`); waveforms already in the sound
   index (`peaks` column, written by `index_build.py --peaks`) are taken from there. A file that
   cannot be decoded (for example a macOS `._` AppleDouble file) shows *not a readable sound*.
+- **Light previews** (previews-cache): the same single reading that makes a waveform also makes
+  the sound's preview, a mono AAC-LC file (32 kHz, 96 kbps, `.m4a`) on the local disk
+  (`/Volumes/Data/FilmCraft-cache/previews`, setting `previewsDir`; `previews: false` turns them
+  off): a sound effect whole, a music from 30 % of its length for 30 s. Key = path + size + date
+  of the original (a changed file is made again); index `previews-v1.jsonl` (failures recorded,
+  not retried). Listening on hover and ▶ read the preview when it covers the point asked, else
+  the original; **dropping a sound always places the original**. The status line counts
+  `previews: N/M`; right-click on it empties the preview cache (the waveforms are kept).
+  Night run: `filmcraft-cli assets.buildPreviews --kind sfx|music [--limit N] [--root DIR]
+  [--cache DIR] [--list FILE]` (one file at a time, resumable; `<cache>/previews/STOP` stops it
+  after the current file).
 - **Listening** happens inside the app (no `afplay`): play head on the waveform, position, pause.
   **On hover** (after 150 ms still; button ♪, settings `hoverSfx` / `hoverMusic`, on by default):
   sound effects from the start, music from 30 % of its length. Moving along the waveform scrubs,
@@ -80,7 +91,8 @@ waveform store (known, computed, failed, queued, visiblePending, lastMs) and the
 Automation ids: `resources.tab.<luts|sfx|music|titles>`, `resources.search`, `resources.folder`,
 `resources.refresh`, `resources.favorites`, `resources.recents`, `resources.hoverPlay`,
 `resources.view`, `resources.filter.<family|duration|bpm|key|loops|sort>`, `resources.row.<n>`,
-`resources.play.<n>`, `resources.star.<n>`, `resources.wave.<n>`, `resources.preview`.
+`resources.play.<n>`, `resources.star.<n>`, `resources.wave.<n>`, `resources.preview`. Control
+methods: `ui.assets.audition {path, frac?}` (listen as hover / ▶ do), `ui.assets.clearPreviews`.
 
 ## `.mogrt` titles
 
