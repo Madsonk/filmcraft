@@ -459,8 +459,9 @@ pub fn curve_size(avail: f32, centred: bool) -> egui::Vec2 {
     vec2(w, h)
 }
 
-/// Points of a curve closer than this (points) to the pointer are grabbed.
+/// Points of a curve closer than this (points) to the pointer are grabbed (was 9).
 pub const CURVE_GRAB: f32 = 14.0;
+const _: () = assert!(CURVE_GRAB >= 12.0, "points are easy to grab");
 
 /// A curve editor (Lumetri ▸ Curves): fills the panel's width; drag a point (or the empty curve
 /// to add one and drag it), double-click a point to remove it, double-click elsewhere to add one;
@@ -731,6 +732,5 @@ mod curve_tests {
         assert!(h.x >= 650.0 && h.y <= 190.0 && h.y >= 90.0, "{h:?}");
         // narrow panels keep a usable size
         assert!(curve_size(150.0, false).x >= 120.0);
-        assert!(CURVE_GRAB >= 12.0, "points are easy to grab");
     }
 }

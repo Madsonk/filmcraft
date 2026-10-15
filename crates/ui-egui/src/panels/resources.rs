@@ -699,7 +699,7 @@ fn titles_grid(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, s
                     }
                     // no picture, or an empty one (some packs ship an all-black preview): the
                     // title's name, large, instead of a black square
-                    Some(None) | None if key.is_empty() || app.assets.thumbs.get(&key).is_some() => {
+                    Some(None) | None if key.is_empty() || app.assets.thumbs.contains_key(&key) => {
                         let g = ui.painter().layout(display_name(&e.name).0.to_string(), Tokens::ui(13.0), Color32::from_gray(230), img_r.width() - 12.0);
                         let at = img_r.center() - g.size() / 2.0;
                         ui.painter().rect_filled(Rect::from_min_size(at - vec2(4.0, 2.0), g.size() + vec2(8.0, 4.0)), 3.0, Color32::from_black_alpha(140));

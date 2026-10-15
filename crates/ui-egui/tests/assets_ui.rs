@@ -690,6 +690,10 @@ fn dropping_above_the_top_video_track_or_below_the_last_audio_track_makes_a_new_
     h.state_mut().assets.tab = Some(filmcraft_ui_egui::assets::index::Kind::Sfx);
     h.state_mut().assets.filtered = None;
     wait_for(&mut h, "a sound row", |h| rect(h, "resources.row.0").is_some());
+    // small tracks: every track (and the room above / below them) is on screen
+    h.state_mut().ui.timeline.audio_track_h = 22.0;
+    h.state_mut().ui.timeline.video_track_h = 22.0;
+    steps(&mut h, 3);
     let (x, _top, bottom) = new_track_points(&h);
     let (na, undo0) = {
         let s = &h.state().session;
