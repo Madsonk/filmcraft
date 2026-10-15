@@ -288,6 +288,8 @@ fn open_resources(h: &mut H, luts: &Path, sfx: &Path, titles: &Path) {
         app.assets.settings.titles = titles.to_string_lossy().into_owned();
         app.assets.settings.sound_db = String::new();
         app.assets.settings.peaks_dir = luts.parent().unwrap_or(luts).join("peaks-cache").to_string_lossy().into_owned();
+        // never the real cache of the machine running the tests
+        app.assets.settings.previews_dir = luts.parent().unwrap_or(luts).join("previews-cache").to_string_lossy().into_owned();
     }
     let ctx = h.ctx.clone();
     filmcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "window.panel.Resources", json!({})).expect("Window ▸ Resources");
@@ -598,4 +600,68 @@ fn sounds_show_waveforms_and_listening_on_hover_plays_in_the_app() {
     filmcraft_ui_egui::assets::audition(h.state_mut(), &a, 0.0);
     assert!(h.state().ui.status.contains("timeline"), "{}", h.state().ui.status);
     h.state_mut().playback.playing = false;
+}
+
+#[test]
+fn listening_reads_the_light_preview_and_the_timeline_gets_the_original() {
+    let mut h = harness();
+    let root = tmp("previews");
+    let sfx = root.join("SFX/01 HITS");
+    std::fs::create_dir_all(&sfx).unwrap();
+    let a = wav(&sfx, "SFX · Hits · boom.wav");
+    let luts = root.join("LUTS");
+    std::fs::create_dir_all(&luts).unwrap();
+    open_resources(&mut h, &luts, root.join("SFX").as_path(), &root);
+    let out = FakeOut::install(&mut h);
+    h.state_mut().assets.tab = Some(filmcraft_ui_egui::assets::index::Kind::Sfx);
+    h.state_mut().assets.filtered = None;
+    wait_for(&mut h, "a sound row", |h| rect(h, "resources.wave.0").is_some());
+    // the row on screen is read once: waveform AND light preview
+    wait_for(&mut h, "waveform + preview", |h| {
+        let w = h.state().assets.peaks.as_ref().unwrap();
+        w.get(&a).is_some() && w.previews().is_some_and(|p| p.get(&a).is_some())
+    });
+    let store = h.state().assets.peaks.as_ref().unwrap().previews().unwrap();
+    let (file, rec) = store.get(&a).unwrap();
+    assert!(file.starts_with(root.join("previews-cache")), "{}", file.display());
+    assert_eq!(rec.kind, Some(filmcraft_ui_egui::assets::peaks::PreviewKind::Sfx));
+    assert_eq!(h.state().assets.peaks.as_ref().unwrap().stats().computed, 1, "one reading for both");
+    steps(&mut h, 2);
+    // hover: the preview is what plays
+    let row = rect(&h, "resources.row.0").unwrap();
+    h.input_mut().events.push(egui::Event::PointerMoved(row.left_center() + egui::vec2(60.0, 0.0)));
+    step(&mut h);
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    steps(&mut h, 2);
+    let mut heard = 0.0f32;
+    for _ in 0..60 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        if let Some(s) = out.pull(2400) {
+            heard = heard.max(s.iter().fold(0.0f32, |m, v| m.max(v.abs())));
+        }
+        if heard > 0.05 {
+            break;
+        }
+    }
+    let st = h.state().assets.audition.state();
+    assert_eq!(st.path.as_deref(), Some(a.as_str()));
+    assert!(st.from_preview, "the light preview is read: {st:?}");
+    assert!(heard > 0.05, "samples heard from the preview: {heard}");
+    // the timeline always gets the original, full quality
+    h.input_mut().events.push(egui::Event::PointerMoved(egui::pos2(5.0, 5.0)));
+    steps(&mut h, 2);
+    h.state_mut().ui.focused = filmcraft_ui_egui::dock::PanelKind::Resources;
+    h.input_mut().events.push(egui::Event::Key { key: egui::Key::ArrowDown, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+    steps(&mut h, 2);
+    let n0 = audio_clip_count(&h);
+    h.input_mut().events.push(egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+    steps(&mut h, 2);
+    assert_eq!(audio_clip_count(&h), n0 + 1, "placed; status: {}", h.state().ui.status);
+    let project = serde_json::to_string(&h.state().session.project).unwrap();
+    assert!(project.contains("boom.wav"), "the original is in the project");
+    assert!(!project.contains(".m4a"), "never the preview");
+    // emptying the cache keeps the waveforms
+    assert!(store.clear() > 0);
+    assert!(store.get(&a).is_none() && h.state().assets.peaks.as_ref().unwrap().get(&a).is_some());
+    let _ = std::fs::remove_dir_all(&root);
 }
