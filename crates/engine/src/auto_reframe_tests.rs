@@ -86,7 +86,7 @@ fn reframes_a_still_with_a_person_in_one_undo_step() {
     let it = q.find_item(clip).unwrap().1.clone();
     let src = s.project.source_size(it.item).unwrap();
     // the output frame, mapped back to the picture, stays inside it
-    let m = filmcraft_render::motion_matrix(q, &it, src, it.effect_time_at(it.start));
+    let m = filmcraft_render::motion_matrix(q, &it, src, None, it.effect_time_at(it.start));
     let inv = m.inverse().unwrap();
     for (x, y) in [(0.0, 0.0), (1080.0, 1920.0)] {
         let p = inv.apply(filmcraft_geom::Vec2::new(x, y));

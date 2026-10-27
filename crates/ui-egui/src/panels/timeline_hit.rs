@@ -609,6 +609,7 @@ mod tests {
             kind,
             index,
             rect: Rect::from_min_max(pos2(0.0, y0), pos2(2000.0, y1)),
+            lane: false,
         };
         let l = Layout {
             content: Rect::from_min_max(pos2(0.0, 100.0), pos2(2000.0, 500.0)),
