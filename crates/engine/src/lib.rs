@@ -1291,6 +1291,7 @@ const MAX_SUBCLIP_CHAIN: usize = 16;
 mod aaf_omf_tests;
 #[cfg(test)]
 mod animated_image_tests;
+#[cfg(test)]
 mod assets_tests;
 #[cfg(test)]
 mod audio_effects_tests;
@@ -1302,6 +1303,7 @@ mod auto_reframe_tests;
 mod autosave_tests;
 #[cfg(test)]
 mod avi_import_tests;
+#[cfg(test)]
 mod beats_tests;
 #[cfg(test)]
 mod clip_ops_tests;
