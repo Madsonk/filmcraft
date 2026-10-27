@@ -258,6 +258,8 @@ impl FilmcraftApp {
                     let _ = self.dock_command(&ctx, Action::Close { panel });
                 }
                 DockAction::Focus(panel) => self.ui.focused = panel,
+                // our pre-0.13 tab-drag docking, superseded by `BeginDrag` and the dock commands
+                DockAction::Dock { .. } => {}
                 DockAction::BeginDrag(panel) => {
                     ctx.data_mut(|data| data.insert_temp(drag_id(), panel));
                 }

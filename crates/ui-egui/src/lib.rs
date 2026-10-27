@@ -903,7 +903,7 @@ impl FilmcraftApp {
     pub fn keep_live_layout(&mut self) {
         let Ok(layout) = serde_json::to_value(&self.ui.dock) else { return };
         let mut next = self.workspaces.clone();
-        next.live = Some(dock::SavedWorkspace { name: self.ui.workspace.clone(), layout });
+        next.live = Some(dock::SavedWorkspace { name: self.ui.workspace.clone(), layout, floating: serde_json::Value::Null });
         if let Err(e) = self.set_workspaces(next) {
             self.ui.status = e;
         }
