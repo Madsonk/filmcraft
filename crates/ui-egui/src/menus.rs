@@ -751,9 +751,25 @@ fn open_recent(items: &mut Vec<MenuItem>, session: &filmcraft_engine::Session, t
     let mut sub: Vec<MenuItem> = recent
         .iter()
         .enumerate()
-        .map(|(i, p)| MenuItem { id: format!("file.openRecent.{i}"), label: recent_name(p), path: path.clone(), shortcut: None, enabled: true, checked: None, separator_before: false })
+        .map(|(i, p)| MenuItem {
+            id: format!("file.openRecent.{i}"),
+            label: recent_name(p),
+            path: path.clone(),
+            shortcut: None,
+            enabled: true,
+            checked: None,
+            separator_before: false,
+        })
         .collect();
-    sub.push(MenuItem { id: "file.clearRecent".into(), label: tr("Clear Recent Files"), path, shortcut: None, enabled: !recent.is_empty(), checked: None, separator_before: false });
+    sub.push(MenuItem {
+        id: "file.clearRecent".into(),
+        label: tr("Clear Recent Files"),
+        path,
+        shortcut: None,
+        enabled: !recent.is_empty(),
+        checked: None,
+        separator_before: false,
+    });
     items.splice(at + 1..at + 1, sub);
 }
 

@@ -744,8 +744,8 @@ mod preview_tests;
 mod region_tests;
 
 #[cfg(test)]
-#[path = "par_tests.rs"]
-mod par_tests;
-#[cfg(test)]
 #[path = "filmlook_preview_tests.rs"]
 mod filmlook_preview_tests;
+#[cfg(test)]
+#[path = "par_tests.rs"]
+mod par_tests;

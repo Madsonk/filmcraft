@@ -421,4 +421,3 @@ fn match_shot_colour_dialog_from_the_clip_menu() {
     }
     d.click("colorDialog.cancel");
 }
-
