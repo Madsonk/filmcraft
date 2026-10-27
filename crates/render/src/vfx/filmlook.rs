@@ -976,6 +976,7 @@ mod tests {
         FxCtx {
             t: Tick::ZERO,
             px_scale: 1.0,
+            frame_rate: 24.0,
             seconds,
             timecode: "01:00:00:00",
             clip_name: "clip",
