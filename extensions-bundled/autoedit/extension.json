@@ -1,0 +1,140 @@
+{
+  "formatVersion": 1,
+  "id": "autoedit",
+  "name": "AutoEdit",
+  "version": "1.1.0",
+  "category": "editing",
+  "description": "A first cut of talking footage: transcribes (built-in Whisper), removes the hesitations it wrote down (French list: euh, heu, hum, ben, bah…; an « eux » only when it stands alone between pauses), then the silences. One undo step per stage, reported in the status bar. Whisper omits or mis-spells some hesitations: only written ones are cut by word. List: parameters fillers / also / conditional of transcript.removeFillers.",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Montage auto (français)",
+      "description": "Transcribe in French, remove the French hesitations (euh, heu, hum, hmm, ben, bah… and an isolated « eux »), then the silences of 0.4 s or more (keeping 0.08 s of air).",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.transcribe",
+            "params": {
+              "language": "fr"
+            }
+          },
+          {
+            "id": "transcript.removeFillers",
+            "params": {
+              "language": "fr"
+            }
+          },
+          {
+            "id": "sequence.removeSilence",
+            "params": {
+              "minSeconds": "${var.min_silence|0.4}",
+              "keepSeconds": 0.08
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Montage auto (français, « eux » toujours coupé)",
+      "description": "As above, but cuts every « eux », isolated or not: whisper-base often writes a spoken euh as eux. A real eux (pour eux) is cut too, so check the result.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.transcribe",
+            "params": {
+              "language": "fr"
+            }
+          },
+          {
+            "id": "transcript.removeFillers",
+            "params": {
+              "fillers": [
+                "euh",
+                "heu",
+                "euhh",
+                "hum",
+                "hmm",
+                "mmh",
+                "mm",
+                "um",
+                "uh",
+                "erm",
+                "eux"
+              ]
+            }
+          },
+          {
+            "id": "sequence.removeSilence",
+            "params": {
+              "minSeconds": "${var.min_silence|0.4}",
+              "keepSeconds": 0.08
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Montage auto (anglais)",
+      "description": "Transcribe in English, remove um / uh / erm / hmm, then the silences of 0.4 s or more.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.transcribe",
+            "params": {
+              "language": "en"
+            }
+          },
+          {
+            "id": "transcript.removeFillers",
+            "params": {
+              "fillers": [
+                "um",
+                "umm",
+                "uh",
+                "uhm",
+                "erm",
+                "er",
+                "hmm",
+                "mm",
+                "mhm"
+              ]
+            }
+          },
+          {
+            "id": "sequence.removeSilence",
+            "params": {
+              "minSeconds": "${var.min_silence|0.4}",
+              "keepSeconds": 0.08
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Retirer les hésitations (transcription existante)",
+      "description": "Removes the filler words from an already transcribed sequence (the list follows the transcript's language: French or English).",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "transcript.removeFillers",
+            "params": {
+              "language": "auto"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -7,6 +7,8 @@
 //! - `engine.execute {command, params}` / `ui.menu.invoke {id}`: run any engine or UI command
 //! - `engine.commands`: list engine commands; `ui.menu.list`: menu tree with enablement
 //! - `ui.inspect`: UI state + every registered widget (`elements`: id, label, rect)
+//! - `ui.assets.audition {path, frac?}`: listen to a file as hover / ▶ do
+//! - `ui.assets.clearPreviews`: empty the light preview cache of Window ▸ Resources
 //! - `ui.elements {prefix?}`: registered widgets (optionally filtered by id prefix)
 //! - `ui.set {tool?, workspace?, mode?, theme?, focused?, playbackRes?, timeline?:{pps,scroll}}`
 //! - `ui.panel.show {panel}` / `ui.panel.close {panel}`
@@ -428,6 +430,55 @@ pub fn handle(app: &mut FilmcraftApp, ctx: &egui::Context, req: &ControlRequest)
             app.synthetic.push(egui::Event::Key { key: egui::Key::F35, physical_key: None, pressed: false, repeat: false, modifiers: Default::default() });
             Outcome::AfterInput
         }
+        // assets-dnd: drop files from "the Finder" at a window point (`id` or `x`,`y`), as the OS
+        // does; the result of the last drop (`assets.place` parameters and answer).
+        "ui.dropFiles" => {
+            let paths: Vec<String> =
+                p.get("paths").and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
+            if paths.is_empty() {
+                return err("need `paths`");
+            }
+            let pos = match point(app, p) {
+                Ok(p) => p,
+                Err(e) if e.starts_with(RETRY) => return Outcome::Retry(e.trim_start_matches(RETRY).to_string()),
+                Err(e) => return err(e),
+            };
+            app.synthetic.push(egui::Event::PointerMoved(pos));
+            app.assets.synthetic_drop = Some((paths, pos));
+            app.assets.last_drop = None;
+            Outcome::AfterInput
+        }
+        "ui.assets.audition" => {
+            // what hover / ▶ do for a row, for a given file (measurements, tests)
+            let Some(path) = s("path") else { return err("missing `path`") };
+            let frac = p.get("frac").and_then(Value::as_f64).unwrap_or(0.0) as f32;
+            if crate::assets::peak_worker(app).is_none() {
+                return err("no sound library");
+            }
+            crate::assets::audition(app, path, frac);
+            ok(audition_json(app))
+        }
+        "ui.assets.clearPreviews" => match app.assets.peaks.as_ref().and_then(|w| w.previews()) {
+            Some(store) => ok(json!({"freed": store.clear(), "dir": store.dir})),
+            None => err("no preview store (open a sound tab of Window ▸ Resources first)"),
+        },
+        "ui.assets" => ok(json!({
+            "lastDrop": app.assets.last_drop,
+            "tab": app.assets.tab.map(|k| k.id()),
+            "query": app.assets.query,
+            "hoverLut": app.assets.hover_lut,
+            "previewOf": app.assets.preview.after_of,
+            "audition": audition_json(app),
+            "selected": app.assets.selected,
+            "peaks": peaks_json(app),
+            "filters": serde_json::to_value(&app.assets.filters).unwrap_or_default(),
+            "rows": app.assets.filtered.as_ref().map(|(_, r)| r.len()),
+            "dragging": app.assets.drag.as_ref().map(|d| d.paths.clone()),
+            "libraries": app.assets.libs.iter().map(|(k, l)| {
+                let s = l.snapshot();
+                (k.id().to_string(), json!({"root": l.root, "entries": s.entries.len(), "running": s.running, "complete": s.complete, "dirs": s.dirs_seen, "error": s.error}))
+            }).collect::<serde_json::Map<String, Value>>(),
+        })),
         "ui.timeline.hit" => {
             let pos = match point(app, p) {
                 Ok(p) => p,
@@ -496,6 +547,26 @@ pub fn handle(app: &mut FilmcraftApp, ctx: &egui::Context, req: &ControlRequest)
             ok(Value::Null)
         }
         m => err(format!("unknown method `{m}`")),
+    }
+}
+
+fn audition_json(app: &FilmcraftApp) -> Value {
+    let a = app.assets.audition.state();
+    json!({"path": a.path, "playing": a.playing, "position": a.position, "progress": a.progress, "error": a.error, "fromPreview": a.from_preview})
+}
+
+fn peaks_json(app: &FilmcraftApp) -> Value {
+    match app.assets.peaks.as_ref() {
+        Some(w) => {
+            let st = w.stats();
+            let previews = w.previews().map(|p| {
+                use crate::assets::peaks::PreviewKind;
+                let ((sfx, sb), (music, mb)) = (p.stats(PreviewKind::Sfx), p.stats(PreviewKind::Music));
+                json!({"dir": p.dir, "sfx": sfx, "music": music, "bytes": sb + mb})
+            });
+            json!({"known": st.known, "computed": st.computed, "failed": st.failed, "queued": st.queued, "visiblePending": st.visible_pending, "loaded": st.loaded, "lastMs": st.last_ms, "dir": w.dir, "errors": w.errors(), "previews": previews})
+        }
+        None => Value::Null,
     }
 }
 

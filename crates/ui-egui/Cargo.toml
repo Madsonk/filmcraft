@@ -24,6 +24,8 @@ filmcraft-text = { workspace = true }
 filmcraft-audio-dsp = { workspace = true }
 filmcraft-engine = { workspace = true }
 filmcraft-export = { workspace = true }
+filmcraft-modelstore = { path = "../modelstore" }
+filmcraft-extensions = { workspace = true }
 filmcraft-gpu = { workspace = true }
 filmcraft-scopes = { workspace = true }
 egui = { workspace = true }
@@ -52,6 +54,8 @@ filmcraft-codecs = { workspace = true }
 # itself stays OS-independent and web-portable)
 filmcraft-platform = { workspace = true }
 filmcraft-interchange = { workspace = true }
+# the extension tests install a slow recogniser to watch the progress of a background transcription
+filmcraft-speech = { workspace = true }
 egui_kittest = { workspace = true, features = ["eframe", "wgpu"] }
 tempfile = "3"
 

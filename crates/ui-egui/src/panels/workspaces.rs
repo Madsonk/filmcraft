@@ -69,6 +69,7 @@ fn save(app: &mut FilmcraftApp, name: &str) -> Result<(), String> {
         None => saved.push(dock::SavedWorkspace { name: name.to_string(), layout, floating }),
     }
     next.current = name.to_string();
+    next.live = None; // saved: the layout in use is the workspace's own again
     app.set_workspaces(next)
 }
 
@@ -159,6 +160,7 @@ fn splice(items: &mut Vec<MenuItem>, prefs: &dock::WorkspacePrefs, session: &fil
                 shortcut: session.shortcuts.primary(&id),
                 enabled: true,
                 checked: current.map(|c| n == c),
+                separator_before: false,
                 id,
             }
         })

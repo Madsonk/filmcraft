@@ -11,13 +11,18 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 
 pub mod aaf_omf;
+pub mod assets;
+pub mod auto_reframe;
 pub mod autosave;
+pub mod beats;
 pub mod captions;
+pub mod captions_translate;
 pub mod clip_ops;
 pub mod color;
 pub mod commands;
 pub mod demo;
 pub mod doc_path;
+pub mod dub;
 pub mod essential_sound;
 pub mod export_tools;
 pub mod graphic_templates;
@@ -31,6 +36,12 @@ pub mod media_browser;
 pub mod media_pool;
 pub mod media_watch;
 pub mod mixer;
+pub mod ml_audio;
+pub mod ml_rush;
+pub mod ml_tools;
+pub mod ml_video;
+pub mod mogrt_fixtures;
+pub mod mogrt_import;
 pub mod multicam;
 pub mod narration;
 pub mod panels;
@@ -51,11 +62,16 @@ pub mod sequence_tools;
 pub mod settings;
 pub mod shortcut_presets;
 pub mod shortcuts;
+pub mod shot_match;
+pub mod sound_previews;
 pub mod source_monitor;
+mod summaries;
 pub mod sync;
 pub mod transcript;
 pub mod trim;
+pub mod voice_clean;
 pub mod voiceover;
+pub mod word_captions;
 
 use std::sync::Arc;
 
@@ -487,6 +503,9 @@ pub struct Session {
     /// Speech recogniser for `transcript.generate` (None = the Whisper model named by the command,
     /// feature `whisper`). Hosts and tests install one here.
     pub transcriber: Option<Arc<dyn filmcraft_speech::Transcriber>>,
+    /// Speech recognised off the UI thread for the next `transcript.generate` (see
+    /// [`transcript::begin_transcribe`]); consumed by that command, dropped if it is for other items.
+    pub finished_transcription: Option<transcript::TranscribeOutput>,
     /// The Events panel log: failed commands, job results, auto-save errors, messages.
     pub log: panels::EventLog,
     /// Media Browser navigation (directory, back / forward history, selected files).
@@ -585,6 +604,7 @@ impl Session {
             export_queue: Default::default(),
             stepped: Vec::new(),
             transcriber: None,
+            finished_transcription: None,
             log: Default::default(),
             browser: Default::default(),
             exec_depth: 0,
@@ -770,6 +790,15 @@ impl Session {
             && let Err(e) = &r
         {
             self.log.push(panels::Level::Error, id, e.to_string());
+        }
+        // a readable line for the status bar and the log (top-level calls only)
+        let mut r = r;
+        if let Ok(v) = &mut r
+            && let Some(line) = summaries::add(id, v)
+            && self.exec_depth == 0
+            && summaries::logged(id)
+        {
+            self.log.push(panels::Level::Info, id, line);
         }
         self.sync_persistence();
         // playback reads the newest snapshot (mixer moves, mutes… are heard while playing)
@@ -1262,18 +1291,24 @@ const MAX_SUBCLIP_CHAIN: usize = 16;
 mod aaf_omf_tests;
 #[cfg(test)]
 mod animated_image_tests;
+mod assets_tests;
 #[cfg(test)]
 mod audio_effects_tests;
 #[cfg(test)]
 mod audio_placement_tests;
 #[cfg(test)]
+mod auto_reframe_tests;
+#[cfg(test)]
 mod autosave_tests;
 #[cfg(test)]
 mod avi_import_tests;
+mod beats_tests;
 #[cfg(test)]
 mod clip_ops_tests;
 #[cfg(test)]
 mod color_tests;
+#[cfg(test)]
+mod dub_tests;
 #[cfg(test)]
 mod essential_sound_tests;
 #[cfg(test)]
@@ -1308,6 +1343,8 @@ mod media_test_util;
 mod media_watch_tests;
 #[cfg(test)]
 mod mixer_tests;
+#[cfg(test)]
+mod mogrt_import_tests;
 #[cfg(test)]
 mod multicam_tests;
 #[cfg(test)]
@@ -1359,6 +1396,8 @@ mod settings_tests;
 #[cfg(test)]
 mod shortcuts_tests;
 #[cfg(test)]
+mod shot_match_tests;
+#[cfg(test)]
 mod split_edit_ripple_trim_tests;
 #[cfg(test)]
 mod stored_paths_tests;
@@ -1374,6 +1413,8 @@ mod transcript_tests;
 mod trim_tests;
 #[cfg(test)]
 mod vfx_tests;
+#[cfg(test)]
+mod voice_clean_tests;
 #[cfg(test)]
 mod voiceover_tests;
 #[cfg(test)]

@@ -5,7 +5,7 @@
 //!   ([`filmcraft_project::gtemplate`]). Built-in templates are original designs in code; user
 //!   templates live in `<data dir>/Graphics Templates/*.fcgt`. Export As Motion Graphics Template
 //!   makes one from a graphic clip with chosen editable properties; Install copies a `.fcgt` into
-//!   the user folder (Adobe `.mogrt` files are refused without being opened); Apply places a new
+//!   the user folder (a `.mogrt` made in Premiere is converted, see `mogrt_import`; After Effects ones are refused); Apply places a new
 //!   graphic clip; `graphics.template.set` edits a placed template's properties.
 //! - **Responsive design:** `graphics.setRoll` (roll / crawl options), `graphics.setResponsiveTime`
 //!   (protected intro / outro), `graphics.pin` (pin a layer's edges to another layer or the frame).
@@ -97,7 +97,65 @@ fn is_mogrt(path: &str) -> bool {
     path.to_ascii_lowercase().ends_with(".mogrt")
 }
 
-const MOGRT: &str = "FilmCraft does not open Adobe .mogrt files (or other applications' template packages); it reads only its own .fcgt graphics templates";
+const MOGRT: &str = "a .mogrt is converted first: graphics.template.importMogrt (Premiere titles only)";
+
+/// Tags that tie a converted template to its `.mogrt`: the source path and its size + time.
+pub fn mogrt_tags(path: &str) -> (String, String) {
+    let h = path.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3));
+    let stamp = std::fs::metadata(path)
+        .ok()
+        .map(|m| {
+            let t = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
+            format!("{}-{t}", m.len())
+        })
+        .unwrap_or_default();
+    (format!("mogrt-src:{h:016x}"), format!("mogrt-stamp:{stamp}"))
+}
+
+/// A `.mogrt` made in Premiere as an installed user template (titles-native): converted once,
+/// then reused while the file is unchanged. After Effects templates are refused (never opened
+/// beyond the ZIP directory). The `.mogrt` is only read.
+pub fn import_mogrt(s: &mut Session, path: &str) -> Result<(LibraryEntry, Value)> {
+    let (src_tag, stamp) = mogrt_tags(path);
+    if let Some(e) = library(s).into_iter().find(|e| e.template.tags.contains(&src_tag) && e.template.tags.contains(&stamp)) {
+        let info = json!({"id": e.template.id, "name": e.template.name, "path": e.path, "cached": true, "description": e.template.description});
+        return Ok((e, info));
+    }
+    let Some(dir) = user_templates_dir(s) else {
+        // say why the title cannot be converted (After Effects, damaged) before the missing folder
+        let bytes = std::fs::read(path).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
+        crate::mogrt_import::convert(&bytes, path).map_err(|e| EngineError::Other(e.to_string()))?;
+        return Err(bad("graphics.template.importMogrt", "no data directory for templates"));
+    };
+    let (t, info) = convert_mogrt_file(path, &dir).map_err(EngineError::Other)?;
+    let dest = info["path"].as_str().map(str::to_string);
+    Ok((LibraryEntry { template: t, path: dest }, info))
+}
+
+/// Convert one `.mogrt` file into `<dir>/<id>.fcgt` (no session needed: Window ▸ Resources runs it
+/// in the background for a whole pack). The `.mogrt` is only read.
+pub fn convert_mogrt_file(path: &str, dir: &std::path::Path) -> std::result::Result<(GraphicsTemplate, Value), String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+    let file = std::path::Path::new(path).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+    let mut c = crate::mogrt_import::convert(&bytes, &file).map_err(|e| e.to_string())?;
+    let (src_tag, stamp) = mogrt_tags(path);
+    c.template.tags.push(src_tag);
+    c.template.tags.push(stamp);
+    let _ = std::fs::create_dir_all(dir);
+    let dest = dir.join(format!("{}.{TEMPLATE_EXTENSION}", gtemplate::slug(&c.template.id))).to_string_lossy().to_string();
+    std::fs::write(&dest, c.template.to_json().as_bytes()).map_err(|e| format!("{dest}: {e}"))?;
+    let info = json!({
+        "id": c.template.id, "name": c.template.name, "path": dest, "cached": false, "duration": c.template.duration.0,
+        "layers": c.template.layers.len(), "controls": c.template.controls.iter().map(control_json).collect::<Vec<_>>(),
+        "warnings": c.warnings, "lost": c.lost, "missingFonts": c.missing_fonts,
+    });
+    Ok((c.template, info))
+}
+
+fn import_mogrt_cmd(s: &mut Session, p: &Value) -> Result<Value> {
+    let path = str_p(p, "path").ok_or_else(|| bad("graphics.template.importMogrt", "need `path` (a .mogrt)"))?.to_string();
+    Ok(import_mogrt(s, &path)?.1)
+}
 
 /// Find a template by id, name (case-insensitive) or `.fcgt` path.
 pub fn find_template(s: &Session, key: &str) -> Result<LibraryEntry> {
@@ -323,7 +381,7 @@ fn fold_undo(s: &mut Session, before: usize, label: &str) {
 
 fn apply_template(s: &mut Session, p: &Value) -> Result<Value> {
     let key = str_p(p, "template").or_else(|| str_p(p, "id")).or_else(|| str_p(p, "name")).ok_or_else(|| bad("graphics.template.apply", "need `template`"))?;
-    let entry = find_template(s, key)?;
+    let entry = if is_mogrt(key) { import_mogrt(s, key)?.0 } else { find_template(s, key)? };
     let t = entry.template;
     register_fonts(&t);
     let (w, h) = s.active_sequence().map(|q| (q.settings.width, q.settings.height)).ok_or(EngineError::NoSequence)?;
@@ -549,7 +607,9 @@ fn export_template(s: &mut Session, p: &Value) -> Result<Value> {
 fn install_template(s: &mut Session, p: &Value) -> Result<Value> {
     let path = str_p(p, "path").ok_or_else(|| bad("graphics.template.install", "need `path`"))?.to_string();
     if is_mogrt(&path) {
-        return Err(EngineError::Other(MOGRT.into()));
+        // a Premiere title becomes a native template; an After Effects one is refused
+        let (_, info) = import_mogrt(s, &path)?;
+        return Ok(info);
     }
     let b = s.services.read_file(&path).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
     let mut t = GraphicsTemplate::from_bytes(&b).map_err(|e| EngineError::Other(format!("{path}: {e}")))?;
@@ -1175,9 +1235,17 @@ pub fn commands() -> Vec<CommandSpec> {
             "graphics.template.install",
             "Install Motion Graphics Template…",
             G,
-            r#"{"path":str (a .fcgt file; Adobe .mogrt files are refused)}"#,
+            r#"{"path":str (a .fcgt file, or a .mogrt made in Premiere: converted)}"#,
             always,
             install_template,
+        ),
+        spec(
+            "graphics.template.importMogrt",
+            "Import Premiere Title (.mogrt)…",
+            &[],
+            r#"{"path":str (a .mogrt made in Premiere; After Effects ones are refused)}"#,
+            always,
+            import_mogrt_cmd,
         ),
         spec("graphics.template.remove", "Remove Graphics Template", &[], r#"{"template":id|name (a user template)}"#, always, remove_template),
         spec(

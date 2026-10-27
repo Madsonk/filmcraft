@@ -66,7 +66,9 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         left_end = mu.min_rect().max.x;
     }
     // Document title, centred
-    let title = if app.session.is_dirty() { tlf!("{name} - Edited", name = app.session.project.name) } else { app.session.project.name.clone() };
+    // The saved file's name (what the Finder shows), else the project's internal name (ext-all-v2).
+    let name = crate::document_title(&app.session);
+    let title = if app.session.is_dirty() { tlf!("{name} - Edited", name = name) } else { name };
     // Right cluster: icons at ~38 pt pitch, then workspace name in caps.
     let mut rx = rect.max.x - 14.0;
     let mut btn = |ui: &mut egui::Ui, icon: Icon, id: &str, tip: &str, app: &mut FilmcraftApp| -> egui::Response {
@@ -135,17 +137,18 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let left = left_end + 12.0;
         let right = r.min.x - 12.0;
         if right > left + 40.0 {
-            let mut job = egui::text::LayoutJob::simple_singleline(title, Tokens::ui(14.0), t.tab_text_active);
-            job.wrap.max_width = right - left;
-            job.wrap.max_rows = 1;
-            let galley = p.layout_job(job);
+            // a long name is cut in the middle (its start and end stay readable), full on hover
+            let shown = crate::theme::elide_middle(&p, &title, 14.0, right - left);
+            let elided = shown != title;
+            let galley = p.layout_no_wrap(shown, Tokens::ui(14.0), t.tab_text_active);
             let half = galley.size().x / 2.0;
             let center = if rect.center().x - half >= left && rect.center().x + half <= right { rect.center().x } else { (left + right) / 2.0 };
-            p.with_clip_rect(Rect::from_min_max(pos2(left, rect.min.y), pos2(right, rect.max.y))).galley(
-                pos2(center - half, rect.center().y - galley.size().y / 2.0),
-                galley,
-                t.tab_text_active,
-            );
+            let tr = Rect::from_min_size(pos2(center - half, rect.center().y - galley.size().y / 2.0), galley.size());
+            p.with_clip_rect(Rect::from_min_max(pos2(left, rect.min.y), pos2(right, rect.max.y))).galley(tr.min, galley, t.tab_text_active);
+            app.auto.add("header.title", tr, &title);
+            if elided {
+                ui.interact(tr, egui::Id::new("hdr-title"), Sense::hover()).on_hover_text(title.clone());
+            }
         }
 
         if resp.clicked() {

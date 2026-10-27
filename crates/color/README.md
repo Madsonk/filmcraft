@@ -132,6 +132,28 @@ else the mastering peak, clamped to 203…10 000 cd/m²; without metadata 1000 c
   coordinates in each of the six Kuhn tetrahedra, solved with a 3×3 inverse) on random points for
   sizes 2–33, check exactness on affine LUTs and at grid nodes, and round-trip both formats.
 
+## Shot matching (`shot_match`)
+
+Clip ▸ Match Shot Colour… / `color.matchShots` make one shot look like another and bake the
+correction into a 33³ `.cube` that the Lumetri Creative Look slot plays. Clean-room, from the
+papers only:
+
+* **Reinhard** (default): E. Reinhard, M. Ashikhmin, B. Gooch, P. Shirley, *Color Transfer between
+  Images*, IEEE CG&A 21(5), 2001 — per-channel mean and standard deviation transfer
+  (`(x − μt)·σr/σt + μr`, gain bounded to ¼…4), here in **Oklab** (B. Ottosson, 2020) instead of
+  Ruderman's lαβ.
+* **MKL**: F. Pitié, A. Kokaram, *The linear Monge-Kantorovitch linear colour mapping for
+  example-based colour transfer*, IET CVMP 2007 — `T = Σt^-½ (Σt^½ Σr Σt^½)^½ Σt^-½`, so
+  `T Σt Tᵀ = Σr` (tested), with 1e-5 added to both covariances; square roots by Jacobi.
+* **Histogram**: per-channel cumulative-histogram specification in Oklab (257 quantiles, slope 1
+  beyond the measured range).
+
+The statistics come from the display-referred grading signal (sRGB-encoded Rec.709, what a look
+LUT receives); pixels whose brightest channel is ≤ 0.02 (crushed) or with a channel ≥ 0.985
+(clipped) are ignored. The LUT is mixed with the identity by the strength (0 = identity, exact).
+Log or flat footage must be converted to Rec.709 first (Interpret Footage / the Input LUT): the
+match is measured and applied after that conversion.
+
 FilmCraft ships no LUT files. Its built-in looks and camera conversions are generated from code
 (`filmcraft-render`), and are written to disk only when the user exports them.
 

@@ -1,0 +1,17 @@
+[package]
+name = "filmcraft-mlfetch"
+description = "FilmCraft optional-model downloads: mirrors, resume, pinned SHA-256, HTTPS in pure Rust (from LightCraft's lightcraft-fetch, same author, Apache-2.0)"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+log = { workspace = true }
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
+rustls-rustcrypto = "0.0.2-alpha"
+webpki-roots = "1"
+sha2 = { version = "0.10", default-features = false, features = ["std"] }

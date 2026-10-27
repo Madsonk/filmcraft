@@ -296,7 +296,9 @@ fn compose(p: [f64; 4]) -> Affine {
 }
 
 /// Per-frame correction transforms (current frame px → stabilised px, analysis pixels).
-pub(crate) fn corrections(path: &StabilizerPath, smooth_frames: f64, no_motion: bool, preserve_scale: bool) -> Vec<Affine> {
+/// `l1_margin`: when set, the smooth path is the L1-optimal one ([`super::l1path`]) kept within that
+/// fraction of the frame (translation) of the raw path, instead of the Gaussian-smoothed one.
+pub(crate) fn corrections(path: &StabilizerPath, smooth_frames: f64, no_motion: bool, preserve_scale: bool, l1_margin: Option<f64>) -> Vec<Affine> {
     let n = path.steps.len() + 1;
     // cumulative: frame 0 → frame k, about the frame centre for stable angle/scale decomposition
     let (cxp, cyp) = (path.w as f64 / 2.0, path.h as f64 / 2.0);
@@ -314,7 +316,12 @@ pub(crate) fn corrections(path: &StabilizerPath, smooth_frames: f64, no_motion: 
         let wrap = (d / std::f64::consts::TAU).round() * std::f64::consts::TAU;
         params[k][2] -= wrap;
     }
-    let smoothed: Vec<[f64; 4]> = if no_motion {
+    let smoothed: Vec<[f64; 4]> = if let (Some(m), false) = (l1_margin, no_motion) {
+        // the crop window allows `m` of the frame in translation; rotation and scale are bounded by the
+        // same margin seen at the frame corner (angle ~ m * 2, log-scale ~ m)
+        let bounds = [m * path.w as f64, m * path.h as f64, (m * 2.0).min(0.35), m];
+        super::l1path::smooth_params(&params, bounds, super::l1path::WEIGHTS, 300)
+    } else if no_motion {
         let mean = params.iter().fold([0.0; 4], |a, p| [a[0] + p[0], a[1] + p[1], a[2] + p[2], a[3] + p[3]]).map(|v| v / n as f64);
         vec![mean; n]
     } else {
@@ -388,7 +395,9 @@ pub fn warp_stabilizer(img: &mut Image, e: &EffectInstance, cx: &FxCtx) {
     let k = ((cx.seconds * path.fps).round().max(0.0) as usize).min(n - 1);
     let smooth = fv(e, "smoothness", cx) as f64 / 100.0 * path.fps;
     let crop_less = fv(e, "crop_less", cx) as f64 / 100.0;
-    let corr = corrections(&path, smooth * (0.5 + crop_less), chv(e, "result") == 1, bv(e, "preserve_scale"));
+    let result = chv(e, "result");
+    let l1_margin = (result == 2).then_some(0.02 + 0.12 * crop_less);
+    let corr = corrections(&path, smooth * (0.5 + crop_less), result == 1, bv(e, "preserve_scale"), l1_margin);
     let framing = chv(e, "framing");
     let (aw, ah) = (path.w as f64, path.h as f64);
     let max_scale = (fv(e, "max_scale", cx) as f64 / 100.0).max(1.0);

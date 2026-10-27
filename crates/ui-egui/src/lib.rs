@@ -29,6 +29,7 @@ macro_rules! tlf {
     };
 }
 
+pub mod assets;
 pub mod automation;
 pub mod brand;
 pub mod calc;
@@ -62,6 +63,18 @@ pub mod state;
 pub mod theme;
 mod theme_favorites;
 pub mod widgets;
+
+/// What the window calls the document: the saved file's name (its stem, what the Finder shows), else
+/// the project's internal name (a project built by a script may carry a name unrelated to its file).
+pub fn document_title(session: &Session) -> String {
+    session
+        .path
+        .as_deref()
+        .and_then(|p| std::path::Path::new(p).file_stem())
+        .map(|n| n.to_string_lossy().into_owned())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| session.project.name.clone())
+}
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -139,6 +152,10 @@ pub struct HostHooks {
     /// The user's preferred languages (locale tags, most preferred first) for Interface Language ▸
     /// System Language. Without it, System Language is English.
     pub system_languages: Option<Box<dyn Fn() -> Vec<String>>>,
+    /// Files the OS asked the app to open since the last call (macOS open-documents Apple Event: a
+    /// double-click on a `.fcproj`, `open -a FilmCraft`, a drop on the Dock icon). Polled every frame:
+    /// a project is opened, other files are imported (ext-all-v2).
+    pub take_opened_files: Option<Box<dyn FnMut() -> Vec<String>>>,
     /// Open dialog for a JSON file (shortcut preset import): filter name, extensions → path.
     pub pick_open_file: Option<Box<dyn FnMut(&str, &[&str]) -> Option<String>>>,
     /// Folder picker (Link Media search, proxy and Project Manager destinations).
@@ -173,6 +190,9 @@ pub struct HostHooks {
     /// Files or an image on the system clipboard, for Paste in the Timeline and the Project panel
     /// (#611). Without it Paste only pastes clips copied in FilmCraft.
     pub clipboard_media: Option<Box<dyn FnMut() -> Option<ClipboardMedia>>>,
+    /// The pointer in the window's content (logical points, top-left origin) while files are
+    /// dragged in from the Finder: winit reports the files but not where they are (assets-dnd).
+    pub pointer_in_window: Option<Box<dyn FnMut() -> Option<(f32, f32)>>>,
 }
 
 /// What [`HostHooks::clipboard_media`] found on the system clipboard.
@@ -401,6 +421,12 @@ pub struct FilmcraftApp {
     pub workspaces: dock::WorkspacePrefs,
     /// Workspace names and the current one, as last handed to the native menu.
     menu_workspaces: (Vec<String>, String),
+    /// Extensions menu revision (`ExtensionsState::rev`) last handed to the native menu.
+    menu_extensions: u64,
+    /// The Extensions menu: installed extensions and their manager (docs/extensions.md).
+    pub extensions: panels::extensions::ExtensionsState,
+    /// Window ▸ Resources and resource drops (assets-dnd).
+    pub assets: assets::AssetsState,
 }
 
 pub struct GpuState {
@@ -552,6 +578,7 @@ impl FilmcraftApp {
         let workspaces =
             session.prefs_path.as_ref().and_then(|p| p.parent()).map(|d| dock::WorkspacePrefs::load(&d.join(dock::WORKSPACES_FILE))).unwrap_or_default();
         let language = i18n::Language::parse(&session.prefs.general.interface_language).unwrap_or_default();
+        let extensions = panels::extensions::ExtensionsState::new(session.prefs_path.as_ref().and_then(|p| p.parent()).map(|d| d.join("extensions")));
         Self {
             session,
             ui: UiState { language, ..UiState::default() },
@@ -620,6 +647,9 @@ impl FilmcraftApp {
             workspace_restored: false,
             workspaces,
             menu_workspaces: Default::default(),
+            menu_extensions: 0,
+            extensions,
+            assets: Default::default(),
         }
     }
 
@@ -788,7 +818,15 @@ impl FilmcraftApp {
             // reopen the workspace in use when the app last closed
             self.workspace_restored = true;
             if let Some(w) = dock::find(&self.workspaces, &self.workspaces.current) {
-                self.set_workspace(&w);
+                // the layout as it was left (panels docked by hand), else the workspace's saved one
+                let live = self.workspaces.live.clone().filter(|l| l.name == w).and_then(|l| serde_json::from_value::<dock::DockNode>(l.layout).ok());
+                match live {
+                    Some(layout) => {
+                        self.ui.workspace = w;
+                        self.ui.dock = layout;
+                    }
+                    None => self.set_workspace(&w),
+                }
             }
         }
         self.applied_prefs = Some(p);
@@ -861,6 +899,18 @@ impl FilmcraftApp {
         }
     }
 
+    /// Keep the layout changed by hand (docking) so the next launch reopens it.
+    pub fn keep_live_layout(&mut self) {
+        let Ok(layout) = serde_json::to_value(&self.ui.dock) else { return };
+        let mut next = self.workspaces.clone();
+        next.live = Some(dock::SavedWorkspace { name: self.ui.workspace.clone(), layout });
+        if let Err(e) = self.set_workspaces(next) {
+            self.ui.status = e;
+        }
+    }
+
+    /// Switch to `name` with its saved layout (Window ▸ Workspaces, Reset to Saved Layout): a
+    /// layout changed by hand is dropped.
     pub fn set_workspace(&mut self, name: &str) {
         self.ui.workspace = name.to_string();
         let layout = dock::saved_docking(&self.workspaces, name);
@@ -870,6 +920,7 @@ impl FilmcraftApp {
         self.ui.keys.maximized = None;
         if self.workspaces.current != name {
             let mut next = self.workspaces.clone();
+            next.live = None;
             next.current = name.to_string();
             if let Err(e) = self.set_workspaces(next) {
                 self.ui.status = e;
@@ -1500,19 +1551,32 @@ impl FilmcraftApp {
             }
         }
         if !paths.is_empty() {
-            let pointer = self.drop_pointer(ctx);
-            let imported = self.session.execute("file.import", json!({"paths": paths, "bin": self.import_bin().0}));
-            if let Ok(v) = imported
-                && let Some(pos) = pointer
-                && self.session.prefs.timeline.drop_import_to_timeline
-            {
-                let items: Vec<filmcraft_engine::project::ItemId> =
-                    v["items"].as_array().map(|a| a.iter().filter_map(|i| i.as_u64()).map(filmcraft_engine::project::ItemId).collect()).unwrap_or_default();
-                if !items.is_empty() {
-                    self.pending_timeline_drop = Some((items, pos));
-                }
+            // where it was dropped decides what it does (assets-dnd): a LUT on a shot, a sound on
+            // a free audio track; elsewhere, imported as before
+            let pos = assets::os_pointer(self, ctx).or_else(|| ctx.input(|i| i.pointer.latest_pos()));
+            assets::drop_files(self, paths, pos);
+        }
+    }
+
+    /// Files the OS asked us to open (see `HostHooks::take_opened_files`): the last `.fcproj` is
+    /// opened (through the menu path, so unsaved changes are asked about), the rest is imported.
+    fn handle_opened_files(&mut self, ctx: &egui::Context) {
+        let Some(take) = self.hooks.take_opened_files.as_mut() else { return };
+        let files = take();
+        if files.is_empty() {
+            return;
+        }
+        let (projects, media): (Vec<String>, Vec<String>) = files.into_iter().partition(|f| f.to_lowercase().ends_with(".fcproj"));
+        if let Some(p) = projects.last() {
+            match menus::invoke(self, ctx, "file.open", json!({"path": p})) {
+                Ok(_) => self.ui.status = tlf!("Opened {path}", path = p),
+                Err(e) => self.ui.status = e,
             }
         }
+        if !media.is_empty() {
+            let _ = self.session.execute("file.import", json!({"paths": media, "bin": self.import_bin().0}));
+        }
+        ctx.request_repaint();
     }
 
     /// Where files dragged in from the OS are over the window. The OS reports no cursor motion during such a drag
@@ -1557,8 +1621,9 @@ impl FilmcraftApp {
 
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         let workspaces = (dock::names(&self.workspaces), self.ui.workspace.clone());
-        if self.bindings_rev != self.session.shortcuts.revision || workspaces != self.menu_workspaces {
+        if self.bindings_rev != self.session.shortcuts.revision || workspaces != self.menu_workspaces || self.menu_extensions != self.extensions.rev {
             self.menu_workspaces = workspaces;
+            self.menu_extensions = self.extensions.rev;
             self.bindings = menus::bindings(self);
             self.bindings_rev = self.session.shortcuts.revision;
         }
@@ -1574,6 +1639,10 @@ impl FilmcraftApp {
         // out, so it still reports the previous pass, and it is true for any focused widget, which
         // would leave the editor without its single-key tool shortcuts while a slider has focus.
         let text_focused = ctx.text_edit_focused();
+        // Window ▸ Resources has the keyboard when focused: ↑↓ Space Enter Esc F / (ressources-v2)
+        if self.ui.focused == PanelKind::Resources {
+            panels::resources::keyboard(self, ctx);
+        }
         // Esc cancels a dynamic trim in progress
         if self.session.trim_play.dynamic.is_some() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
             let _ = self.session.execute("trim.cancelDynamic", json!({}));
@@ -1855,6 +1924,7 @@ impl FilmcraftApp {
         }
         self.sync_timeline_view();
         self.handle_drops(&ctx);
+        self.handle_opened_files(&ctx);
         if let Some(rx) = self.command_inbox.take() {
             while let Ok(id) = rx.try_recv() {
                 // control-only mode ignores native menu commands, but Quit stays available (#1943)
@@ -1961,7 +2031,12 @@ impl FilmcraftApp {
         let p = ui.painter();
         p.rect_filled(bar, 3.0, t.separator);
         p.rect_filled(egui::Rect::from_min_size(bar.min, egui::vec2(bar.width() * f, bar.height())), 3.0, t.accent);
-        let verb = if job.label.starts_with("Rendering") { crate::i18n::t(&job.label).to_string() } else { tl!("Exporting").to_string() };
+        // exports say "Exporting"; every other job (proxies, model download, rush index, stems…) its own label
+        let verb = if job.label.starts_with("Export") || job.label.starts_with("Quick Export") {
+            tl!("Exporting").to_string()
+        } else {
+            crate::i18n::t(&job.label).to_string()
+        };
         p.text(
             egui::pos2(bar.min.x - 8.0, sb.center().y),
             egui::Align2::RIGHT_CENTER,

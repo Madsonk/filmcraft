@@ -26,6 +26,8 @@
 mod app_nap;
 mod appearance;
 mod args;
+#[cfg(target_os = "macos")]
+mod asset_hooks;
 mod audio;
 mod audio_in;
 mod control_server;
@@ -36,6 +38,7 @@ mod graphics;
 mod logging;
 #[cfg(target_os = "macos")]
 mod native_menu;
+mod open_files;
 mod window_raise;
 
 use args::{Cli, Launch};
@@ -131,6 +134,9 @@ fn main() -> eframe::Result {
     if graphics.mode() == graphics::Mode::Default {
         register_gpu_frame_renderer();
     }
+    // Finder / Dock / `open -a` opens arrive as an Apple Event: before the event loop exists.
+    #[cfg(target_os = "macos")]
+    open_files::install();
     let started = loop {
         let mut options = native_options(launch.control_port.is_some());
         // Before eframe creates the wgpu instance (e.g. no OpenGL on Windows, see graphics.rs).
@@ -215,6 +221,14 @@ fn app_creator(launch: Launch, graphics: graphics::GraphicsStart, created: Arc<A
         }
         // voice-over recording reads the microphone through cpal
         session.voiceover.input = Some(Box::new(audio_in::CpalIn::new(&session.prefs.audio_hardware.device_class)));
+        // files the Finder asked to open at launch count like command-line files
+        #[cfg(target_os = "macos")]
+        let files = {
+            let mut files = files;
+            files.extend(open_files::take_pending());
+            open_files::set_waker(cc.egui_ctx.clone());
+            files
+        };
         let (project, media) = args::project_and_media(&files);
         if let Some(p) = project {
             if let Err(e) = session.execute("file.open", json!({"path": p})) {
@@ -253,6 +267,16 @@ fn app_creator(launch: Launch, graphics: graphics::GraphicsStart, created: Arc<A
             app.dialog = None;
         }
         app.integrated_titlebar = cfg!(target_os = "macos");
+        // the extensions shipped with the app are offered once (Extensions menu, docs/extensions.md)
+        if let Some(dir) = bundled_extensions_dir() {
+            let (installed, problems) = app.extensions.seed_bundled(&dir);
+            if !installed.is_empty() {
+                log::info!("installed the bundled extensions {installed:?}");
+            }
+            for p in problems {
+                eprintln!("filmcraft: bundled extension: {p}");
+            }
+        }
         if let Some(rs) = cc.wgpu_render_state.clone()
             && std::env::var_os("FILMCRAFT_CPU_COMPOSITE").is_none()
         {
@@ -317,6 +341,12 @@ fn app_creator(launch: Launch, graphics: graphics::GraphicsStart, created: Arc<A
         // Settings ▸ Appearance ▸ Appearance Mode ▸ Sync with system on Linux desktops whose
         // compositor reports no theme to winit (no polling: see appearance.rs).
         app.hooks.system_theme = appearance::service();
+        // Window ▸ Resources: where a Finder drop lands (assets-dnd)
+        #[cfg(target_os = "macos")]
+        {
+            app.hooks.pointer_in_window = Some(Box::new(asset_hooks::pointer_in_window));
+            app.hooks.take_opened_files = Some(Box::new(open_files::take_pending));
+        }
         app.hooks.raise_without_focus = Some(Box::new(|| {
             window_raise::raise_without_focus();
         }));
@@ -409,6 +439,21 @@ fn register_gpu_frame_renderer() {
     filmcraft_export::register_frame_renderer(|| {
         filmcraft_gpu::ExportRenderer::new().map(|r| Box::new(GpuFrameRenderer(r)) as Box<dyn filmcraft_export::FrameRenderer>)
     });
+}
+
+/// Where the extensions shipped with the app are: `FILMCRAFT_BUNDLED_EXTENSIONS`, else
+/// `extensions-bundled` next to the executable, in the macOS bundle's `Resources`, or at the root of
+/// the source tree when run from `target/<profile>`.
+fn bundled_extensions_dir() -> Option<std::path::PathBuf> {
+    if let Some(d) = std::env::var_os("FILMCRAFT_BUNDLED_EXTENSIONS").filter(|d| !d.is_empty()) {
+        return Some(d.into());
+    }
+    let exe = std::env::current_exe().ok()?;
+    let here = exe.parent()?;
+    ["extensions-bundled", "../Resources/extensions-bundled", "../../extensions-bundled", "../../../extensions-bundled"]
+        .iter()
+        .map(|r| here.join(r))
+        .find(|p| p.is_dir())
 }
 
 /// Put the OS hardware video decoders in front of our own. Registered in a statement of its own:

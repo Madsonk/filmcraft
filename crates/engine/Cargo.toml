@@ -12,11 +12,15 @@ workspace = true
 [features]
 default = []
 # Speech-to-text with Whisper (candle, CPU). Off by default and in wasm builds.
-whisper = ["filmcraft-speech/whisper"]
+whisper = ["filmcraft-speech/whisper", "filmcraft-speech/translate"]
 # Speech-model downloads over HTTPS.
 speech-download = ["filmcraft-speech/download"]
 # Natural voices for Text to Speech: Kokoro-82M on candle (CPU) and their download.
 neural-voices = ["filmcraft-tts/kokoro", "speech-download"]
+# Downloads of the optional neural models (voice clean-up, auto-reframe) over HTTPS.
+model-download = ["filmcraft-modelstore/download"]
+# Optional neural tools (RIFE interpolation, Beat This beats, rush search, super-resolution…) on candle.
+ml = ["dep:rayon", "dep:filmcraft-ml", "dep:filmcraft-mlsearch", "dep:filmcraft-mlrestore", "dep:filmcraft-mlfetch"]
 
 [dependencies]
 filmcraft-time = { workspace = true }
@@ -34,10 +38,15 @@ filmcraft-audio-dsp = { workspace = true }
 filmcraft-export = { workspace = true }
 filmcraft-mxf = { workspace = true }
 filmcraft-format = { workspace = true }
+filmcraft-aac = { workspace = true }
+filmcraft-isobmff = { workspace = true }
 filmcraft-interchange = { workspace = true }
 filmcraft-captions = { workspace = true }
 filmcraft-speech = { workspace = true }
 filmcraft-tts = { workspace = true }
+filmcraft-modelstore = { path = "../modelstore" }
+filmcraft-voice = { path = "../voice" }
+filmcraft-reframe = { path = "../reframe" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -45,6 +54,15 @@ log = { workspace = true }
 chrono = { workspace = true }
 craft-docpath = { workspace = true }
 web-time = "1"
+# .mogrt titles made in Premiere → .fcgt (titles-native): the ZIP, the gzipped project XML
+zip = { version = "7", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+roxmltree = { workspace = true }
+rayon = { workspace = true, optional = true }
+filmcraft-ml = { path = "../ml", optional = true }
+filmcraft-mlsearch = { path = "../mlsearch", optional = true }
+filmcraft-mlrestore = { path = "../mlrestore", optional = true }
+filmcraft-mlfetch = { path = "../mlfetch", optional = true }
 
 [dev-dependencies]
 filmcraft-testkit = { workspace = true }

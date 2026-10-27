@@ -74,6 +74,8 @@ pub enum OnDone {
     AttachProxies,
     /// Point the clips at the outputs (ingest transcode).
     ReplaceMedia,
+    /// Import the outputs as new media (neural video tools: the outputs are new files).
+    Import,
     /// Nothing (the job's own result is the product, e.g. Project Manager).
     Nothing,
 }
@@ -339,6 +341,7 @@ pub fn poll(s: &mut Session) {
         let r = match pj.on_done {
             OnDone::AttachProxies => attach(s, &outs, false).map(|_| ()),
             OnDone::ReplaceMedia => replace_media(s, &outs),
+            OnDone::Import => outs.iter().try_for_each(|(_, path)| crate::commands::import_streamed(s, path, None).map(|_| ())),
             OnDone::Nothing => Ok(()),
         };
         if let Err(e) = r {
@@ -407,10 +410,14 @@ pub fn proxy_dir(media: &str, dest: Option<&str>) -> PathBuf {
     }
 }
 
-/// `media.createProxies {items?, preset?, destination?, wait?}`.
+/// `media.createProxies {items?, preset?, destination?, wait?}`. Without `items`: the Project panel's
+/// selection, else every video file of the project (the whole project, as the menu item reads).
 pub fn create(s: &mut Session, p: &Value) -> Result<Value> {
     let pr = preset(str_p(p, "preset").unwrap_or(DEFAULT_PROXY_PRESET)).ok_or_else(|| bad("media.createProxies", "unknown preset (see media.proxyPresets)"))?;
-    let items = items_param(s, p);
+    let mut items = items_param(s, p);
+    if items.is_empty() {
+        items = s.project.items.keys().copied().filter(|i| media_path(&s.project, *i).is_some()).collect();
+    }
     // default: Project Settings ▸ Scratch Disks ▸ Captured and Generated, else next to the media
     let dest = str_p(p, "destination").map(str::to_string).or_else(|| {
         crate::project_tools::trusted_scratch(s.project.settings.scratch.captured.as_deref(), s.path.as_deref(), &s.prefs.auto_save.scratch_folders)

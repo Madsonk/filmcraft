@@ -1,0 +1,124 @@
+{
+  "formatVersion": 1,
+  "id": "tics-de-langage",
+  "name": "Tics de langage",
+  "version": "1.0.0",
+  "category": "editing",
+  "description": "Cuts the hesitations (euh, heu, hum, um, uh…) and the silences of talking footage. Transcribes with Whisper large-v3-turbo (or base) in 'keep the hesitations' mode: an initial prompt that contains hesitations makes Whisper write them down instead of cleaning them up, so they can be cut by word. Needs the speech model installed (Edit > Preferences > Media Analysis & Transcription, or transcript.downloadModel); large-v3-turbo is 1.6 GB and several times slower than base on the CPU.",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Retirer les euh (turbo, français)",
+      "description": "Transcribe in French with large-v3-turbo keeping hesitations, remove them, then the silences of 0.4 s or more.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.transcribe",
+            "params": {
+              "language": "fr",
+              "model": "whisper-large-v3-turbo",
+              "hesitations": true
+            }
+          },
+          {
+            "id": "transcript.removeFillers",
+            "params": {
+              "language": "fr"
+            }
+          },
+          {
+            "id": "sequence.removeSilence",
+            "params": {
+              "minSeconds": "${var.min_silence|0.4}",
+              "keepSeconds": 0.08
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Retirer les uh/um (turbo, anglais)",
+      "description": "Same in English: um, uh, erm, hmm.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.transcribe",
+            "params": {
+              "language": "en",
+              "model": "whisper-large-v3-turbo",
+              "hesitations": true
+            }
+          },
+          {
+            "id": "transcript.removeFillers",
+            "params": {
+              "language": "en"
+            }
+          },
+          {
+            "id": "sequence.removeSilence",
+            "params": {
+              "minSeconds": "${var.min_silence|0.4}",
+              "keepSeconds": 0.08
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Retirer les euh (base, français)",
+      "description": "Faster: whisper-base (the model that is installed by default), hesitations kept.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.transcribe",
+            "params": {
+              "language": "fr",
+              "model": "whisper-base",
+              "hesitations": true
+            }
+          },
+          {
+            "id": "transcript.removeFillers",
+            "params": {
+              "language": "fr"
+            }
+          },
+          {
+            "id": "sequence.removeSilence",
+            "params": {
+              "minSeconds": "${var.min_silence|0.4}",
+              "keepSeconds": 0.08
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Retirer les euh (transcription existante)",
+      "description": "Only removes the hesitations from the transcript the sequence already has.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "transcript.removeFillers",
+            "params": {
+              "language": "auto"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

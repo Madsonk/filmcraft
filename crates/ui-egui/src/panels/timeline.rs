@@ -273,6 +273,65 @@ pub struct Layout {
     pub scroll: f64,
     /// The y of the divider between the video tracks (above) and the audio tracks (below).
     pub split_y: f32,
+    /// Top of the video area and bottom of the audio area (drop zones for a new track).
+    pub video_top: f32,
+    pub audio_bottom: f32,
+}
+
+/// The insertion line of a new track (drops): accent line across the tracks with end ticks.
+pub fn paint_new_track_line(ctx: &egui::Context, t: &crate::theme::Tokens, l: &Layout, y: f32) {
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("tl-new-track-line")));
+    let (x0, x1) = (l.content.min.x, l.content.max.x);
+    painter.line_segment([pos2(x0, y), pos2(x1, y)], Stroke::new(3.0, t.accent));
+    for x in [x0 + 1.5, x1 - 1.5] {
+        painter.line_segment([pos2(x, y - 6.0), pos2(x, y + 6.0)], Stroke::new(3.0, t.accent));
+    }
+}
+
+/// Half-height of the band around a track edge where a drop makes a new track there.
+pub const NEW_TRACK_BAND: f32 = 6.0;
+
+impl Layout {
+    /// A drop at `p` in a new-track zone: above the top video track (new V+1), below the last
+    /// audio track (new A+1), or on the edge between two tracks of the same kind (a track
+    /// inserted there). The kind, how many tracks of that kind come before the new one, and the
+    /// y of the insertion line.
+    pub fn new_track_zone(&self, p: Pos2) -> Option<(TrackKind, usize, f32)> {
+        if !(self.content.min.x..=self.content.max.x).contains(&p.x) || p.y < self.video_top || p.y > self.audio_bottom {
+            return None;
+        }
+        let b = NEW_TRACK_BAND;
+        let videos: Vec<&Row> = self.rows.iter().filter(|r| r.kind == TrackKind::Video).collect();
+        let audios: Vec<&Row> = self.rows.iter().filter(|r| r.kind == TrackKind::Audio).collect();
+        if p.y < self.split_y {
+            let n = videos.len();
+            match videos.iter().find(|r| r.index + 1 == n) {
+                // above the top video track (its top edge included)
+                Some(top) if p.y < top.rect.min.y + b => return Some((TrackKind::Video, n, top.rect.min.y.max(self.video_top))),
+                None => return Some((TrackKind::Video, 0, self.split_y - 2.0)),
+                _ => {}
+            }
+            // the edge between V(i+1) above and V(i) below
+            for r in &videos {
+                if r.index + 1 < n && (p.y - r.rect.min.y).abs() < b {
+                    return Some((TrackKind::Video, r.index + 1, r.rect.min.y));
+                }
+            }
+        } else {
+            let n = audios.len();
+            match audios.iter().find(|r| r.index + 1 == n) {
+                Some(last) if p.y > last.rect.max.y - b => return Some((TrackKind::Audio, n, last.rect.max.y.min(self.audio_bottom))),
+                None => return Some((TrackKind::Audio, 0, self.split_y + 2.0)),
+                _ => {}
+            }
+            for r in &audios {
+                if r.index + 1 < n && (p.y - r.rect.max.y).abs() < b {
+                    return Some((TrackKind::Audio, r.index + 1, r.rect.max.y));
+                }
+            }
+        }
+        None
+    }
 }
 
 impl Layout {
@@ -518,7 +577,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let rect = Rect::from_min_max(pos2(content.min.x, top), pos2(content.max.x, top + ah));
         rows.push(Row { track: tr.id, kind: TrackKind::Audio, index: i, rect, lane: app.ui.timeline.track_lanes.contains_key(&tr.id.0) });
     }
-    let layout = Layout { content, ruler, rows: rows.clone(), pps, scroll, split_y };
+    let layout = Layout { content, ruler, rows: rows.clone(), pps, scroll, split_y, video_top: video_area.min.y, audio_bottom: audio_area.max.y };
     app.tl.layout = Some(layout.clone());
 
     // ---- backgrounds

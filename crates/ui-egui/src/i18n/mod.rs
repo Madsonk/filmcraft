@@ -767,6 +767,45 @@ mod tests {
         out
     }
 
+    /// The French catalog covers everything the Spanish one does: every menu label, every `tl!` literal and
+    /// every dynamic name (ext-all-v2, « aucune chaîne non traduite »).
+    #[test]
+    fn french_translates_everything_spanish_does() {
+        let app = crate::FilmcraftApp::new(filmcraft_engine::Session::default());
+        let mut missing: Vec<String> = Vec::new();
+        let mut need = |text: &str| {
+            if translatable(text) && !Language::Fr.has(text) && !missing.iter().any(|m| m == text) {
+                missing.push(text.to_string());
+            }
+        };
+        for top in crate::menus::MENUS {
+            need(top);
+        }
+        for it in crate::menus::menu_items(&app) {
+            need(&it.label);
+            for p in &it.path {
+                need(p);
+            }
+        }
+        for (_, text) in sources() {
+            for lit in tl_literals(&text) {
+                need(&lit);
+            }
+        }
+        for n in dynamic_names() {
+            need(&n);
+        }
+        // and every Spanish key: a string the Spanish catalog translates must have its French line too
+        let (entries, _) = catalog::parse_entries(include_str!("es.tsv"));
+        for (ctx, en, _) in entries {
+            if ctx.is_empty() {
+                need(&en);
+            }
+        }
+        missing.sort();
+        assert!(missing.is_empty(), "untranslated French strings: {missing:#?}");
+    }
+
     #[test]
     fn tl_literals_are_found_and_unescaped() {
         let src = "a(tl!(\"Save\")); b(tl!(\"Say \\\"hi\\\"\\n\")); tl!(x); tlf!(\"{n} file(s)\", n);";

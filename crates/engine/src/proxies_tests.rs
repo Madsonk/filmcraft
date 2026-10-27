@@ -29,6 +29,26 @@ fn add_effects(s: &mut Session) {
     s.project = std::sync::Arc::new(p);
 }
 
+/// Without `items`, Clip ▸ Proxy ▸ Create Proxies… takes the Project panel's selection, else every
+/// video file of the project (it used to refuse with "nothing to proxy").
+#[test]
+fn create_without_items_takes_the_selection_or_the_whole_project() {
+    let root = tmp_dir("proxy-default");
+    let a = root.join("a.mov");
+    let b = root.join("b.mov");
+    make_movie(&a, DemoScene::OceanSunset, W, H, 6);
+    make_movie(&b, DemoScene::OceanSunset, W, H, 6);
+    let (mut s, items, _) = session_with(&[&a, &b]);
+    s.state.project_selection.clear();
+    let r = s.execute("media.createProxies", json!({"preset": "prores_proxy_half", "wait": true, "attach": false})).unwrap();
+    assert_eq!(r["outputs"].as_array().unwrap().len(), 2, "the whole project: {r}");
+    s.state.project_selection = vec![items[1]];
+    let r = s.execute("media.createProxies", json!({"preset": "prores_proxy_half", "wait": true, "attach": false})).unwrap();
+    assert_eq!(r["outputs"].as_array().unwrap().len(), 1, "the selection: {r}");
+    assert_eq!(r["outputs"][0]["item"], json!(items[1].0));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 #[test]
 fn create_attach_toggle_renders_the_same_picture() {
     let root = tmp_dir("proxy-create");

@@ -203,7 +203,7 @@ fn stft_mag(x: &[f32], n: usize, hop: usize) -> Vec<Vec<f32>> {
 
 /// STFT frame for the onset envelope: the power of two nearest to 46 ms (1024 at 22.05 kHz, 2048
 /// at 44.1/48 kHz).
-fn onset_frame(sr: u32) -> usize {
+pub(crate) fn onset_frame(sr: u32) -> usize {
     // `onset_envelope` is public on its own, so it must remain bounded even outside `analyze`.
     let n = (sr.min(MAX_ANALYSIS_SAMPLE_RATE) as f64 * 0.046).max(256.0);
     1usize << n.log2().round() as u32
@@ -232,7 +232,7 @@ pub fn onset_envelope(x: &[f32], sr: u32) -> (Vec<f32>, usize, usize) {
 }
 
 /// Beat period in envelope frames from the autocorrelation (50–200 BPM, prior centred at 120 BPM).
-fn tempo(env: &[f32], frame_rate: f64) -> Option<f64> {
+pub(crate) fn tempo(env: &[f32], frame_rate: f64) -> Option<f64> {
     let mean = env.iter().sum::<f32>() / env.len().max(1) as f32;
     let e: Vec<f32> = env.iter().map(|v| v - mean).collect();
     let lo = (frame_rate * 60.0 / 200.0).floor().max(2.0) as usize;
@@ -266,11 +266,11 @@ fn tempo(env: &[f32], frame_rate: f64) -> Option<f64> {
 }
 
 /// Dynamic-programming beat tracker: frame indices of beats.
-fn track_beats(env: &[f32], period: f64) -> Vec<usize> {
+/// Dynamic-programming beat tracker with a chosen stiffness (Remix: 100): the cost of a beat interval is `tight` × (ln interval/period)².
+pub(crate) fn track_beats_with(env: &[f32], period: f64, tight: f64) -> Vec<usize> {
     let n = env.len();
     let mut score = vec![0f64; n];
     let mut back = vec![usize::MAX; n];
-    let tight = 100.0;
     let lo = (period * 0.5).round().max(1.0) as usize;
     let hi = (period * 2.0).round() as usize;
     for t in 0..n {
@@ -310,7 +310,7 @@ fn mel_to_hz(m: f64) -> f64 {
 }
 
 /// Per-beat chroma (12) and cepstra (12) from a 4× larger STFT.
-fn beat_features(x: &[f32], sr: u32, beats: &[i64]) -> (Vec<[f32; 12]>, Vec<[f32; 12]>) {
+pub(crate) fn beat_features(x: &[f32], sr: u32, beats: &[i64]) -> (Vec<[f32; 12]>, Vec<[f32; 12]>) {
     let n = (onset_frame(sr) * 2).max(1024);
     let hop = n / 2;
     let mags = stft_mag(x, n, hop);
@@ -404,7 +404,7 @@ fn similarity_cells(beats: usize) -> Result<usize, RemixError> {
     beats.checked_mul(beats).filter(|&n| n <= MAX_SIMILARITY_CELLS).ok_or(RemixError::TooComplex)
 }
 
-fn cos(a: &[f32; 12], b: &[f32; 12]) -> f32 {
+pub(crate) fn cos(a: &[f32; 12], b: &[f32; 12]) -> f32 {
     let d: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
     let na = a.iter().map(|v| v * v).sum::<f32>().sqrt();
     let nb = b.iter().map(|v| v * v).sum::<f32>().sqrt();
@@ -416,8 +416,33 @@ pub fn beat_lead(sample_rate: u32) -> i64 {
     (XFADE_S * 0.5 * sample_rate as f64).round() as i64
 }
 
-fn local_max(env: &[f32], t: usize, r: usize) -> f32 {
+pub(crate) fn local_max(env: &[f32], t: usize, r: usize) -> f32 {
     env[t.saturating_sub(r)..(t + r + 1).min(env.len())].iter().copied().fold(0.0, f32::max)
+}
+
+/// Beat frames of `env` for a beat `period` (envelope frames): the tracker's path without weak beats
+/// at the edges (silence before / after the music) and without edge beats off the grid.
+pub(crate) fn trimmed_beats(env: &[f32], period: f64, tight: f64) -> Vec<usize> {
+    let mut frames = track_beats_with(env, period, tight);
+    // weak beats at the edges (silence before / after the music) are not beats
+    let mut strengths: Vec<f32> = frames.iter().map(|&t| local_max(env, t, 2)).collect();
+    strengths.sort_by(f32::total_cmp);
+    let median = strengths.get(strengths.len() / 2).copied().unwrap_or(0.0);
+    while frames.first().is_some_and(|&t| local_max(env, t, 2) < 0.3 * median) {
+        frames.remove(0);
+    }
+    while frames.last().is_some_and(|&t| local_max(env, t, 2) < 0.3 * median) {
+        frames.pop();
+    }
+    // …and edge beats off the grid (the tracker's end search can settle on an off-beat)
+    let off_grid = |a: usize, b: usize| ((b - a) as f64 / period - 1.0).abs() > 0.05;
+    while frames.len() > 2 && off_grid(frames[frames.len() - 2], frames[frames.len() - 1]) {
+        frames.pop();
+    }
+    while frames.len() > 2 && off_grid(frames[0], frames[1]) {
+        frames.remove(0);
+    }
+    frames
 }
 
 /// Analyse planar audio (channels are summed to mono).
@@ -434,25 +459,7 @@ pub fn analyze(channels: &[&[f32]], sample_rate: u32) -> Result<Analysis, RemixE
     let (env, n, hop) = onset_envelope(&mono, sample_rate);
     let frame_rate = sample_rate as f64 / hop as f64;
     let period = tempo(&env, frame_rate).ok_or(RemixError::NoBeat)?;
-    let mut frames = track_beats(&env, period);
-    // weak beats at the edges (silence before / after the music) are not beats
-    let mut strengths: Vec<f32> = frames.iter().map(|&t| local_max(&env, t, 2)).collect();
-    strengths.sort_by(f32::total_cmp);
-    let median = strengths.get(strengths.len() / 2).copied().unwrap_or(0.0);
-    while frames.first().is_some_and(|&t| local_max(&env, t, 2) < 0.3 * median) {
-        frames.remove(0);
-    }
-    while frames.last().is_some_and(|&t| local_max(&env, t, 2) < 0.3 * median) {
-        frames.pop();
-    }
-    // …and edge beats off the grid (the tracker's end search can settle on an off-beat)
-    let off_grid = |a: usize, b: usize| ((b - a) as f64 / period - 1.0).abs() > 0.05;
-    while frames.len() > 2 && off_grid(frames[frames.len() - 2], frames[frames.len() - 1]) {
-        frames.pop();
-    }
-    while frames.len() > 2 && off_grid(frames[0], frames[1]) {
-        frames.remove(0);
-    }
+    let frames = trimmed_beats(&env, period, 100.0);
     // the flux of frame t peaks as soon as an attack enters the newer window, at about
     // t·hop + n − ¾·hop (measured on generated drums); joints sit half a crossfade earlier so a joint's fade is over
     // when the beat's attack starts

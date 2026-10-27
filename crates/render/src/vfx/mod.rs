@@ -15,7 +15,9 @@ mod blur;
 mod color;
 pub(crate) use color::cdl;
 mod distort;
+mod filmlook;
 mod immersive;
+pub mod l1path;
 mod lights;
 mod stylize;
 mod temporal;
@@ -526,6 +528,16 @@ pub fn apply(img: &mut Image, e: &EffectInstance, cx: &FxCtx) -> bool {
         // Text
         "simple_text" => text::simple_text(img, e, cx),
         "metadata_burnin" => text::metadata_burnin(img, e, cx),
+        // Film Look bin
+        "film_look" => filmlook::film_look(img, e, cx),
+        "film_grain" => filmlook::film_grain(img, e, cx),
+        "halation" => filmlook::halation(img, e, cx),
+        "bloom" => filmlook::bloom(img, e, cx),
+        "diffusion" => filmlook::diffusion(img, e, cx),
+        "film_stock" => filmlook::film_stock(img, e, cx),
+        "gate_weave" => filmlook::gate_weave(img, e, cx),
+        "film_damage" => filmlook::film_damage(img, e, cx),
+        "lens_character" => filmlook::lens_character(img, e, cx),
         id if id.starts_with("vr_") => immersive::apply(img, e, cx),
         _ => return false,
     }

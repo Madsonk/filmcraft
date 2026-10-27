@@ -1,0 +1,35 @@
+{
+  "formatVersion": 1,
+  "id": "nettoyage-voix",
+  "name": "Nettoyage de la voix",
+  "version": "1.0.0",
+  "category": "audio",
+  "models": ["deepfilternet3"],
+  "description": "Removes background noise from the selected audio clips with DeepFilterNet3, a speech-enhancement network that runs on this computer (audio.denoiseVoice). The cleaned audio is written next to the project as a WAV, the clip is pointed at it, and one Undo brings the original back. The model (8 MB, MIT or Apache-2.0) is an optional download: the last entry asks before fetching it.",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Nettoyer la voix (léger)",
+      "description": "Noise reduced by at most 6 dB: keeps the room's feel.",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [ { "id": "audio.denoiseVoice", "params": { "strength": "light" } } ] }
+    },
+    {
+      "label": "Nettoyer la voix (standard)",
+      "description": "Noise reduced by at most 14 dB: the usual choice for a voice recorded in a noisy place.",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [ { "id": "audio.denoiseVoice", "params": { "strength": "standard" } } ] }
+    },
+    {
+      "label": "Nettoyer la voix (fort)",
+      "description": "As much noise removed as the model finds. Can make a very noisy voice sound processed.",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [ { "id": "audio.denoiseVoice", "params": { "strength": "strong" } } ] }
+    },
+    {
+      "label": "Installer le modèle de voix (DeepFilterNet3)",
+      "description": "Shows the size, source and licence, then downloads the model once you accept.",
+      "action": { "commands": [ { "id": "models.install", "params": { "model": "deepfilternet3" } } ] }
+    }
+  ]
+}

@@ -26,10 +26,11 @@ Design principles:
  L5  ui-egui · automation · platform
  L4  engine
  L3  render · gpu · export · golden (test-only)
- L2  edit · codecs · interchange · captions · speech · tts · tts-text
- L1  frame · media · project · audio-dsp · text
+ L2  edit · codecs · interchange · captions · speech · tts · tts-text · modelstore · voice · reframe · ml
+ L1  frame · media · project · audio-dsp · text · extensions · nn · mlrestore · mlsearch
  L0  foundation: time · geom · color · bitstream · testkit (dev-dependency only)
-     codecs/containers: isobmff · matroska · mxf · cfb · mpegts · ogg · h264 · h264enc · hevc · vp9 · av1 · mpeg2v · prores · dnx · apv · dng · aac · ac3 · mpa · opus
+     optional-model download: mlfetch
+     codecs/containers: isobmff · matroska · mxf · cfb · mpegts · ogg · h264 · h264enc · hevc · vp9 · av1 · mpeg2v · prores · dnx · apv · aac · ac3 · opus
 ```
 
 Crates are named `filmcraft-<dir>` (`crates/time` is `filmcraft-time`). The apps are `filmcraft`
@@ -64,11 +65,20 @@ and `filmcraft-cli`.
 | `project` | L1 | document model, effect definitions, keyframes |
 | `audio-dsp` | L1 | loudness metering (BS.1770 / R128), audio effects, channel layouts (BS.775 up/downmix, 5.1 panner), music remix analysis; no dependencies |
 | `text` | L1 | text engine: font database (bundled OFL fonts + system fonts), shaping (harfrust), bidi, line breaking, paragraph layout, glyph/path rasteriser, strokes ([crates/text/README.md](../crates/text/README.md)) |
+| `nn` | L1 | a small ONNX interpreter in pure Rust (CPU, `f32`; convolutions, GRU, einsum, resize…): runs the neural models below; no dependency, hostile-file safe ([extensions.md](extensions.md) § Neural tools) |
 | `edit` | L2 | pure edit algebra (insert, overwrite, razor, ripple, roll, slip, slide, rate stretch…; text-based editing: `edit::transcript`) |
 | `speech` | L2 | speech-to-text: `Transcriber` trait, Whisper model catalogue + verified downloader (feature `download`), pure-Rust Whisper inference on candle with word timestamps (feature `whisper`), speaker labelling ([transcripts.md](transcripts.md)) |
 | `tts` | L2 | text to speech: `Voice` trait, voice catalogue, pause markers, built-in formant voices; Kokoro-82M natural voices on candle and their pinned package catalogue (feature `kokoro`). Same-layer edge to `tts-text` |
 | `tts-text` | L2 | text front end for narration: normalizer (numbers, money, dates, acronyms, pauses) and English pronunciation (CMUdict + letter-to-sound) to Kokoro phonemes |
+| `modelstore` | L2 | catalogue and on-disk store of the optional neural models (DeepFilterNet3, YOLOX, YuNet): URL, SHA-256, size, licence; verified download and `.tar.gz` unpacking (feature `download`) |
+| `voice` | L2 | voice clean-up: DeepFilterNet3 pipeline (STFT, ERB features, deep filtering) on `nn` ([extensions.md](extensions.md) § Neural tools) |
+| `reframe` | L2 | auto-reframe: YOLOX / YuNet detection on `nn`, subject tracking, smooth crop path (dead zone + smoothing spline) |
+| `ml` | L2 | optional neural tools on candle (Metal on macOS, else CPU), none bundled: RIFE v4 frame interpolation, Beat This! beat tracking, HT Demucs source separation, Robust Video Matting, the model catalogue (pinned URLs, sizes, SHA-256, licences) and `catalogue::download`; used by the engine under feature `ml` ([extensions.md](extensions.md) § Optional neural tools) |
+| `mlfetch` | L0 | verified model downloads: mirrors, resume, pinned SHA-256, HTTPS in pure Rust (from LightCraft's `lightcraft-fetch`, same authors) |
+| `mlrestore` | L1 | SPAN 2x super-resolution and SCUNet denoising on candle, tiled, plus a PyTorch checkpoint reader (from LightCraft's `lightcraft-restore`) |
+| `mlsearch` | L1 | SigLIP image and text embeddings on candle and a vector index, for semantic search of footage (from LightCraft's `lightcraft-search`) |
 | `codecs` | L2 | container + codec hub: MP4/MOV, MKV, MXF, Ogg and MPEG TS / PS / video elementary stream sources, GOP-aware seeking, decoder registry, audio decoding |
+| `extensions` | L1 | the extension host: `extension.json` manifests, the extensions folder (install from a folder / `.zip` / `.fcext`, remove, list), and the runner for command lists and external programs. Knows nothing of the engine: the front end passes a closure that runs one command ([extensions.md](extensions.md)) |
 | `interchange` | L2 | EDL, FCP7 XML, FCPXML, OTIO, AAF (on `cfb`) and OMF 2.0 import/export (no file I/O; the engine supplies rendered audio essence) ([README](../crates/interchange/README.md)) |
 | `render` | L3 | sequence evaluation, CPU compositor, video effects (`effects`, `vfx`; effects needing other frames or tracks read them through `vfx::FxEnv`), transitions, audio mix |
 | `gpu` | L3 | wgpu compositor (WGSL) |
@@ -80,7 +90,7 @@ and `filmcraft-cli`.
 | `automation` | L5 | MCP server (`rmcp`, stdio), headless or bridged to the running app |
 | `platform` | L5 | OS media FFI only: hardware video decoding (VideoToolbox H.264 / HEVC on macOS; Media Foundation / Direct3D 11 H.264 / HEVC / VP9 / AV1 on Windows; VA-API H.264 / HEVC on Linux, with our own parsers and DPBs driving the stateless hardware; a no-op elsewhere) behind `codecs::VideoDecoder`, with transparent fallback to our decoders, and hardware H.264 encoding (VideoToolbox, opt-in) and H.265 encoding (VideoToolbox, the only H.265 encoder; the format exists only where a hardware encoder does) and NVIDIA NVENC H.264 (Windows and 64-bit Linux, opt-in) and H.265 (Windows, FilmCraft's only H.265 encoder there) encoding behind `export::VideoEncoder`; H.264 declines to the built-in encoder for what the hardware does not take. The one crate allowed `unsafe` ([ADR 0001](adr/0001-platform-ffi.md), [README](../crates/platform/README.md)) |
 | `filmcraft` | L6 | desktop binary: eframe/wgpu window, cpal audio output, file dialogs, native macOS menu, TCP control server |
-| `filmcraft-cli` | L6 | headless CLI: `exec`, `run`, `inspect`, `describe`, `commands`, `import`, `export`, `render`, `probe`, `mcp`; `--bridge` targets the running app |
+| `filmcraft-cli` | L6 | headless CLI: `exec`, `run`, `inspect`, `describe`, `commands`, `import`, `export`, `render`, `probe`, `extensions`, `mcp`; `--bridge` targets the running app |
 | `filmcraft-web` | L6 | the browser app (wasm32): eframe web runner on WebGPU/WebGL2, Blob-backed services, OPFS recovery, WebAudio, WebCodecs, `window.filmcraft` API ([web.md](web.md)) |
 
 ### What `cargo xtask layers` enforces
@@ -100,7 +110,8 @@ are exempt):
 `cargo xtask wasm` runs `cargo check --target wasm32-unknown-unknown` on every L0–L4 crate, the
 egui UI and the web app, so everything up to the engine stays web-portable and the web app builds
 ([web.md](web.md)). `unsafe_code = "forbid"` applies workspace-wide, except in `platform`
-(`deny`, allowed only on its FFI modules; [ADR 0001](adr/0001-platform-ffi.md)).
+(`deny`, allowed only on its FFI modules; [ADR 0001](adr/0001-platform-ffi.md)); the desktop app's `open_files` module (macOS
+open-documents event) is the fork's one other `unsafe` module, under the same discipline ([ADR 0002](adr/0002-macos-open-documents.md)).
 
 ## 2. Time base
 
@@ -508,9 +519,10 @@ essentialSound.generateDucking   trigger clips' summed level (10 ms hops) → ac
 - **Presets** (our own names and values) per type; user presets are saved in preferences
   (`essentialSound.userPresets`). Music remixing to a duration is Clip ▸ Remix (§5.1.3).
 - **Enhance Speech** is a DSP chain (high-pass, de-mud, presence and air EQ, expander, compressor), not a
-  model: no speech-enhancement model with an open licence that we could ship and verify is bundled.
-  DeepFilterNet (MIT/Apache-2.0, Rust inference via tract) is the candidate for a future optional
-  integration behind a trait.
+  model. The neural option is `audio.denoiseVoice` (crate `voice`): DeepFilterNet3 (MIT OR Apache-2.0),
+  an optional download verified by SHA-256 (`modelstore`), run on `nn`, a small ONNX interpreter of our
+  own (no ONNX runtime, no tract). It bakes a cleaned WAV and re-points the clip, so playback and export
+  stay as cheap as before ([extensions.md](extensions.md) § Neural tools).
 
 ### 5.3 Masks
 

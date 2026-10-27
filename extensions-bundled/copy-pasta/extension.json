@@ -1,0 +1,63 @@
+{
+  "formatVersion": 1,
+  "id": "copy-pasta",
+  "name": "Copy Pasta",
+  "version": "1.0.0",
+  "category": "editing",
+  "description": "Copies the look of one clip onto others: motion, opacity, volume, panner, time remapping and the standard effects, with their keyframes (Edit > Paste Attributes). The one-step entries take the first selected clip as the source and paste on the other selected clips; the Copier / Coller pair works across several runs in the window (the clipboard lives in the open session, so in filmcraft-cli use the one-step entries).",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Copier les attributs du clip sélectionné",
+      "description": "edit.copy of the selection; paste with Coller les attributs.",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [ { "id": "edit.copy" } ] }
+    },
+    {
+      "label": "Coller les attributs sur la sélection",
+      "description": "Everything: motion, opacity, volume, panner, time remapping and effects.",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [ { "id": "edit.pasteAttributes", "params": { "clips": "${selection}" } } ] }
+    },
+    {
+      "label": "Coller seulement les effets",
+      "description": "Only the standard effects; motion, opacity, volume and panner stay as they are.",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [ { "id": "edit.pasteAttributes", "params": {
+        "clips": "${selection}", "motion": false, "opacity": false, "timeRemapping": false,
+        "volume": false, "channelVolume": false, "panner": false, "effects": true } } ] }
+    },
+    {
+      "label": "Coller seulement mouvement et opacité",
+      "description": "Motion (position, scale, rotation) and opacity only.",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [ { "id": "edit.pasteAttributes", "params": {
+        "clips": "${selection}", "motion": true, "opacity": true, "timeRemapping": false,
+        "volume": false, "channelVolume": false, "panner": false, "effects": false } } ] }
+    },
+    {
+      "label": "Premier clip vers les autres (tout)",
+      "description": "Copies the first selected clip and pastes all its attributes on the other selected clips, then selects them all again. Needs at least two selected clips.",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [
+        { "id": "timeline.select", "params": { "clips": ["${selection_first}"] } },
+        { "id": "edit.copy" },
+        { "id": "edit.pasteAttributes", "params": { "clips": "${selection_rest}" } },
+        { "id": "timeline.select", "params": { "clips": "${selection}" } }
+      ] }
+    },
+    {
+      "label": "Premier clip vers les autres (effets seulement)",
+      "description": "As above, but only the standard effects are pasted.",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [
+        { "id": "timeline.select", "params": { "clips": ["${selection_first}"] } },
+        { "id": "edit.copy" },
+        { "id": "edit.pasteAttributes", "params": {
+          "clips": "${selection_rest}", "motion": false, "opacity": false, "timeRemapping": false,
+          "volume": false, "channelVolume": false, "panner": false, "effects": true } },
+        { "id": "timeline.select", "params": { "clips": "${selection}" } }
+      ] }
+    }
+  ]
+}

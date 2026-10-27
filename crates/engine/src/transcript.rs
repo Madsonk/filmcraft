@@ -47,7 +47,7 @@ pub fn sequence_words(s: &Session) -> Vec<SeqWord> {
     }
 }
 
-fn has_transcript(s: &Session) -> std::result::Result<(), String> {
+pub(crate) fn has_transcript(s: &Session) -> std::result::Result<(), String> {
     has_seq(s)?;
     if sequence_words(s).is_empty() { Err("the sequence has no transcript (Transcribe first)".into()) } else { Ok(()) }
 }
@@ -107,49 +107,99 @@ fn targets(s: &Session, p: &Value) -> Vec<ItemId> {
     out
 }
 
-/// Mono 16 kHz audio of a media item (None: no audio).
-fn item_audio(s: &Session, item: ItemId) -> Option<Vec<f32>> {
-    let dur = match &s.project.item(item)?.kind {
-        ItemKind::Media(m) => m.duration(),
-        _ => return None,
-    };
-    let src = s.source(item)?;
-    if !src.info().has_audio() {
-        return None;
-    }
-    let sr = filmcraft_speech::SAMPLE_RATE;
-    let len = dur.to_units_floor(sr as i64).max(0) as usize;
-    let buf = src.audio(0, len, sr).ok()?;
-    Some(filmcraft_speech::downmix(&buf.channels))
-}
-
 fn speech_err(e: SpeechError) -> EngineError {
     EngineError::Other(e.to_string())
 }
 
-/// The transcriber to use: the installed one, else the named catalogue model.
-fn transcriber(s: &Session, p: &Value) -> Result<Arc<dyn Transcriber>> {
-    if let Some(t) = &s.transcriber {
-        return Ok(t.clone());
-    }
-    // Settings ▸ Media Analysis & Transcription ▸ Speech model
-    let model = str_p(p, "model").unwrap_or(&s.prefs.media_analysis.whisper_model);
-    if filmcraft_speech::models::find(model).is_none() {
-        return Err(speech_err(SpeechError::UnknownModel(model.into())));
-    }
-    if !filmcraft_speech::available() {
-        return Err(EngineError::Other(NO_SPEECH.into()));
-    }
-    let dir = models_dir().ok_or_else(|| EngineError::Other("no data directory for speech models".into()))?;
-    filmcraft_speech::load(&dir, model).map_err(speech_err)
+/// Where the speech model comes from: one a host installed, or a catalogue model loaded when the job runs
+/// (loading takes a second or more, so it is part of the slow step, not of the preparation).
+enum Model {
+    Ready(Arc<dyn Transcriber>),
+    Load { dir: std::path::PathBuf, model: String },
 }
 
-fn generate(s: &mut Session, p: &Value) -> Result<Value> {
+/// Transcription in three parts, so that a host can run the slow middle one off its UI thread:
+/// [`begin_transcribe`] (validates, reads the session; fast) → [`TranscribeJob::run`] (reads the audio,
+/// loads the model, recognises speech; slow, needs no session, reports progress and can be cancelled) →
+/// the `transcript.generate` command, which uses the output when [`Session::finished_transcription`]
+/// holds it (and recognises on the spot otherwise: the CLI, scripts, MCP).
+pub struct TranscribeJob {
+    model: Model,
+    opts: Options,
+    /// (media item, its source and length in speech samples; `None`: no audio).
+    inputs: Vec<(ItemId, Option<(filmcraft_media::SharedSource, usize)>)>,
+}
+
+/// What [`TranscribeJob::run`] recognised, for the items it was started with.
+pub struct TranscribeOutput {
+    items: Vec<ItemId>,
+    done: Vec<(ItemId, Transcript)>,
+    skipped: Vec<u64>,
+}
+
+impl TranscribeJob {
+    /// The media items the job transcribes (with or without audio).
+    pub fn items(&self) -> usize {
+        self.inputs.len()
+    }
+
+    /// Recognise the speech. `progress(fraction 0…1, what)` returns false to cancel.
+    pub fn run(self, progress: &mut dyn FnMut(f32, &str) -> bool) -> Result<TranscribeOutput> {
+        let t = match self.model {
+            Model::Ready(t) => t,
+            Model::Load { dir, model } => {
+                if !progress(0.0, "Chargement du modèle de reconnaissance vocale") {
+                    return Err(EngineError::Other("transcription annulée".into()));
+                }
+                filmcraft_speech::load(&dir, &model).map_err(speech_err)?
+            }
+        };
+        let n = self.inputs.len().max(1) as f32;
+        let items: Vec<ItemId> = self.inputs.iter().map(|i| i.0).collect();
+        let (mut done, mut skipped) = (Vec::new(), Vec::new());
+        for (k, (item, src)) in self.inputs.into_iter().enumerate() {
+            let audio = src.and_then(|(src, len)| {
+                let buf = src.audio(0, len, filmcraft_speech::SAMPLE_RATE).ok()?;
+                Some(filmcraft_speech::downmix(&buf.channels))
+            });
+            let Some(audio) = audio else {
+                skipped.push(item.0);
+                continue;
+            };
+            let base = k as f32 / n;
+            let mut tr =
+                t.transcribe(&audio, &self.opts, &mut |f, what| progress((base + f.clamp(0.0, 1.0) / n).clamp(0.0, 1.0), what)).map_err(|e| match e {
+                    SpeechError::Cancelled => EngineError::Other("transcription annulée".into()),
+                    e => speech_err(e),
+                })?;
+            tr.normalize();
+            done.push((item, tr));
+        }
+        Ok(TranscribeOutput { items, done, skipped })
+    }
+}
+
+/// Validate a `transcript.generate` call and gather what the slow step needs.
+pub fn begin_transcribe(s: &Session, p: &Value) -> Result<TranscribeJob> {
     let items = targets(s, p);
     if items.is_empty() {
         return Err(bad("transcript.generate", "nothing to transcribe (pass `items`, select clips, or open a sequence with audio)"));
     }
-    let t = transcriber(s, p)?;
+    let model = match &s.transcriber {
+        Some(t) => Model::Ready(t.clone()),
+        None => {
+            // Settings ▸ Media Analysis & Transcription ▸ Speech model
+            let name = str_p(p, "model").unwrap_or(&s.prefs.media_analysis.whisper_model).to_string();
+            if filmcraft_speech::models::find(&name).is_none() {
+                return Err(speech_err(SpeechError::UnknownModel(name)));
+            }
+            if !filmcraft_speech::available() {
+                return Err(EngineError::Other(NO_SPEECH.into()));
+            }
+            let dir = models_dir().ok_or_else(|| EngineError::Other("no data directory for speech models".into()))?;
+            Model::Load { dir, model: name }
+        }
+    };
     // Settings ▸ Media Analysis & Transcription: language (or auto-detect) and speaker labelling
     let ma = &s.prefs.media_analysis;
     let default_language = if ma.language_auto_detect { None } else { Some(ma.default_language.clone()) };
@@ -160,18 +210,45 @@ fn generate(s: &mut Session, p: &Value) -> Result<Value> {
         },
         diarize: bool_p(p, "diarize").unwrap_or(ma.speaker_labeling != "off"),
         max_speakers: u64_p(p, "maxSpeakers").map(|n| n.clamp(1, 32) as usize).unwrap_or(Options::default().max_speakers),
+        prompt: str_p(p, "prompt").map(str::trim).filter(|t| !t.is_empty()).map(str::to_string),
+        hesitations: bool_p(p, "hesitations").unwrap_or(false),
+        hesitation_bias: f64_p(p, "hesitationBias").map(|v| v.clamp(0.0, 12.0) as f32).unwrap_or(0.0),
     };
-    let mut done: Vec<(ItemId, Transcript)> = Vec::new();
-    let mut skipped = Vec::new();
-    for item in items {
-        let Some(audio) = item_audio(s, item) else {
-            skipped.push(item.0);
-            continue;
-        };
-        let mut tr = t.transcribe(&audio, &opts, &mut |_, _| true).map_err(speech_err)?;
-        tr.normalize();
-        done.push((item, tr));
+    let sr = filmcraft_speech::SAMPLE_RATE;
+    let inputs = items
+        .into_iter()
+        .map(|item| {
+            let src = match s.project.item(item).map(|i| &i.kind) {
+                Some(ItemKind::Media(m)) => {
+                    s.source(item).filter(|src| src.info().has_audio()).map(|src| (src, m.duration().to_units_floor(sr as i64).max(0) as usize))
+                }
+                _ => None,
+            };
+            (item, src)
+        })
+        .collect();
+    Ok(TranscribeJob { model, opts, inputs })
+}
+
+/// Which command a host may run in the background, and with which parameters: `transcript.generate`
+/// as called, `sequence.transcribe` through the same translation the command does.
+pub fn async_transcribe_params(s: &Session, id: &str, p: &Value) -> Option<Result<Value>> {
+    match id {
+        "transcript.generate" => Some(Ok(p.clone())),
+        "sequence.transcribe" => Some(crate::sequence_extras::transcribe_params(s, p)),
+        _ => None,
     }
+}
+
+fn generate(s: &mut Session, p: &Value) -> Result<Value> {
+    let job = begin_transcribe(s, p)?;
+    let wanted: Vec<ItemId> = job.inputs.iter().map(|i| i.0).collect();
+    // a host already ran the slow step for exactly these items
+    let out = match s.finished_transcription.take() {
+        Some(o) if o.items == wanted => o,
+        _ => job.run(&mut |_, _| true)?,
+    };
+    let TranscribeOutput { done, skipped, .. } = out;
     if done.is_empty() {
         return Err(EngineError::Other("none of the clips has audio to transcribe".into()));
     }
@@ -347,7 +424,7 @@ fn rename_speaker(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"renamed": n}))
 }
 
-fn remove_ranges(s: &mut Session, label: &str, ranges: Vec<TimeRange>) -> Result<Value> {
+pub(crate) fn remove_ranges(s: &mut Session, label: &str, ranges: Vec<TimeRange>) -> Result<Value> {
     let n = ranges.len();
     if n == 0 {
         return Ok(json!({"removed": 0, "ticks": 0}));
@@ -361,18 +438,183 @@ fn remove_pauses(s: &mut Session, p: &Value) -> Result<Value> {
     let min = Tick::from_seconds_f64(f64_p(p, "minSeconds").unwrap_or(1.0));
     let keep = Tick::from_seconds_f64(f64_p(p, "keepSeconds").unwrap_or(0.15));
     let ranges = tx::find_pauses(&words, min, keep, s.sequence_rate());
-    remove_ranges(s, "Remove Pauses", ranges)
+    let found = ranges.len();
+    let mut out = remove_ranges(s, "Remove Pauses", ranges)?;
+    out["summary"] = json!(if found == 0 {
+        format!("Aucune pause de {} s ou plus entre les mots : rien à supprimer", fmt_s(min.seconds()))
+    } else {
+        format!(
+            "{found} pause{} supprimée{}, {} s retirées",
+            if found > 1 { "s" } else { "" },
+            if found > 1 { "s" } else { "" },
+            fmt_s(out["seconds"].as_f64().unwrap_or(0.0))
+        )
+    });
+    Ok(out)
 }
 
+/// Isolation rule for a word that is also a real word (« eux »), measured on the audio, not on the
+/// word times: the transcriber stretches a word over the silence that follows or precedes it, so its
+/// times say little about pauses. The sound containing the word's loudest 10 ms must be shorter than
+/// `max_seconds` and sit between `pause_seconds` of quiet on both sides (or the start / end of the
+/// sequence); the quiet is judged against the sequence's own noise floor (`vad::threshold`).
+struct Isolation {
+    levels: Vec<f32>,
+    threshold: f32,
+    max_seconds: f64,
+    pause_seconds: f64,
+}
+
+impl Isolation {
+    fn new(s: &Session, p: &Value) -> Result<Self> {
+        let levels = crate::sequence_extras::mix_levels(s)?;
+        let threshold = filmcraft_speech::vad::threshold(&levels);
+        Ok(Isolation {
+            levels,
+            threshold,
+            max_seconds: f64_p(p, "isolatedMaxSeconds").unwrap_or(0.4).clamp(0.05, 5.0),
+            pause_seconds: f64_p(p, "isolatedPauseSeconds").unwrap_or(0.15).clamp(0.0, 5.0),
+        })
+    }
+
+    /// `Ok` when the word is a hesitation standing alone; `Err(why not)` otherwise.
+    fn check(&self, w: &SeqWord) -> std::result::Result<(), String> {
+        let win = crate::sequence_extras::SILENCE_WINDOW_SECONDS;
+        let at = |t: Tick| (t.seconds() / win).max(0.0) as usize;
+        let (a, b) = (at(w.start), (at(w.end) + 1).min(self.levels.len()));
+        let loud = (a..b).max_by(|x, y| self.levels[*x].total_cmp(&self.levels[*y])).ok_or("hors de l'audio")?;
+        if self.levels[loud] < self.threshold {
+            return Err("aucun son à cet endroit".into());
+        }
+        let (mut from, mut to) = (loud, loud + 1);
+        while from > 0 && self.levels[from - 1] >= self.threshold {
+            from -= 1;
+        }
+        while to < self.levels.len() && self.levels[to] >= self.threshold {
+            to += 1;
+        }
+        let seconds = |frames: usize| frames as f64 * win;
+        if seconds(to - from) >= self.max_seconds {
+            return Err(format!("le son dure {} s (limite {} s) : le mot est dans la phrase", fmt_s(seconds(to - from)), fmt_s(self.max_seconds)));
+        }
+        let need = (self.pause_seconds / win).ceil() as usize;
+        let quiet_before = (0..from).rev().take_while(|i| self.levels[*i] < self.threshold).count();
+        let quiet_after = (to..self.levels.len()).take_while(|i| self.levels[*i] < self.threshold).count();
+        if from > 0 && quiet_before < need {
+            return Err(format!("collé au mot précédent ({} s de silence avant, il en faut {})", fmt_s(seconds(quiet_before)), fmt_s(self.pause_seconds)));
+        }
+        if to < self.levels.len() && quiet_after < need {
+            return Err(format!("collé au mot suivant ({} s de silence après, il en faut {})", fmt_s(seconds(quiet_after)), fmt_s(self.pause_seconds)));
+        }
+        Ok(())
+    }
+}
+
+fn fmt_s(x: f64) -> String {
+    format!("{x:.2}").replace('.', ",")
+}
+
+/// The language of the transcripts behind `words` (the first word's media), lower case.
+fn words_language(s: &Session, words: &[SeqWord]) -> Option<String> {
+    words.iter().find_map(|w| s.project.transcripts.get(&w.item)).map(|t| t.language.to_lowercase()).filter(|l| !l.is_empty())
+}
+
+/// `transcript.removeFillers`: the hesitations the transcript wrote down, cut out of the sequence.
+///
+/// * `fillers`: the exact list (replaces the default); `language` (`fr`, `en`, `auto`) picks the default
+///   list (`auto`/absent: the transcript's language; French: [`tx::FILLERS_FR`], else
+///   [`tx::DEFAULT_FILLERS`]); `also`: words added to the list.
+/// * `conditional`: words cut only when they stand alone (default in French without an explicit
+///   `fillers`: « eux », which whisper-base writes for a spoken « euh »): see [`Isolation`]
+///   (`isolatedMaxSeconds` 0.4, `isolatedPauseSeconds` 0.15).
+/// * `apply` false lists what would be cut.
 fn remove_fillers(s: &mut Session, p: &Value) -> Result<Value> {
     let words = sequence_words(s);
-    let fillers: Vec<String> = match p.get("fillers").and_then(Value::as_array) {
-        Some(a) => a.iter().filter_map(Value::as_str).map(str::to_string).collect(),
-        None => tx::DEFAULT_FILLERS.iter().map(|f| f.to_string()).collect(),
+    let strings =
+        |k: &str| -> Option<Vec<String>> { p.get(k).and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()) };
+    let lang = str_p(p, "language")
+        .filter(|l| !l.is_empty() && *l != "auto")
+        .map(str::to_lowercase)
+        .or_else(|| words_language(s, &words))
+        .unwrap_or_else(|| "en".into());
+    let french = lang.starts_with("fr");
+    let explicit = p.get("fillers").is_some();
+    let mut fillers = strings("fillers").unwrap_or_else(|| (if french { tx::FILLERS_FR } else { tx::DEFAULT_FILLERS }).iter().map(|f| f.to_string()).collect());
+    for extra in strings("also").unwrap_or_default() {
+        if !fillers.contains(&extra) {
+            fillers.push(extra);
+        }
+    }
+    let conditional =
+        strings("conditional").unwrap_or_else(|| if french && !explicit { tx::CONDITIONAL_FR.iter().map(|f| f.to_string()).collect() } else { Vec::new() });
+    let rate = s.sequence_rate();
+    let mut hits = tx::find_fillers(&words, &fillers);
+    let mut kept: Vec<Value> = Vec::new();
+    let cond_hits: Vec<std::ops::Range<usize>> = tx::find_fillers(&words, &conditional).into_iter().filter(|h| !hits.contains(h)).collect();
+    if !cond_hits.is_empty() {
+        let iso = Isolation::new(s, p)?;
+        for h in cond_hits {
+            let w = &words[h.start];
+            match iso.check(w) {
+                Ok(()) => hits.push(h),
+                Err(why) => kept.push(json!({"word": w.text, "seconds": w.start.seconds(), "why": why})),
+            }
+        }
+        hits.sort_by_key(|h| h.start);
+    }
+    let ranges = tx::filler_ranges(&words, &hits, rate);
+    let cut: Vec<Value> = hits.iter().map(|h| json!({"word": words[h.start].text, "seconds": words[h.start].start.seconds()})).collect();
+    let apply = bool_p(p, "apply").unwrap_or(true);
+    let planned: f64 = ranges.iter().map(|r| r.duration.seconds()).sum();
+    let mut out = if apply { remove_ranges(s, "Remove Filler Words", ranges)? } else { json!({"removed": 0, "ticks": 0, "seconds": 0.0}) };
+    out["language"] = json!(lang);
+    out["fillers"] = Value::Array(cut);
+    out["kept"] = Value::Array(kept.clone());
+    // « 5 hésitations supprimées (heu ×3, ben, bah), 1,2 s retirées »
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for h in &hits {
+        let w = words[h.start].normalized();
+        match counts.iter_mut().find(|c| c.0 == w) {
+            Some(c) => c.1 += 1,
+            None => counts.push((w, 1)),
+        }
+    }
+    let list = counts.iter().map(|(w, n)| if *n > 1 { format!("{w} ×{n}") } else { w.clone() }).collect::<Vec<_>>().join(", ");
+    let n = hits.len();
+    let kept_text = if kept.is_empty() {
+        String::new()
+    } else {
+        let mut kc: Vec<(String, usize)> = Vec::new();
+        for k in &kept {
+            let w = filmcraft_project::transcript::normalize_word(k["word"].as_str().unwrap_or_default());
+            match kc.iter_mut().find(|c| c.0 == w) {
+                Some(c) => c.1 += 1,
+                None => kc.push((w, 1)),
+            }
+        }
+        let total: usize = kc.iter().map(|c| c.1).sum();
+        let names = kc.iter().map(|(w, n)| if *n > 1 { format!("« {w} » ×{n}") } else { format!("« {w} »") }).collect::<Vec<_>>().join(", ");
+        format!(" ; {names} gardé{} (pas isolé{})", if total > 1 { "s" } else { "" }, if total > 1 { "s" } else { "" })
     };
-    let hits = tx::find_fillers(&words, &fillers);
-    let ranges = tx::filler_ranges(&words, &hits, s.sequence_rate());
-    remove_ranges(s, "Remove Filler Words", ranges)
+    out["summary"] = json!(if n == 0 {
+        format!(
+            "Aucune hésitation trouvée parmi les {} mots transcrits (liste {} de {} mots : {}…){kept_text}. Whisper n'écrit pas toujours les euh : seuls les mots écrits se coupent.",
+            words.len(),
+            if french { "français" } else { "anglais" },
+            fillers.len(),
+            fillers.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+        )
+    } else if apply {
+        format!(
+            "{n} hésitation{} supprimée{} ({list}), {} s retirées{kept_text}",
+            if n > 1 { "s" } else { "" },
+            if n > 1 { "s" } else { "" },
+            fmt_s(out["seconds"].as_f64().unwrap_or(0.0))
+        )
+    } else {
+        format!("{n} hésitation{} à supprimer ({list}), {} s{kept_text} (rien supprimé)", if n > 1 { "s" } else { "" }, fmt_s(planned))
+    });
+    Ok(out)
 }
 
 fn create_captions(s: &mut Session, p: &Value) -> Result<Value> {
@@ -389,10 +631,15 @@ fn create_captions(s: &mut Session, p: &Value) -> Result<Value> {
     let blocks = tx::caption_blocks(&words, &rules, s.sequence_rate());
     let format = str_p(p, "format").and_then(CaptionFormat::from_name).unwrap_or_default();
     let name = str_p(p, "name").unwrap_or("Transcript").to_string();
+    // the track carries the spoken language (what `captions.translate` takes as its source)
+    let language = words_language(s, &words);
     let n = blocks.len();
     let tid = s.edit_sequence("Create Captions", |q, ctx, st| {
         let tid = TrackId(ctx.alloc());
         let mut t = CaptionTrack::new(tid, name, format);
+        if let Some(l) = language {
+            t.language = l;
+        }
         t.captions = tx::blocks_to_captions(&blocks, ctx);
         q.caption_tracks.insert(0, t);
         st.caption_selection.clear();
@@ -412,6 +659,12 @@ fn models(_: &mut Session, _: &Value) -> Result<Value> {
             "license": m.license, "source": m.source, "size": m.size(),
             "installed": dir.as_ref().is_some_and(|d| filmcraft_speech::models::installed(d, m)),
         })).collect::<Vec<_>>(),
+        // offline translation models for `captions.translate`
+        "translation": filmcraft_speech::models::mt_catalogue().iter().map(|m| json!({
+            "id": m.id, "name": m.name, "description": m.description,
+            "license": m.license, "licenseUrl": m.license_url, "source": m.source, "size": m.size(),
+            "installed": dir.as_ref().is_some_and(|d| filmcraft_speech::models::installed(d, m)),
+        })).collect::<Vec<_>>(),
     }))
 }
 
@@ -419,7 +672,8 @@ fn models(_: &mut Session, _: &Value) -> Result<Value> {
 /// the size, source and licence (`transcript.models`) and ask before running this.
 fn download_model(_: &mut Session, p: &Value) -> Result<Value> {
     let id = str_p(p, "model").unwrap_or(filmcraft_speech::models::DEFAULT_MODEL);
-    let m = filmcraft_speech::models::find(id).ok_or_else(|| speech_err(SpeechError::UnknownModel(id.into())))?;
+    let m =
+        filmcraft_speech::models::find(id).or_else(|| filmcraft_speech::models::find_mt(id)).ok_or_else(|| speech_err(SpeechError::UnknownModel(id.into())))?;
     let dir = models_dir().ok_or_else(|| EngineError::Other("no data directory for speech models".into()))?;
     #[cfg(feature = "speech-download")]
     {
@@ -439,7 +693,7 @@ pub fn commands() -> Vec<CommandSpec> {
             "transcript.generate",
             "Transcribe…",
             &["Sequence", "Transcript"],
-            r#"{"items":[id]?,"model":"whisper-base"?,"language":"en|auto"?,"diarize":bool?,"maxSpeakers":n?}"#,
+            r#"{"items":[id]?,"model":"whisper-base"?,"language":"en|auto"?,"diarize":bool?,"maxSpeakers":n?,"prompt":str? (initial prompt: a text in the speaker's style, e.g. "Euh, alors, heu, hum…", read by Whisper as what was said before),"hesitations":bool=false (keep the hesitations: built-in disfluency prompt of the language, plus the filled pauses Whisper left out)}"#,
             can_transcribe,
             generate,
             true,
@@ -457,7 +711,15 @@ pub fn commands() -> Vec<CommandSpec> {
         spec("transcript.inspect", "Inspect Transcript", &[], r#"{"paragraphGapSeconds":f?}"#, always, inspect, false),
         spec("transcript.search", "Search Transcript", &[], r#"{"query":str}"#, always, search, false),
         spec("transcript.models", "List Speech Models", &[], "{}", always, models, false),
-        spec("transcript.downloadModel", "Download Speech Model", &[], r#"{"model":"whisper-base"?}"#, can_download, download_model, true),
+        spec(
+            "transcript.downloadModel",
+            "Download Speech Model",
+            &[],
+            r#"{"model":"whisper-base"|"whisper-large-v3-turbo"|"opus-mt-tc-big-fr-en"|"opus-mt-tc-big-en-fr"?}"#,
+            can_download,
+            download_model,
+            true,
+        ),
         spec("transcript.select", "Mark Selected Text", &[], r#"{"from":word,"to":word?}"#, has_transcript, select, true),
         spec("transcript.extract", "Extract Selected Text", &[], r#"{"from":word,"to":word?}"#, has_transcript, |s, p| extract_or_lift(s, p, true), true),
         spec("transcript.lift", "Lift Selected Text", &[], r#"{"from":word,"to":word?}"#, has_transcript, |s, p| extract_or_lift(s, p, false), true),
@@ -479,7 +741,15 @@ pub fn commands() -> Vec<CommandSpec> {
             remove_pauses,
             true,
         ),
-        spec("transcript.removeFillers", "Remove Filler Words", &["Sequence", "Transcript"], r#"{"fillers":[str]?}"#, has_transcript, remove_fillers, true),
+        spec(
+            "transcript.removeFillers",
+            "Remove Filler Words",
+            &["Sequence", "Transcript"],
+            r#"{"fillers":[str]? (replaces the default list),"language":"fr|en|auto"? (default list; auto = the transcript's),"also":[str]? (added to the list),"conditional":[str]? (cut only when isolated; default fr: eux),"isolatedMaxSeconds":f=0.4,"isolatedPauseSeconds":f=0.15,"apply":bool=true}"#,
+            has_transcript,
+            remove_fillers,
+            true,
+        ),
         spec(
             "transcript.createCaptions",
             "Create Captions from Transcript…",

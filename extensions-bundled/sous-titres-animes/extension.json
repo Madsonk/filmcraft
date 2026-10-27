@@ -1,0 +1,111 @@
+{
+  "formatVersion": 1,
+  "id": "sous-titres-animes",
+  "name": "Sous-titres animés",
+  "version": "1.0.0",
+  "category": "captions",
+  "description": "Word-by-word animated subtitles drawn by FilmCraft's own graphics: karaoke (the spoken word takes the accent colour) or pop (one word at a time, springing in). Uses the word timestamps of the transcript (built-in Whisper), puts graphic clips with keyframes on a new video track, one undo step. Variables: --var accent=#ff3366, color, words (1-6), y (0-1, baseline height), font, language.",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Karaoké (3 mots)",
+      "description": "Transcribe, then lay the words out 3 at a time; the word being spoken is in the accent colour.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.transcribe",
+            "params": {
+              "language": "${var.language|\"auto\"}"
+            }
+          },
+          {
+            "id": "transcript.createWordCaptions",
+            "params": {
+              "style": "karaoke",
+              "wordsPerGroup": "${var.words|3}",
+              "accent": "${var.accent|\"#ffd400\"}",
+              "color": "${var.color|\"#ffffff\"}",
+              "y": "${var.y|0.74}",
+              "font": "${var.font|\"Inter\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Pop, un mot à la fois",
+      "description": "Transcribe, then show each word alone, springing in (70 % → 112 % → 100 %).",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.transcribe",
+            "params": {
+              "language": "${var.language|\"auto\"}"
+            }
+          },
+          {
+            "id": "transcript.createWordCaptions",
+            "params": {
+              "style": "pop",
+              "wordsPerGroup": "${var.words|1}",
+              "accent": "${var.accent|\"#ffd400\"}",
+              "color": "${var.color|\"#ffffff\"}",
+              "y": "${var.y|0.74}",
+              "font": "${var.font|\"Inter\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Karaoké (transcription existante)",
+      "description": "Same karaoke layout from the transcript the sequence already has.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "transcript.createWordCaptions",
+            "params": {
+              "style": "karaoke",
+              "wordsPerGroup": "${var.words|3}",
+              "accent": "${var.accent|\"#ffd400\"}",
+              "color": "${var.color|\"#ffffff\"}",
+              "y": "${var.y|0.74}",
+              "font": "${var.font|\"Inter\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Pop (transcription existante)",
+      "description": "Same pop layout from the transcript the sequence already has.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "transcript.createWordCaptions",
+            "params": {
+              "style": "pop",
+              "wordsPerGroup": "${var.words|1}",
+              "accent": "${var.accent|\"#ffd400\"}",
+              "color": "${var.color|\"#ffffff\"}",
+              "y": "${var.y|0.74}",
+              "font": "${var.font|\"Inter\"}"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

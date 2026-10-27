@@ -49,8 +49,9 @@
   <key>NSHumanReadableCopyright</key>
   <string>Copyright © the FilmCraft authors. MIT OR Apache-2.0.</string>
 
-  <!-- Finder opens a project by this claim. The exported type alone is not enough:
-       without it Launch Services reports that FilmCraft cannot open a FilmCraft Project (#1229). -->
+  <!-- Documents the app opens: a double-click, `open -a FilmCraft x.fcproj` and a drop on the Dock icon
+       send an open-documents Apple Event (apps/filmcraft/src/open_files.rs). Without this list Launch
+       Services refuses the file ("cannot open files in the FilmCraft Project format"). -->
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>
@@ -58,11 +59,27 @@
       <string>FilmCraft Project</string>
       <key>CFBundleTypeRole</key>
       <string>Editor</string>
+      <key>CFBundleTypeIconFile</key>
+      <string>FilmCraft</string>
       <key>LSHandlerRank</key>
       <string>Owner</string>
       <key>LSItemContentTypes</key>
+      <array><string>ai.storyteller.filmcraft.project</string></array>
+      <key>CFBundleTypeExtensions</key>
+      <array><string>fcproj</string></array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Media</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>LSItemContentTypes</key>
       <array>
-        <string>ai.storyteller.filmcraft.project</string>
+        <string>public.movie</string>
+        <string>public.audio</string>
+        <string>public.image</string>
       </array>
     </dict>
   </array>

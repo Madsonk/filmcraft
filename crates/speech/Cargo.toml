@@ -13,6 +13,8 @@ workspace = true
 default = []
 # Whisper inference on the CPU via candle (pure Rust). Off by default (and in wasm builds).
 whisper = ["dep:candle-core", "dep:candle-nn"]
+# Offline subtitle translation (Opus-MT / Marian) on the CPU via candle. Off by default (and in wasm builds).
+translate = ["dep:candle-core", "dep:candle-nn"]
 # Model downloads over HTTPS (pure-Rust TLS: rustls + RustCrypto, OS certificate verification).
 download = ["dep:ureq", "dep:rustls", "dep:rustls-rustcrypto"]
 
@@ -36,3 +38,6 @@ required-features = ["whisper"]
 
 [dev-dependencies]
 tempfile = "3.27"
+[[example]]
+name = "translate"
+required-features = ["translate"]

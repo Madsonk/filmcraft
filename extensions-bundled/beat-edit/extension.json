@@ -1,0 +1,165 @@
+{
+  "formatVersion": 1,
+  "id": "beat-edit",
+  "name": "Beat Edit",
+  "version": "1.2.0",
+  "category": "editing",
+  "models": ["beat-this-final0"],
+  "description": "Markers on, or cuts at, the beats of a music clip (65-172 BPM, one steady tempo; the tempo octave is chosen by how well the beats explain the onsets). The music is the selected audio clip, else the first one. Variables: --var bpm=90 (the tempo octave), every, offset, subdivide, downbeat=false. The « Beat This » entries use the neural tracker (optional model beat-this-final0: see Modèles IA optionnels).",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Marquer les beats",
+      "description": "A marker named Beat N on every beat of the music clip.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.markBeats",
+            "params": {
+              "every": "${var.every|1}",
+              "offset": "${var.offset|0}",
+              "subdivide": "${var.subdivide|1}",
+              "name": "Beat",
+              "bpm": "${var.bpm|0}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Marquer toutes les 4 beats",
+      "description": "A marker « Mesure N » on the first beat of every bar (every 4th beat, starting at the bar start found from accents, kick and chord changes). Not sure which beat is the bar start? The status bar says so; use --var downbeat=false to start at the first beat found.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.markBeats",
+            "params": {
+              "every": 4,
+              "offset": "${var.offset|0}",
+              "subdivide": "${var.subdivide|1}",
+              "name": "Mesure",
+              "color": "Blue",
+              "bpm": "${var.bpm|0}",
+              "downbeat": "${var.downbeat|true}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Couper sur les beats",
+      "description": "Cuts the selected clips on every beat of the music clip (select the clips to cut, plus the music clip). When only the music is selected, it is the music that is cut.",
+      "requires": [
+        "sequence",
+        "selection"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.cutOnBeats",
+            "params": {
+              "every": "${var.every|1}",
+              "offset": "${var.offset|0}",
+              "subdivide": "${var.subdivide|1}",
+              "bpm": "${var.bpm|0}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Couper toutes les 4 beats",
+      "description": "Cuts the selected clips on the first beat of every bar (every fourth beat from the bar start; --var downbeat=false starts at the first beat found).",
+      "requires": [
+        "sequence",
+        "selection"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.cutOnBeats",
+            "params": {
+              "every": 4,
+              "offset": "${var.offset|0}",
+              "subdivide": "${var.subdivide|1}",
+              "bpm": "${var.bpm|0}",
+              "downbeat": "${var.downbeat|true}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Marquer les beats (Beat This)",
+      "description": "Markers on every beat found by the neural tracker Beat This! (needs the optional model).",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.markBeats",
+            "params": {
+              "model": "beat-this",
+              "every": "${var.every|1}",
+              "offset": "${var.offset|0}",
+              "subdivide": "${var.subdivide|1}",
+              "name": "Beat",
+              "bpm": "${var.bpm|0}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Marquer les mesures (Beat This)",
+      "description": "A marker « Mesure N » on each downbeat found by Beat This!.",
+      "requires": [
+        "sequence"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.markBeats",
+            "params": {
+              "model": "beat-this",
+              "every": 4,
+              "offset": "${var.offset|0}",
+              "name": "Mesure",
+              "color": "Blue",
+              "bpm": "${var.bpm|0}",
+              "downbeat": "${var.downbeat|true}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Couper sur les beats (Beat This)",
+      "description": "Cuts the selected clips on every beat found by Beat This!.",
+      "requires": [
+        "sequence",
+        "selection"
+      ],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.cutOnBeats",
+            "params": {
+              "model": "beat-this",
+              "every": "${var.every|1}",
+              "offset": "${var.offset|0}",
+              "bpm": "${var.bpm|0}"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
