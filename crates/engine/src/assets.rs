@@ -122,6 +122,12 @@ fn destination(s: &mut Session, kind: TrackKind, hovered: Option<(TrackKind, usi
 /// `newTrack {kind, index}`: a drop in the zone above the top video track, below the last audio
 /// track or between two tracks makes a new track there (index = how many tracks of that kind come
 /// before it), in the same undo step as the placement.
+/// Where the first placed clip really starts: `timeline.place` puts clips on the sequence's frame grid,
+/// so this can be a few ticks before the asked time `asked`.
+fn placed_at(s: &Session, placed: &Value, asked: Tick) -> Tick {
+    placed["clips"][0].as_u64().and_then(|c| s.active_sequence().and_then(|q| q.find_item(ClipId(c)).map(|(_, it)| it.start))).unwrap_or(asked)
+}
+
 pub(crate) fn new_track_p(p: &Value) -> Result<Option<(TrackKind, usize)>> {
     let Some(v) = p.get("newTrack").filter(|v| !v.is_null()) else { return Ok(None) };
     let kind = match v.get("kind").and_then(Value::as_str) {
@@ -260,7 +266,9 @@ fn place(s: &mut Session, p: &Value) -> Result<Value> {
                     }
                     let placed = s.execute("timeline.place", q)?;
                     summary.push(format!("“{}” placed on a video track", name_of(path)));
-                    Ok(json!({"path": path, "kind": kind.id(), "action": "placed", "item": item.0, "track": v.0, "time": t.0, "clips": placed["clips"]}))
+                    Ok(
+                        json!({"path": path, "kind": kind.id(), "action": "placed", "item": item.0, "track": v.0, "time": placed_at(s, &placed, t).0, "clips": placed["clips"]}),
+                    )
                 } else if has_a {
                     let a = match new_track(s, wanted_track, &mut made_track, TrackKind::Audio)? {
                         Some(a) => a,
@@ -268,7 +276,9 @@ fn place(s: &mut Session, p: &Value) -> Result<Value> {
                     };
                     let placed = s.execute("timeline.place", json!({"item": item.0, "audioTrack": a.0, "time": t.0, "video": false}))?;
                     summary.push(format!("“{}” placed on an audio track", name_of(path)));
-                    Ok(json!({"path": path, "kind": kind.id(), "action": "placed", "item": item.0, "track": a.0, "time": t.0, "clips": placed["clips"]}))
+                    Ok(
+                        json!({"path": path, "kind": kind.id(), "action": "placed", "item": item.0, "track": a.0, "time": placed_at(s, &placed, t).0, "clips": placed["clips"]}),
+                    )
                 } else {
                     Err(bad(CMD, format!("{path}: neither picture nor sound")))
                 }

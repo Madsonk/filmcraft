@@ -141,7 +141,7 @@ fn a_sound_dropped_on_a_shot_goes_on_a_free_audio_track_without_overwriting() {
     let r = s.execute("assets.place", json!({"paths": [w], "clip": clip.0, "time": t.0})).unwrap();
     let placed = &r["placed"][0];
     assert_eq!(placed["action"], "placed", "{r}");
-    assert_eq!(placed["time"], json!(t.0));
+    assert!((placed["time"].as_i64().unwrap() - t.0).abs() <= TICKS_PER_SECOND / 24);
     let (kind, idx) = track_index(&s, placed["track"].as_u64().unwrap());
     assert_eq!(kind, TrackKind::Audio);
     // the chosen track had nothing at t; every clip already there is still there
@@ -153,8 +153,9 @@ fn a_sound_dropped_on_a_shot_goes_on_a_free_audio_track_without_overwriting() {
     let q = s.active_sequence().unwrap();
     let c = ClipId(placed["clips"][0].as_u64().unwrap());
     let (_, it) = q.find_item(c).unwrap();
-    // 0.13.0 puts clips on the sequence's frame grid: within one frame of the asked time
+    // 0.13.0 puts clips on the sequence's frame grid: within one frame of the asked time, and the reply says where
     assert!((it.start.0 - t.0).abs() <= TICKS_PER_SECOND / 24, "{:?} vs {t:?}", it.start);
+    assert_eq!(placed["time"], json!(it.start.0));
     assert_eq!(s.history.undo.len(), undo0 + 1, "one undo step");
     s.execute("edit.undo", json!({})).unwrap();
     assert_eq!(s.active_sequence().unwrap().audio_tracks.len(), tracks0);
