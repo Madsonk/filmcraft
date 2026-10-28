@@ -1,6 +1,6 @@
 # Port of the Madson fork (FilmCraft-Ext 0.5.0-ext-all-v6.6) onto upstream v0.13.0
 
-Status: **merged, not yet compiled** (27 Oct 2026). Branch `fc-port-013` = tag `v0.13.0` + a merge of
+Status: **merged, compiles, bundle built; see the verification section for what was and was not run** (28 Oct 2026). Branch `fc-port-013` = tag `v0.13.0` + a merge of
 `ui-fixes` (the last branch of the fork, shipped as `FilmCraft-Ext-050-v6.6.app`). The merge base is
 `v0.5.0`; the fork adds 58 commits and ~43 000 lines (225 files) on top of it, upstream added 1 441
 commits (910 files) between `v0.5.0` and `v0.13.0`. The sections "Build and verification" below are
@@ -61,9 +61,34 @@ our two new tests appended (edits to existing tests were not carried over).
 - Our edits to pre-existing tests in `color_ui.rs`.
 - The 5-language `Language` enum (replaced by upstream's 12).
 
-## Build and verification
+## Build and verification (28 Oct 2026, aarch64, outputs from the commands)
 
-*To be filled in once the machine lets us build (see the shared build lock).*
+- `cargo check --workspace --all-targets`: **EXIT 0** (after fixing: lost `#[cfg(test)]` on merged test modules,
+  `MenuItem.separator_before`, `SavedWorkspace.floating`, `DockAction::Dock`, `Layout`/`Row` test structs,
+  `motion_matrix` arity, `FxCtx.frame_rate` in examples/tests, test fixture path `tests/it/fake_voicebox.py`).
+- `cargo fmt --check`: OK. `cargo clippy -D warnings --all-targets` on `filmcraft-{extensions,speech,audio-dsp,color,render,engine,ui-egui}`, `filmcraft`,
+  `filmcraft-cli`: first pass failed on 2 dead-code lints in `ui-egui/src/dock.rs` (our superseded tab-drag), fixed; second pass `CLIPPY2-EXIT 0` for ui-egui/app/cli.
+  (The first pass for the other crates ran before the fix; they compiled clean in it.)
+- Tests: `filmcraft-{extensions,speech,audio-dsp,color}` all green; `filmcraft-engine --lib` filtered on our modules
+  (`assets_tests dub_tests auto_reframe_tests word_captions_tests beats_tests voice_clean_tests shot_match_tests mogrt_import_tests transcript_tests sequence_extras`): **53 passed, 0 failed** after one fix:
+  `a_sound_dropped_on_a_shot…` expected the clip to start exactly at the dropped time, 0.13.0 snaps clips to the frame grid
+  (start was 0.02 s earlier while `assets.place` still reports the unsnapped `time`): test relaxed to one frame. That small
+  inconsistency in the reported time is **not fixed**.
+- **Not run:** the full `cargo test --workspace`, the UI integration tests (`ui-egui/tests/*.rs`, ours `assets_ui`, `extensions_ui`, `film_look_ui`, `robustness_ui`; they compile but were not executed), `cargo xtask layers|assets|wasm`
+  (`xtask` was updated for the new crates but not run).
+- Release build: `cargo build --release -p filmcraft -p filmcraft-cli --features filmcraft/models` with `CRAFT_FONTS_DIR=/Volumes/Data/work/craft-fonts`.
+  **Not enabled:** feature `ml` (RIFE, Beat This!, Demucs, SigLIP rush search, SPAN upscale) — the commands exist but report the model tools as absent; only the model download (`models`) is in.
+- Bundle: `/Volumes/Data/work/filmcraft-port-bundle/FilmCraft.app` (CLI next to it in `cli/filmcraft-cli`): bundle id `ai.storyteller.filmcraft`, `CFBundleVersion` 0.13.0
+  (same as the launcher's), Info.plist from upstream's template, icon, font licences copied from the launcher's bundle, `extensions-bundled/` in `Resources`,
+  ad-hoc signed (with upstream's entitlements, **without** the hardened runtime and **not** notarized): `codesign --verify --strict` → valid on disk.
+  No version suffix was added: the launcher reads `installed.json`, not the bundle, so a suffix proves nothing and a lower semver would only invite an "update".
+- Run test on a throw-away project (two ffmpeg clips, `/Volumes/Data/work/filmcraft-port-test/`):
+  import → new sequence → two `timeline.place` → `export --preset "Match Source – Adaptive High Bitrate"`: `out.mp4` H.264 1920×1080 + AAC, 5.013 s, in 1.9 s.
+  `sequence.removeSilence` (detect and apply), `extensions run silence-remover`, `effects.apply film_look` + `film_grain` (export differs from the plain one: PSNR 27.6 dB) work.
+  The desktop app starts, opens a `.fcproj` through the Finder Apple Event (`open_files`), and its control server answers: `ui.menu.list` shows **94** Extensions entries
+  (after restoring the call lost in the merge, `menus.rs`, commit "restore the Extensions menu").
+- **Not verified:** screenshots (`ui.screenshot` → "window hidden or display asleep"), the Resources panel and drag and drop, dubbing, voice clean-up, auto-reframe (need models), MadVision sync (needs the :8765 service), native macOS menu rebuild when extensions change, `.mogrt` import on a real file.
+- Side effect: at start the app seeds the bundled extensions into `~/Library/Application Support/FilmCraft/extensions` (the real user folder, even with `--data-dir`), as our previous builds did.
 
 ## Re-applying our changes when the launcher updates FilmCraft
 
