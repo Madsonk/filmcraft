@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use crate::Session;
 use crate::media_test_util::tmp_dir;
 use filmcraft_project::{ClipId, ParamValue, TrackKind};
-use filmcraft_time::Tick;
+use filmcraft_time::{TICKS_PER_SECOND, Tick};
 
 fn demo() -> Session {
     let mut s = Session::default();
@@ -153,7 +153,8 @@ fn a_sound_dropped_on_a_shot_goes_on_a_free_audio_track_without_overwriting() {
     let q = s.active_sequence().unwrap();
     let c = ClipId(placed["clips"][0].as_u64().unwrap());
     let (_, it) = q.find_item(c).unwrap();
-    assert_eq!(it.start, t);
+    // 0.13.0 puts clips on the sequence's frame grid: within one frame of the asked time
+    assert!((it.start.0 - t.0).abs() <= TICKS_PER_SECOND / 24, "{:?} vs {t:?}", it.start);
     assert_eq!(s.history.undo.len(), undo0 + 1, "one undo step");
     s.execute("edit.undo", json!({})).unwrap();
     assert_eq!(s.active_sequence().unwrap().audio_tracks.len(), tracks0);

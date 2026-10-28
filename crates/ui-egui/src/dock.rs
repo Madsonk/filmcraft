@@ -804,6 +804,7 @@ pub fn draw_group_chrome_details(ui: &mut egui::Ui, g: &Group, seqs: &SeqTabs, t
             panel: PanelKind,
             seq: Option<u64>,
             title: String,
+            #[allow(dead_code)] // hover text of our former tab-drag docking; kept for the shared tab model
             /// The full name when `title` was cut (shown on hover).
             full: String,
             active: bool,
