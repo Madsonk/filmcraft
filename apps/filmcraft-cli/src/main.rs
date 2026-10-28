@@ -361,7 +361,7 @@ async fn cli() {
     // `--help` anywhere (`filmcraft-cli --help`, `filmcraft-cli export --help`) prints the reference:
     // the parser takes it as a flag option, so it never reaches the subcommand match.
     if a.flag("--help") {
-        out!("{HELP}");
+        out!("{HELP}\n{HELP_EXT}");
         return;
     }
     // `--version` anywhere and `-V` as the subcommand, also after global options (`--demo --version`, #710).

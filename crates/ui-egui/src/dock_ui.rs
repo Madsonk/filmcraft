@@ -292,6 +292,7 @@ impl FilmcraftApp {
         }
         self.panel_drag(&ctx, body, &targets);
         panels::panel_menu_popup(self, ui);
+        crate::assets::after_panels(self, ui.ctx());
         self.cancel_value_drag(ui.ctx());
     }
 
