@@ -599,6 +599,8 @@ fn sounds_show_waveforms_and_listening_on_hover_plays_in_the_app() {
     h.state_mut().assets.filters.favorites_only = false;
     h.state_mut().assets.filtered = None;
     // the timeline playing silences the audition and stops the background waveform work
+    // (from 0, otherwise the transport reaches the end of the short timeline and stops itself)
+    h.state_mut().session.set_playhead(filmcraft_time::Tick::ZERO);
     h.state_mut().playback.playing = true;
     steps(&mut h, 2);
     assert!(!h.state().assets.audition.state().playing && h.state().assets.audition.state().path.is_none());
