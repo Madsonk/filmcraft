@@ -41,10 +41,11 @@ pub enum PanelKind {
     ReferenceMonitor,
     Timecode,
     ProjectNotes,
+    Resources,
 }
 
 impl PanelKind {
-    pub const ALL: [PanelKind; 28] = [
+    pub const ALL: [PanelKind; 29] = [
         PanelKind::Project,
         PanelKind::MediaBrowser,
         PanelKind::Libraries,
@@ -73,6 +74,7 @@ impl PanelKind {
         PanelKind::ReferenceMonitor,
         PanelKind::Timecode,
         PanelKind::ProjectNotes,
+        PanelKind::Resources,
     ];
     pub fn title(self) -> &'static str {
         match self {
@@ -104,6 +106,7 @@ impl PanelKind {
             PanelKind::ReferenceMonitor => "Reference Monitor",
             PanelKind::Timecode => "Timecode",
             PanelKind::ProjectNotes => "Project Notes",
+            PanelKind::Resources => "Resources",
         }
     }
     pub fn id(self) -> String {
@@ -157,6 +160,10 @@ pub const WORKSPACES_FILE: &str = "workspaces.json";
 pub struct WorkspacePrefs {
     pub saved: Vec<SavedWorkspace>,
     pub current: String,
+    /// The layout in use when it was changed by hand (panels docked elsewhere) and not saved
+    /// into the workspace: reopened at launch; Reset to Saved Layout drops it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub live: Option<SavedWorkspace>,
 }
 
 /// A named workspace. `workspace` is a craft-ui [`Workspace`] kept as JSON, so one unreadable

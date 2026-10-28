@@ -1,0 +1,120 @@
+{
+  "formatVersion": 1,
+  "id": "ml-models",
+  "name": "Modèles IA optionnels",
+  "version": "1.0.0",
+  "category": "management",
+  "models": ["rife-v4", "span-2x", "beat-this-final0", "htdemucs", "siglip2-base-224", "rvm-mobilenetv3"],
+  "description": "Installs the optional neural models used by the other extensions (RIFE, SPAN, Beat This, HT Demucs, SigLIP 2, Robust Video Matting). Nothing is bundled: each entry downloads one model from its publisher after showing its licence (a dialog in the window; `ml.install` with acceptLicense in scripts), checks its SHA-256 and keeps it in the models folder (FILMCRAFT_ML_MODELS_DIR or <data folder>/models/ml). `Liste` says what is installed.",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Liste des modèles",
+      "description": "What is installed and what each model is for.",
+      "action": {
+        "commands": [
+          {
+            "id": "ml.models",
+            "params": {}
+          }
+        ]
+      }
+    },
+    {
+      "label": "Installer : RIFE (ralenti, images par seconde)",
+      "description": "Download rife-v4 (12 MB) after showing its licence.",
+      "action": {
+        "commands": [
+          {
+            "id": "ml.install",
+            "params": {
+              "model": "rife-v4",
+              "acceptLicense": "${var.accept|false}",
+              "wait": "${blocking}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Installer : SPAN x2 (agrandir la vidéo)",
+      "description": "Download span-2x (4 MB) after showing its licence.",
+      "action": {
+        "commands": [
+          {
+            "id": "ml.install",
+            "params": {
+              "model": "span-2x",
+              "acceptLicense": "${var.accept|false}",
+              "wait": "${blocking}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Installer : Beat This (beats neuronaux)",
+      "description": "Download beat-this-final0 (81 MB) after showing its licence.",
+      "action": {
+        "commands": [
+          {
+            "id": "ml.install",
+            "params": {
+              "model": "beat-this-final0",
+              "acceptLicense": "${var.accept|false}",
+              "wait": "${blocking}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Installer : HT Demucs (voix / musique)",
+      "description": "Download htdemucs (84 MB) after showing its licence.",
+      "action": {
+        "commands": [
+          {
+            "id": "ml.install",
+            "params": {
+              "model": "htdemucs",
+              "acceptLicense": "${var.accept|false}",
+              "wait": "${blocking}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Installer : SigLIP 2 (recherche de rushes)",
+      "description": "Download siglip2-base-224 (1,5 GB) after showing its licence.",
+      "action": {
+        "commands": [
+          {
+            "id": "ml.install",
+            "params": {
+              "model": "siglip2-base-224",
+              "acceptLicense": "${var.accept|false}",
+              "wait": "${blocking}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Installer : Robust Video Matting (détourage, usage personnel)",
+      "description": "Download rvm-mobilenetv3 (15 MB) after showing its licence.",
+      "action": {
+        "commands": [
+          {
+            "id": "ml.install",
+            "params": {
+              "model": "rvm-mobilenetv3",
+              "acceptLicense": "${var.accept|false}",
+              "wait": "${blocking}"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

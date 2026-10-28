@@ -179,3 +179,96 @@ fn generate_without_a_transcriber() {
     let r = s.execute("transcript.generate", json!({})).unwrap();
     assert!(r["items"].as_array().unwrap().len() >= 2, "{r}");
 }
+
+/// A 9 s mono recording of tone bursts (the "words") over room noise, and a French transcript whose
+/// word times are stretched over the silences the way a transcriber writes them: « eux » alone
+/// (2.0–2.25 s), « pour eux » in one breath (3.5–4.2 s), « Euh, » (5.5–5.8 s), « Ben » (7.0–7.6 s).
+fn french_session() -> Session {
+    use filmcraft_project::{SequenceSettings, TrackKind};
+    use filmcraft_time::TimeRange;
+    let sr = 48_000usize;
+    let bursts = [(0.5, 1.3), (2.0, 2.25), (3.5, 4.2), (5.5, 5.8), (7.0, 7.6)];
+    let mut seed = 777u32;
+    let samples: Vec<f32> = (0..9 * sr)
+        .flat_map(|i| {
+            let t = i as f64 / sr as f64;
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            let noise = ((seed >> 16) as f32 / 32768.0 - 1.0) * 0.0004;
+            let loud = bursts.iter().any(|(a, b)| t >= *a && t < *b);
+            let v = if loud { 0.3 * (i as f32 * 300.0 * std::f32::consts::TAU / sr as f32).sin() + noise } else { noise };
+            [v, v]
+        })
+        .collect();
+    let dir = crate::media_test_util::tmp_dir("fillers-fr");
+    let wav = dir.join("talk.wav");
+    std::fs::write(&wav, filmcraft_media::wav::write_wav16(&samples, 2, sr as u32)).unwrap();
+    let mut s = Session::default();
+    let r = s.execute("file.import", json!({"paths": [wav.to_string_lossy()]})).unwrap();
+    let item = ItemId(r["items"][0].as_u64().unwrap());
+    let mut p = (*s.project).clone();
+    let rate = filmcraft_time::FrameRate::FPS_24;
+    let seq = p.new_sequence("Talk", SequenceSettings { frame_rate: rate, ..Default::default() }, 1, 1, None);
+    let range = TimeRange::new(Tick::ZERO, p.item(item).unwrap().duration());
+    let a = p.make_track_item(item, TrackKind::Audio, Tick::ZERO, range, rate).unwrap();
+    p.sequence_mut(seq).unwrap().audio_tracks[0].items.push(a);
+    s.project = Arc::new(p);
+    s.state.active_sequence = Some(seq);
+    s.state.open_sequences = vec![seq];
+    let t = |x: f64| Tick::from_seconds_f64(x).0;
+    let words: Vec<_> =
+        [("Bonjour", 0.5, 1.9), ("eux", 2.0, 2.25), ("pour", 3.5, 3.95), ("eux", 3.95, 4.2), ("Euh,", 5.5, 5.8), ("Ben", 7.0, 7.6), ("voilà.", 8.0, 8.4)]
+            .iter()
+            .map(|(w, a, b)| json!({"text": w, "start": t(*a), "end": t(*b)}))
+            .collect();
+    s.execute("transcript.set", json!({"item": item.0, "transcript": {"language": "fr", "speakers": [], "words": words}})).unwrap();
+    s
+}
+
+fn texts(s: &mut Session) -> Vec<String> {
+    words(s)
+}
+
+#[test]
+fn french_fillers_cut_the_hesitations_and_an_isolated_eux_but_keep_a_real_eux() {
+    let mut s = french_session();
+    // dry run: what would be cut, what is kept and why
+    let d = s.execute("transcript.removeFillers", json!({"apply": false})).unwrap();
+    assert_eq!(d["language"], "fr", "{d}");
+    let cut: Vec<&str> = d["fillers"].as_array().unwrap().iter().map(|f| f["word"].as_str().unwrap()).collect();
+    assert_eq!(cut, ["eux", "Euh,", "Ben"], "{d}");
+    let kept = d["kept"].as_array().unwrap();
+    assert_eq!(kept.len(), 1, "{d}");
+    assert!((kept[0]["seconds"].as_f64().unwrap() - 3.95).abs() < 0.02, "the eux of « pour eux »: {d}");
+    assert!(kept[0]["why"].as_str().unwrap().contains("phrase"), "{d}");
+    assert_eq!(texts(&mut s).len(), 7, "a dry run changes nothing");
+    let r = s.execute("transcript.removeFillers", json!({})).unwrap();
+    assert_eq!(r["removed"], 3, "{r}");
+    let line = r["summary"].as_str().unwrap();
+    assert!(line.starts_with("3 hésitations supprimées (eux, euh, ben)"), "{line}");
+    assert!(line.contains("« eux » gardé (pas isolé)"), "{line}");
+    assert_eq!(texts(&mut s), ["Bonjour", "pour", "eux", "voilà."]);
+    s.active_sequence().unwrap().check().unwrap();
+}
+
+#[test]
+fn fillers_lists_are_configurable() {
+    // an explicit list replaces the default and « eux » is then not conditional (the previous behaviour)
+    let mut s = french_session();
+    let r = s.execute("transcript.removeFillers", json!({"fillers": ["euh", "eux"]})).unwrap();
+    assert_eq!(r["removed"], 3, "both eux and the euh: {r}");
+    assert_eq!(texts(&mut s), ["Bonjour", "pour", "Ben", "voilà."]);
+    // `also` adds a word to the French list; `conditional: []` turns the isolated eux off
+    let mut s = french_session();
+    let r = s.execute("transcript.removeFillers", json!({"also": ["voilà"], "conditional": []})).unwrap();
+    assert_eq!(r["removed"], 3, "{r}");
+    assert_eq!(texts(&mut s), ["Bonjour", "eux", "pour", "eux"]);
+    // English list by language: nothing of the French hesitations
+    let mut s = french_session();
+    let r = s.execute("transcript.removeFillers", json!({"language": "en"})).unwrap();
+    assert_eq!(r["removed"], 0, "{r}");
+    assert!(r["summary"].as_str().unwrap().starts_with("Aucune hésitation trouvée parmi les 7 mots"), "{r}");
+    // a very long allowed duration and no pause needed: the « eux » of « pour eux » is still glued to « pour »
+    let mut s = french_session();
+    let d = s.execute("transcript.removeFillers", json!({"apply": false, "isolatedMaxSeconds": 1.5, "isolatedPauseSeconds": 0.0})).unwrap();
+    assert_eq!(d["fillers"].as_array().unwrap().len(), 4, "with no pause required every eux counts: {d}");
+}

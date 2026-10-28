@@ -254,3 +254,49 @@ fn hdr_lumetri_and_mastering_metadata_through_commands() {
     let r = s.execute("media.colorInfo", json!({"item": item.0})).unwrap();
     assert!(r["hdrMetadata"].is_null() && r["toneMapPeakNits"].is_null(), "{r}");
 }
+
+#[test]
+fn deposit_premiere_writes_64_cubes_never_replacing_another_file() {
+    let mut s = demo();
+    let clip = pick_clip(&mut s);
+    let root = std::path::PathBuf::from(tmp("premiere-luts"));
+    let _ = std::fs::remove_dir_all(&root);
+    let journal = root.join("journal.log");
+    let path = tmp("Warm Look.cube");
+    let src = Lut::from_cube(Lut3d::from_fn(17, |c| [(c[0] * 1.1).min(1.0), c[1], c[2] * 0.9]));
+    std::fs::write(&path, src.to_cube()).unwrap();
+    s.execute("lumetri.setLook", json!({"clip": clip.0, "path": path})).unwrap();
+    let p = json!({"dir": root.to_string_lossy(), "journal": journal.to_string_lossy()});
+    // the look the sequence uses lands in Creative, resampled to 64³, close to the original
+    let r = s.execute("lut.depositPremiere", p.clone()).unwrap();
+    let row = &r["luts"][0];
+    assert_eq!((row["slot"].as_str(), row["action"].as_str(), row["size"].as_u64()), (Some("Creative"), Some("written"), Some(64)), "{r}");
+    let out = std::path::PathBuf::from(row["path"].as_str().unwrap());
+    assert_eq!(out, root.join("Creative").join(format!("{}.cube", row["name"].as_str().unwrap())));
+    let back = Lut::parse_cube(&std::fs::read_to_string(&out).unwrap()).unwrap();
+    assert_eq!(back.cube.as_ref().unwrap().size, 64);
+    for x in [[0.2, 0.5, 0.7], [0.9, 0.1, 0.4]] {
+        let (a, b) = (src.apply(x), back.apply(x));
+        assert!((0..3).all(|k| (a[k] - b[k]).abs() < 2e-3), "{a:?} vs {b:?}");
+    }
+    // again: same content → reused, no second file
+    let r2 = s.execute("lut.depositPremiere", p.clone()).unwrap();
+    assert_eq!(r2["luts"][0]["action"], "reused");
+    // a different file already holds the name → kept intact, ours gets a suffix
+    std::fs::write(&out, "TITLE \"someone else\"\nLUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n").unwrap();
+    let r3 = s.execute("lut.depositPremiere", p).unwrap();
+    assert_eq!(r3["luts"][0]["action"], "renamed");
+    assert!(r3["luts"][0]["path"].as_str().unwrap().ends_with(" (FilmCraft).cube"), "{r3}");
+    assert!(std::fs::read_to_string(&out).unwrap().contains("someone else"));
+    assert_eq!(std::fs::read_to_string(&journal).unwrap().lines().count(), 3);
+    // an input LUT goes to Input when asked
+    let r4 = s
+        .execute(
+            "lut.depositPremiere",
+            json!({"lut": lumetri_text(&s, clip, "look_lut"), "slot": "input", "dir": root.to_string_lossy(), "journal": journal.to_string_lossy()}),
+        )
+        .unwrap();
+    assert!(r4["luts"][0]["path"].as_str().unwrap().contains("/Input/"), "{r4}");
+    assert!(s.execute("lut.depositPremiere", json!({"lut": "lib:nope", "dir": root.to_string_lossy()})).is_err());
+    let _ = std::fs::remove_dir_all(&root);
+}

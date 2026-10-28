@@ -802,6 +802,9 @@ pub enum ColorDialog {
     Interpret { items: Vec<u64>, color_space: String },
     /// `sequence.colorSettings`.
     Sequence { working_space: String, wide_gamut: bool, auto_tone_map: bool },
+    /// `color.matchShots` (Clip ▸ Match Shot Colour…): the sequence's video clips (id, label),
+    /// the reference and target clip ids (0 = none), method id, strength 0–100, apply.
+    MatchShots { clips: Vec<(u64, String)>, reference: u64, target: u64, method: String, strength: f32, apply: bool },
 }
 
 /// The Audio Gain dialog (Clip ▸ Audio Gain…, G).

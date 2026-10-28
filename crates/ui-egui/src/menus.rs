@@ -185,6 +185,11 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
     if id == "edit.selectAll" && (crate::panels::graphics::select_all_edited_text(app) || crate::panels::effect_controls::select_all_keyframes(app)) {
         return Ok(Value::Null);
     }
+    // an extension is running in the background: it owns the project until it ends (its own commands
+    // are served with `serving` set; view and playback commands, which do not edit, stay available)
+    if app.extensions.locked() && filmcraft_engine::commands::find(id).is_some_and(|c| c.journal) && !id.starts_with("extensions.") {
+        return Err("Une extension est en cours d'exécution : attendez la fin ou annulez-la (fenêtre « Extension en cours »)".into());
+    }
     if filmcraft_engine::source_monitor::source_command(id) && targets_source(app, &params) && params.get("target").is_none() {
         let object = params.as_object_mut().ok_or("command parameters must be an object")?;
         object.insert("target".into(), json!("source"));
@@ -263,6 +268,9 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
         return Ok(Value::Null);
     }
     if let Some(r) = crate::panels::workspaces::route(app, id, &params) {
+        return r;
+    }
+    if let Some(r) = crate::panels::extensions::route(app, ctx, id, &params) {
         return r;
     }
     if let Some(t) = id.strip_prefix("tool.") {
@@ -528,6 +536,12 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
             crate::panels::sequence_settings::open_new(app);
             return Ok(json!({"dialog": "newSequence"}));
         }
+        // Clip ▸ Match Shot Colour… opens the dialog; with params the engine command matches directly.
+        "color.matchShots" if params.as_object().is_none_or(|m| m.is_empty()) => {
+            filmcraft_engine::find_command(id).map_or(Ok(()), |c| (c.enabled)(&app.session))?;
+            crate::panels::color_dialogs::open_match(app);
+            return Ok(json!({"dialog": "matchShots"}));
+        }
         "sequence.colorSettings" if params.as_object().is_none_or(|m| m.is_empty()) => {
             filmcraft_engine::find_command(id).map_or(Ok(()), |c| (c.enabled)(&app.session))?;
             crate::panels::color_dialogs::open_sequence(app);
@@ -792,9 +806,12 @@ pub struct MenuItem {
     /// Checkmark state of toggle / radio items (None = not checkable).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checked: Option<bool>,
+    /// A separator line is drawn above this item.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub separator_before: bool,
 }
 
-pub const MENUS: [&str; 9] = ["File", "Edit", "Clip", "Sequence", "Markers", "Graphics and Titles", "View", "Window", "Help"];
+pub const MENUS: [&str; 10] = ["File", "Edit", "Clip", "Sequence", "Markers", "Graphics and Titles", "View", "Window", crate::panels::extensions::MENU, "Help"];
 
 /// Labels only the native macOS app menu shows, with no command in the menu tree behind them: the
 /// Settings submenu and the predefined Hide, Hide Others and Quit items. They are translated through
@@ -826,6 +843,7 @@ pub fn menu_items(app: &FilmcraftApp) -> Vec<MenuItem> {
         }
     }
     crate::panels::workspaces::menu(app, &mut v);
+    crate::panels::extensions::menu(app, &mut v);
     open_recent(&mut v, &app.session, |n| app.ui.language.tr(n).to_string());
     v
 }
@@ -840,9 +858,25 @@ fn open_recent(items: &mut Vec<MenuItem>, session: &filmcraft_engine::Session, t
     let mut sub: Vec<MenuItem> = recent
         .iter()
         .enumerate()
-        .map(|(i, p)| MenuItem { id: format!("file.openRecent.{i}"), label: recent_name(p), path: path.clone(), shortcut: None, enabled: true, checked: None })
+        .map(|(i, p)| MenuItem {
+            id: format!("file.openRecent.{i}"),
+            label: recent_name(p),
+            path: path.clone(),
+            shortcut: None,
+            enabled: true,
+            checked: None,
+            separator_before: false,
+        })
         .collect();
-    sub.push(MenuItem { id: "file.clearRecent".into(), label: tr("Clear Recent Files"), path, shortcut: None, enabled: !recent.is_empty(), checked: None });
+    sub.push(MenuItem {
+        id: "file.clearRecent".into(),
+        label: tr("Clear Recent Files"),
+        path,
+        shortcut: None,
+        enabled: !recent.is_empty(),
+        checked: None,
+        separator_before: false,
+    });
     items.splice(at + 1..at + 1, sub);
 }
 
@@ -881,6 +915,7 @@ pub fn menu_items_for(session: &filmcraft_engine::Session) -> Vec<MenuItem> {
             shortcut: session.shortcuts.primary(c.id),
             enabled: session.is_enabled(c.id),
             checked: None,
+            separator_before: false,
         });
     }
     for c in UI_COMMANDS.iter().chain(crate::panels::keyboard::COMMANDS) {
@@ -894,6 +929,7 @@ pub fn menu_items_for(session: &filmcraft_engine::Session) -> Vec<MenuItem> {
             shortcut: session.shortcuts.primary(c.id),
             enabled: true,
             checked: None,
+            separator_before: false,
         });
     }
     for p in PanelKind::ALL {
@@ -904,6 +940,7 @@ pub fn menu_items_for(session: &filmcraft_engine::Session) -> Vec<MenuItem> {
             shortcut: session.shortcuts.primary(&panel_command_id(p)),
             enabled: true,
             checked: None,
+            separator_before: false,
         });
     }
     out

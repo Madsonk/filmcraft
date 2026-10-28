@@ -9,14 +9,14 @@ use super::{
 };
 use crate::effects::gaussian;
 
-fn blurred(src: &Image, sigma: f32) -> Image {
+pub(super) fn blurred(src: &Image, sigma: f32) -> Image {
     let mut g = src.clone();
     gaussian(&mut g, sigma, sigma, false);
     g
 }
 
 /// Add `light` (premultiplied linear) to `img`: Add or Screen.
-fn add_image(img: &mut Image, light: &Image, gain: [f32; 3], screen: bool) {
+pub(super) fn add_image(img: &mut Image, light: &Image, gain: [f32; 3], screen: bool) {
     img.px.par_chunks_mut(4).zip(light.px.par_chunks(4)).for_each(|(p, l)| {
         let add = [l[0] * gain[0], l[1] * gain[1], l[2] * gain[2]];
         if screen {
@@ -31,7 +31,7 @@ fn add_image(img: &mut Image, light: &Image, gain: [f32; 3], screen: bool) {
     });
 }
 
-fn saturate_image(img: &mut Image, sat: f32) {
+pub(super) fn saturate_image(img: &mut Image, sat: f32) {
     if (sat - 1.0).abs() < 1e-4 {
         return;
     }
@@ -44,7 +44,7 @@ fn saturate_image(img: &mut Image, sat: f32) {
 }
 
 /// Replace the hue of a light buffer with `c` (keeping its luminance), by `k`.
-fn tint(img: &mut Image, c: [f32; 3], k: f32) {
+pub(super) fn tint(img: &mut Image, c: [f32; 3], k: f32) {
     if k <= 0.0 {
         return;
     }

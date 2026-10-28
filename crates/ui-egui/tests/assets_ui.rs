@@ -1,0 +1,835 @@
+//! assets-dnd: the user's LUTs, sounds and titles dropped from "the Finder" (egui dropped files at
+//! a pointer position, and the control channel's `ui.dropFiles`) and dragged out of Window ▸
+//! Resources, on the demo project.
+//!
+//! Set `FILMCRAFT_UI_SNAPSHOT_DIR=<dir>` to also render offscreen with wgpu and write
+//! `assets-*.png`.
+
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+use egui_kittest::Harness;
+use filmcraft_engine::Session;
+use filmcraft_project::{ClipId, ParamValue};
+use filmcraft_ui_egui::FilmcraftApp;
+use serde_json::json;
+
+type H = Harness<'static, FilmcraftApp>;
+
+fn step(h: &mut H) {
+    let ctx = h.ctx.clone();
+    let mut raw = std::mem::take(h.input_mut());
+    eframe::App::raw_input_hook(h.state_mut(), &ctx, &mut raw);
+    *h.input_mut() = raw;
+    ctx.request_repaint();
+    h.step();
+}
+
+fn steps(h: &mut H, n: usize) {
+    for _ in 0..n {
+        step(h);
+    }
+}
+
+fn tmp(name: &str) -> PathBuf {
+    let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let d = std::env::temp_dir().join(format!("fc-assets-ui-{name}-{}-{n}", std::process::id()));
+    std::fs::create_dir_all(&d).unwrap();
+    d
+}
+
+fn harness() -> H {
+    harness_at(1.0 / 4.0)
+}
+
+/// `step_dt` seconds per frame (1/60: a mouse gesture timed like a person's).
+fn harness_at(step_dt: f32) -> H {
+    let mut s = Session::default();
+    s.execute("file.openDemoProject", json!({})).unwrap();
+    let mut b = Harness::builder().with_size(egui::vec2(1600.0, 980.0)).with_max_steps(10_000).with_step_dt(step_dt);
+    if std::env::var_os("FILMCRAFT_UI_SNAPSHOT_DIR").is_some() {
+        b = b.wgpu();
+    }
+    let mut h = b.build_eframe(move |_cc| FilmcraftApp::new(s));
+    steps(&mut h, 6);
+    h
+}
+
+fn snapshot(h: &mut H, name: &str) {
+    if let Some(dir) = std::env::var_os("FILMCRAFT_UI_SNAPSHOT_DIR")
+        && let Ok(img) = h.render()
+    {
+        let _ = img.save(Path::new(&dir).join(format!("assets-{name}.png")));
+    }
+}
+
+fn rect(h: &H, id: &str) -> Option<egui::Rect> {
+    let e = h.state().auto.elements.iter().find(|e| e.id == id).or_else(|| h.state().auto.find(id))?;
+    let [x, y, w, hh] = e.rect;
+    Some(egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(w, hh)))
+}
+
+fn wait_for(h: &mut H, what: &str, mut ok: impl FnMut(&H) -> bool) {
+    for _ in 0..400 {
+        if ok(h) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        step(h);
+    }
+    panic!("timed out waiting for {what}");
+}
+
+fn first_v1_clip(h: &H) -> ClipId {
+    h.state().session.active_sequence().unwrap().video_tracks[0].items[0].id
+}
+
+/// Window point over the middle of a clip.
+fn over_clip(h: &H, clip: ClipId) -> egui::Pos2 {
+    let (x, y) = filmcraft_ui_egui::panels::timeline::locate(h.state(), clip.0, None).expect("clip visible");
+    egui::pos2(x, y)
+}
+
+fn look_of(h: &H, clip: ClipId) -> Option<String> {
+    let q = h.state().session.active_sequence().unwrap();
+    let e = q.find_item(clip).unwrap().1.effects.iter().find(|e| e.effect == "lumetri")?;
+    match e.param("look_lut").map(|v| &v.value) {
+        Some(ParamValue::Text(t)) if !t.is_empty() => Some(t.clone()),
+        _ => None,
+    }
+}
+
+fn cube(dir: &Path, name: &str, warm: bool) -> String {
+    let mut t = format!("TITLE \"{name}\"\nLUT_3D_SIZE 2\n");
+    for b in 0..2 {
+        for g in 0..2 {
+            for r in 0..2 {
+                let (r, g, b) = (r as f32, g as f32, b as f32);
+                let (r, b) = if warm { ((r * 0.8 + 0.2).min(1.0), b * 0.7) } else { (r, b) };
+                t.push_str(&format!("{r} {g} {b}\n"));
+            }
+        }
+    }
+    let p = dir.join(format!("{name}.cube"));
+    std::fs::write(&p, t).unwrap();
+    p.to_string_lossy().into_owned()
+}
+
+fn wav(dir: &Path, name: &str) -> String {
+    let n = 24_000u32;
+    let mut b = Vec::new();
+    b.extend_from_slice(b"RIFF");
+    b.extend_from_slice(&(36 + n * 2).to_le_bytes());
+    b.extend_from_slice(b"WAVEfmt ");
+    b.extend_from_slice(&16u32.to_le_bytes());
+    b.extend_from_slice(&1u16.to_le_bytes());
+    b.extend_from_slice(&1u16.to_le_bytes());
+    b.extend_from_slice(&48_000u32.to_le_bytes());
+    b.extend_from_slice(&96_000u32.to_le_bytes());
+    b.extend_from_slice(&2u16.to_le_bytes());
+    b.extend_from_slice(&16u16.to_le_bytes());
+    b.extend_from_slice(b"data");
+    b.extend_from_slice(&(n * 2).to_le_bytes());
+    for i in 0..n {
+        b.extend_from_slice(&(((i as f32 * 0.05).sin() * 6000.0) as i16).to_le_bytes());
+    }
+    let p = dir.join(name);
+    std::fs::write(&p, b).unwrap();
+    p.to_string_lossy().into_owned()
+}
+
+/// An output device for the tests: keeps the callback the app starts, so a test can pull samples.
+#[derive(Clone, Default)]
+struct FakeOut {
+    fill: Arc<Mutex<Option<Box<dyn FnMut(&mut [f32], usize) + Send>>>>,
+    starts: Arc<Mutex<usize>>,
+}
+
+impl FakeOut {
+    fn install(h: &mut H) -> FakeOut {
+        let f = FakeOut::default();
+        h.state_mut().audio = Some(Box::new(f.clone()));
+        f
+    }
+    fn started(&self) -> bool {
+        *self.starts.lock().unwrap() > 0 && self.fill.lock().unwrap().is_some()
+    }
+    /// Pull `frames` stereo frames from the running callback (None when stopped).
+    fn pull(&self, frames: usize) -> Option<Vec<f32>> {
+        let mut g = self.fill.lock().unwrap();
+        let f = g.as_mut()?;
+        let mut b = vec![0.0f32; frames * 2];
+        f(&mut b, 2);
+        Some(b)
+    }
+}
+
+impl filmcraft_ui_egui::AudioOut for FakeOut {
+    fn start(&mut self, fill: Box<dyn FnMut(&mut [f32], usize) + Send>) -> Result<u32, String> {
+        *self.fill.lock().unwrap() = Some(fill);
+        *self.starts.lock().unwrap() += 1;
+        Ok(48_000)
+    }
+    fn stop(&mut self) {
+        *self.fill.lock().unwrap() = None;
+    }
+    fn sample_rate(&self) -> u32 {
+        48_000
+    }
+    fn played_frames(&self) -> Option<u64> {
+        None
+    }
+}
+
+/// A file dropped by "the Finder" (egui's native handle is the integration's).
+#[derive(Debug)]
+struct TestFile(PathBuf);
+
+impl egui::DroppedFile for TestFile {
+    fn path(&self) -> &Path {
+        &self.0
+    }
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|e| e.to_string())
+    }
+}
+
+/// A drop from the Finder: the pointer moves there, then egui reports the dropped file.
+fn os_drop(h: &mut H, path: &str, at: egui::Pos2) {
+    h.input_mut().events.push(egui::Event::PointerMoved(at));
+    step(h);
+    h.input_mut().dropped_files.push(Arc::new(TestFile(PathBuf::from(path))));
+    steps(h, 3);
+}
+
+fn audio_clip_count(h: &H) -> usize {
+    h.state().session.active_sequence().unwrap().audio_tracks.iter().map(|t| t.items.len()).sum()
+}
+
+#[test]
+fn a_lut_from_the_finder_on_a_shot_becomes_its_look_and_elsewhere_joins_the_library() {
+    let mut h = harness();
+    let d = tmp("lut");
+    let lut = cube(&d, "Drop warm", true);
+    let clip = first_v1_clip(&h);
+    let at = over_clip(&h, clip);
+    os_drop(&mut h, &lut, at);
+    let look = look_of(&h, clip).unwrap_or_else(|| panic!("look set; status: {}", h.state().ui.status));
+    assert!(look.starts_with("lib:"), "{look}");
+    assert!(h.state().ui.status.contains("Creative Look"), "{}", h.state().ui.status);
+    snapshot(&mut h, "01-lut-dropped-on-shot");
+    // dropped on the Project panel: only the LUT library grows
+    let luts = h.state().session.project.luts.len();
+    let other = cube(&d, "Drop neutral", false);
+    let proj = rect(&h, "panel.Project").expect("project panel").center();
+    os_drop(&mut h, &other, proj);
+    assert_eq!(h.state().session.project.luts.len(), luts + 1, "{}", h.state().ui.status);
+    assert_eq!(look_of(&h, clip), Some(look), "the shot keeps its look");
+}
+
+#[test]
+fn a_sound_from_the_finder_on_a_shot_lands_on_a_free_audio_track_and_a_mogrt_is_explained() {
+    let mut h = harness();
+    let d = tmp("sfx");
+    let w = wav(&d, "whoosh.wav");
+    let clip = first_v1_clip(&h);
+    let start = h.state().session.active_sequence().unwrap().find_item(clip).unwrap().1.start;
+    let n0 = audio_clip_count(&h);
+    let at = over_clip(&h, clip);
+    os_drop(&mut h, &w, at);
+    assert_eq!(audio_clip_count(&h), n0 + 1, "{}", h.state().ui.status);
+    let last = h.state().assets.last_drop.clone().expect("drop recorded");
+    let placed = &last["result"]["placed"][0];
+    assert_eq!(placed["action"], "placed", "{last}");
+    let t = placed["time"].as_i64().unwrap();
+    assert!(t >= start.0, "placed at the drop time, not at 0: {last}");
+    // a .mogrt made in After Effects: refused ("preview only"), nothing changes
+    let m = d.join("Lower third.mogrt");
+    std::fs::write(&m, filmcraft_engine::mogrt_fixtures::after_effects().unwrap()).unwrap();
+    let undo = h.state().session.history.undo.len();
+    os_drop(&mut h, &m.to_string_lossy(), at);
+    assert_eq!(h.state().session.history.undo.len(), undo);
+    assert!(h.state().ui.status.contains("After Effects") && h.state().ui.status.contains("preview only"), "{}", h.state().ui.status);
+}
+
+#[test]
+fn the_control_channel_drops_files_where_it_is_told() {
+    use filmcraft_ui_egui::control::ControlRequest;
+    let mut s = Session::default();
+    s.execute("file.openDemoProject", json!({})).unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 980.0)).with_max_steps(10_000).build_eframe(move |_cc| FilmcraftApp::new(s).with_control(rx));
+    steps(&mut h, 6);
+    let d = tmp("ctl");
+    let lut = cube(&d, "Control warm", true);
+    let clip = first_v1_clip(&h);
+    let at = over_clip(&h, clip);
+    let call = |h: &mut H, m: &str, p: serde_json::Value| {
+        let (req, reply) = ControlRequest::new(m, p);
+        tx.send(req).unwrap();
+        for _ in 0..200 {
+            step(h);
+            if let Ok(v) = reply.try_recv() {
+                return v;
+            }
+        }
+        panic!("no reply to {m}");
+    };
+    let v = call(&mut h, "ui.dropFiles", json!({"paths": [lut], "x": at.x, "y": at.y}));
+    assert_eq!(v["ok"], json!(true), "{v}");
+    steps(&mut h, 3);
+    assert!(look_of(&h, clip).is_some(), "{}", h.state().ui.status);
+    let v = call(&mut h, "ui.assets", json!({}));
+    assert_eq!(v["result"]["lastDrop"]["result"]["placed"][0]["action"], "look", "{v}");
+}
+
+fn open_resources(h: &mut H, luts: &Path, sfx: &Path, titles: &Path) {
+    {
+        let app = h.state_mut();
+        app.assets.loaded_settings = true;
+        app.assets.settings.luts = luts.to_string_lossy().into_owned();
+        app.assets.settings.sfx = sfx.to_string_lossy().into_owned();
+        app.assets.settings.music = String::new();
+        app.assets.settings.titles = titles.to_string_lossy().into_owned();
+        app.assets.settings.sound_db = String::new();
+        app.assets.settings.peaks_dir = luts.parent().unwrap_or(luts).join("peaks-cache").to_string_lossy().into_owned();
+        // never the real cache of the machine running the tests
+        app.assets.settings.previews_dir = luts.parent().unwrap_or(luts).join("previews-cache").to_string_lossy().into_owned();
+    }
+    let ctx = h.ctx.clone();
+    filmcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "window.panel.Resources", json!({})).expect("Window ▸ Resources");
+    steps(h, 4);
+}
+
+fn drag_to(h: &mut H, from: egui::Pos2, to: egui::Pos2) {
+    h.input_mut().events.push(egui::Event::PointerMoved(from));
+    step(h);
+    h.input_mut().events.push(egui::Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    step(h);
+    for i in 1..=8 {
+        let p = from + (to - from) * (i as f32 / 8.0);
+        h.input_mut().events.push(egui::Event::PointerMoved(p));
+        step(h);
+    }
+    h.input_mut().events.push(egui::Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    steps(h, 3);
+}
+
+#[test]
+fn the_resources_panel_lists_previews_and_drags_luts_sounds_and_titles() {
+    let mut h = harness();
+    let root = tmp("panel");
+    let (luts, sfx, titles) = (root.join("LUTS"), root.join("SFX/01 HITS"), root.join("TITLES"));
+    for d in [&luts, &sfx, &titles] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    let warm = cube(&luts, "AG Warm", true);
+    cube(&luts, "Neutral", false);
+    let w = wav(&sfx, "SFX · Hits · boom [impact · court · 0.5s].wav");
+    // a converted title (any picture stands in for the ProRes 4444 + alpha video)
+    let title = titles.join("Pack/Lower third.png");
+    std::fs::create_dir_all(title.parent().unwrap()).unwrap();
+    image::RgbaImage::from_fn(64, 36, |x, _| if x < 32 { image::Rgba([255, 255, 255, 255]) } else { image::Rgba([0, 0, 0, 0]) }).save(&title).unwrap();
+    let idx = json!({"version": 1, "items": [{"source": "/lib/Pack/Lower third.mogrt", "pack": "Pack", "name": "Lower third", "video": title.to_string_lossy(), "duration": 2.0, "app": "aefx"}]});
+    std::fs::write(titles.join("index.json"), idx.to_string()).unwrap();
+    open_resources(&mut h, &luts, root.join("SFX").as_path(), &titles);
+
+    // --- LUTs: listed from the background index, hover = preview on the clip under the playhead
+    let clip = first_v1_clip(&h);
+    let ctx = h.ctx.clone();
+    filmcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "timeline.select", json!({"clips": [clip.0]})).unwrap();
+    wait_for(&mut h, "LUT rows", |h| rect(h, "resources.row.1").is_some());
+    let row0 = rect(&h, "resources.row.0").unwrap();
+    h.input_mut().events.push(egui::Event::PointerMoved(row0.center()));
+    wait_for(&mut h, "LUT preview", |h| h.state().assets.preview.after_of.as_deref() == Some(warm.as_str()));
+    assert!(h.state().assets.preview.before.is_some() && h.state().assets.preview.after.is_some());
+    snapshot(&mut h, "02-resources-lut-preview");
+    assert!(look_of(&h, clip).is_none(), "hovering writes nothing to the project");
+    // drag the LUT row onto the shot
+    let to = over_clip(&h, clip);
+    drag_to(&mut h, row0.center(), to);
+    assert!(look_of(&h, clip).is_some(), "look from a dragged row; status: {}", h.state().ui.status);
+
+    // --- Sound effects: search, ▶ in the app, drag onto the shot = free audio track
+    let out = FakeOut::install(&mut h);
+    let tab = rect(&h, "resources.tab.sfx").unwrap().center();
+    h.input_mut().events.push(egui::Event::PointerMoved(tab));
+    step(&mut h);
+    h.input_mut().events.push(egui::Event::PointerButton { pos: tab, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.input_mut().events.push(egui::Event::PointerButton { pos: tab, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    steps(&mut h, 2);
+    h.state_mut().assets.query = "hits boom".into();
+    wait_for(&mut h, "sound row", |h| rect(h, "resources.play.0").is_some());
+    let play = rect(&h, "resources.play.0").unwrap().center();
+    h.input_mut().events.push(egui::Event::PointerMoved(play));
+    step(&mut h);
+    h.input_mut().events.push(egui::Event::PointerButton { pos: play, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.input_mut().events.push(egui::Event::PointerButton { pos: play, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    steps(&mut h, 2);
+    assert_eq!(h.state().assets.audition.state().path.as_deref(), Some(w.as_str()));
+    assert!(out.started(), "the audition started the output device");
+    snapshot(&mut h, "03-resources-sfx");
+    let n0 = audio_clip_count(&h);
+    let row = rect(&h, "resources.row.0").unwrap();
+    drag_to(&mut h, row.center() + egui::vec2(40.0, 0.0), to);
+    assert_eq!(audio_clip_count(&h), n0 + 1, "sound placed; status: {}", h.state().ui.status);
+
+    // --- Titles: the converted title goes on a video track above the shot
+    let tab = rect(&h, "resources.tab.titles").unwrap().center();
+    h.input_mut().events.push(egui::Event::PointerMoved(tab));
+    step(&mut h);
+    h.input_mut().events.push(egui::Event::PointerButton { pos: tab, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.input_mut().events.push(egui::Event::PointerButton { pos: tab, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    steps(&mut h, 2);
+    h.state_mut().assets.query.clear();
+    assert_eq!(h.state().assets.tab, Some(filmcraft_ui_egui::assets::index::Kind::Titles));
+    wait_for(&mut h, "title row", |h| {
+        h.state().assets.libs.get(&filmcraft_ui_egui::assets::index::Kind::Titles).is_some_and(|l| l.snapshot().entries.len() == 1)
+            && h.state().auto.elements.iter().any(|e| e.id == "resources.row.0" && e.label == "Lower third")
+    });
+    snapshot(&mut h, "04-resources-titles");
+    let v1 = h.state().session.active_sequence().unwrap().video_tracks[0].items.len();
+    let row = rect(&h, "resources.row.0").unwrap();
+    drag_to(&mut h, row.center(), to);
+    let q = h.state().session.active_sequence().unwrap();
+    assert_eq!(q.video_tracks[0].items.len(), v1, "V1 untouched");
+    assert!(
+        q.video_tracks.iter().skip(1).any(|t| t.items.iter().any(|it| it.name.contains("Lower third"))),
+        "title above; status: {} drop: {:?} tracks: {:?}",
+        h.state().ui.status,
+        h.state().assets.last_drop,
+        q.video_tracks.iter().map(|t| t.items.iter().map(|i| i.name.clone()).collect::<Vec<_>>()).collect::<Vec<_>>()
+    );
+}
+
+/// A drop over a transition (the striped block on a cut) goes to the incoming clip, not into the
+/// Project bin (seen in the running app: a sound dragged near a cut was only imported).
+#[test]
+fn a_drop_over_a_transition_lands_on_its_clip() {
+    let mut h = harness();
+    let d = tmp("transition");
+    let lut = cube(&d, "Over the cut", true);
+    let snd = wav(&d, "Whoosh on the cut.wav");
+    // a transition on a cut (both clips): the drop goes to the incoming one
+    let tr = h.state().session.active_sequence().unwrap().video_tracks[0]
+        .transitions
+        .iter()
+        .find(|t| t.from.is_some() && t.to.is_some())
+        .cloned()
+        .expect("the demo has a transition on a V1 cut");
+    let (from, clip) = (tr.from.unwrap(), tr.to.unwrap());
+    let (x, y) = filmcraft_ui_egui::panels::timeline::locate(h.state(), from.0, Some("out")).expect("clip visible");
+    let at = egui::pos2(x, y);
+    let hit = filmcraft_ui_egui::panels::timeline::hit_json(h.state(), at, egui::Modifiers::NONE);
+    assert_eq!(hit["hit"], "transition", "the point is over the transition: {hit}");
+    let audio0 = audio_clip_count(&h);
+    os_drop(&mut h, &lut, at);
+    assert!(look_of(&h, clip).is_some(), "LUT on the incoming clip of {tr:?}: {:?}", h.state().assets.last_drop);
+    os_drop(&mut h, &snd, at);
+    assert_eq!(audio_clip_count(&h), audio0 + 1, "the sound is placed on the timeline: {}", h.state().ui.status);
+}
+
+/// titles-native: the Titles tab lists a Premiere title as editable and an After Effects one as
+/// preview only; dragging the Premiere one onto a shot converts it and places an editable title
+/// above; "Convert all shown" converts in the background into the user's graphics templates.
+#[test]
+fn a_premiere_title_from_the_titles_tab_becomes_an_editable_title_above_the_shot() {
+    use filmcraft_engine::mogrt_fixtures::{Spec, after_effects, premiere};
+    let mut h = harness();
+    let root = tmp("titles-native");
+    h.state_mut().session.prefs_path = Some(root.join("data/prefs.json"));
+    let titles = root.join("TITLES");
+    std::fs::create_dir_all(&titles).unwrap();
+    let pr = root.join("Lower third PR.mogrt");
+    std::fs::write(&pr, premiere(&Spec { text: "Madson Kurtis", font: "Inter-Bold", second_run_size: None, opacity_keys: true, extra_effect: false }).unwrap())
+        .unwrap();
+    let ae = root.join("Lower third AE.mogrt");
+    std::fs::write(&ae, after_effects().unwrap()).unwrap();
+    let preview = root.join("ae-preview.png");
+    image::RgbaImage::from_fn(32, 18, |_, _| image::Rgba([200, 200, 200, 255])).save(&preview).unwrap();
+    let idx = json!({"version": 1, "items": [
+        {"source": pr.to_string_lossy(), "pack": "Pack", "name": "Premiere title", "app": "ppro", "template": "project.prgraphic", "duration": 5.0},
+        {"source": ae.to_string_lossy(), "pack": "Pack", "name": "AE title", "app": "aefx", "template": "project.aegraphic", "thumb": preview.to_string_lossy()}
+    ]});
+    std::fs::write(titles.join("index.json"), idx.to_string()).unwrap();
+    open_resources(&mut h, &root, &root, &titles);
+    h.state_mut().assets.tab = Some(filmcraft_ui_egui::assets::index::Kind::Titles);
+    h.state_mut().assets.filtered = None;
+    wait_for(&mut h, "title rows", |h| {
+        let els = &h.state().auto.elements;
+        els.iter().any(|e| e.id == "resources.row.0" && e.label == "Premiere title") && els.iter().any(|e| e.id == "resources.row.1" && e.label == "AE title")
+    });
+    snapshot(&mut h, "05-titles-editable-vs-preview");
+    let entries = h.state().assets.libs.get(&filmcraft_ui_egui::assets::index::Kind::Titles).unwrap().snapshot().entries;
+    assert!(entries[0].ready && entries[0].path.ends_with(".mogrt") && !entries[1].ready, "{entries:?}");
+    // drag the Premiere title onto a shot
+    let clip = first_v1_clip(&h);
+    let to = over_clip(&h, clip);
+    let v1 = h.state().session.active_sequence().unwrap().video_tracks[0].items.len();
+    let row = rect(&h, "resources.row.0").unwrap();
+    drag_to(&mut h, row.center(), to);
+    let q = h.state().session.active_sequence().unwrap();
+    assert_eq!(q.video_tracks[0].items.len(), v1, "V1 untouched");
+    let placed = q
+        .video_tracks
+        .iter()
+        .skip(1)
+        .flat_map(|t| &t.items)
+        .find(|it| it.graphic.as_ref().and_then(|g| g.template.as_ref()).is_some_and(|l| l.name == "Test Lower Third"))
+        .cloned()
+        .unwrap_or_else(|| panic!("editable title above; status: {} drop: {:?}", h.state().ui.status, h.state().assets.last_drop));
+    let link = placed.graphic.as_ref().unwrap().template.clone().unwrap();
+    assert!(link.controls.iter().any(|c| c.param == "text"));
+    // its text is editable (Essential Graphics ▸ Edit uses graphics.template.set)
+    let ctl = link.controls.iter().find(|c| c.param == "text").unwrap().id.clone();
+    let ctx = h.ctx.clone();
+    filmcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "graphics.template.set", json!({"clip": placed.id.0, "control": ctl, "value": "Bonjour"})).unwrap();
+    // the After Effects one: its preview, as a reference, with the reason said
+    let row = rect(&h, "resources.row.1").unwrap();
+    drag_to(&mut h, row.center(), to);
+    assert!(h.state().ui.status.contains("After Effects") || h.state().ui.status.contains("placed"), "{}", h.state().ui.status);
+    // convert all shown: one Premiere title → one .fcgt in the user's templates
+    wait_for(&mut h, "convert button", |h| rect(h, "resources.convertAll").is_some());
+    let b = rect(&h, "resources.convertAll").unwrap().center();
+    h.input_mut().events.push(egui::Event::PointerMoved(b));
+    step(&mut h);
+    h.input_mut().events.push(egui::Event::PointerButton { pos: b, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.input_mut().events.push(egui::Event::PointerButton { pos: b, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    steps(&mut h, 2);
+    wait_for(&mut h, "conversion done", |h| h.state().assets.convert_job.as_ref().is_some_and(|j| !j.lock().unwrap().running));
+    let j = h.state().assets.convert_job.as_ref().unwrap().lock().unwrap().clone();
+    assert_eq!((j.total, j.done, j.failed), (1, 1, 0), "{j:?}");
+    let fcgt: Vec<_> = std::fs::read_dir(root.join("data/Graphics Templates"))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|x| x == "fcgt"))
+        .collect();
+    assert_eq!(fcgt.len(), 1);
+    snapshot(&mut h, "06-titles-converted");
+}
+
+/// ressources-v2: waveforms are computed in the background and drawn, hovering a sound still for
+/// 150 ms plays it inside the app (the play head moves), moving along the waveform scrubs, the
+/// keyboard selects / plays / favourites / applies, and the timeline playing silences it.
+#[test]
+fn sounds_show_waveforms_and_listening_on_hover_plays_in_the_app() {
+    let mut h = harness();
+    let root = tmp("v2-sounds");
+    let sfx = root.join("SFX/01 HITS");
+    std::fs::create_dir_all(&sfx).unwrap();
+    let a = wav(&sfx, "SFX · Hits · boom [impact · court · 0.5s].wav");
+    let b = wav(&sfx, "SFX · Hits · clap.wav");
+    let luts = root.join("LUTS");
+    std::fs::create_dir_all(&luts).unwrap();
+    open_resources(&mut h, &luts, root.join("SFX").as_path(), &root);
+    let out = FakeOut::install(&mut h);
+    h.state_mut().assets.tab = Some(filmcraft_ui_egui::assets::index::Kind::Sfx);
+    h.state_mut().assets.filtered = None;
+    wait_for(&mut h, "two sound rows", |h| rect(h, "resources.wave.1").is_some());
+    // L1: the waveforms of the rows on screen are computed and kept on disk
+    wait_for(&mut h, "waveforms", |h| {
+        let w = h.state().assets.peaks.as_ref().unwrap();
+        w.get(&a).is_some() && w.get(&b).is_some()
+    });
+    let pk = h.state().assets.peaks.as_ref().unwrap().get(&a).unwrap();
+    assert_eq!(pk.cols.len(), filmcraft_ui_egui::assets::peaks::COLUMNS);
+    assert!((pk.duration - 0.5).abs() < 0.02, "{}", pk.duration);
+    // ±6 000 / 32 767 = 23 of 127: the sine's peaks show (a column is shorter than its period)
+    assert!(pk.cols.iter().map(|c| c.1).max().unwrap() >= 22 && pk.cols.iter().map(|c| c.0).min().unwrap() <= -22, "the sine shows: {:?}", &pk.cols[..20]);
+    assert!(root.join("peaks-cache/peaks-v1.bin").exists(), "cached on disk");
+    snapshot(&mut h, "07-sfx-waveforms");
+    // L2: hover a row, still, for more than 150 ms: it plays inside the app
+    let row = rect(&h, "resources.row.0").unwrap();
+    h.input_mut().events.push(egui::Event::PointerMoved(row.left_center() + egui::vec2(60.0, 0.0)));
+    step(&mut h);
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    steps(&mut h, 2);
+    let st = h.state().assets.audition.state();
+    let first = h.state().assets.filtered.as_ref().map(|(_, r)| r[0]).unwrap();
+    let first_path = h.state().assets.libs.get(&filmcraft_ui_egui::assets::index::Kind::Sfx).unwrap().snapshot().entries[first].path.clone();
+    assert_eq!(st.path.as_deref(), Some(first_path.as_str()), "hover listening");
+    assert!(out.started());
+    // the device callback plays the decoded sound (after the fade in) and the position advances
+    let mut heard = 0.0f32;
+    for _ in 0..40 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        if let Some(s) = out.pull(2400) {
+            heard = heard.max(s.iter().fold(0.0f32, |m, v| m.max(v.abs())));
+        }
+        if heard > 0.05 {
+            break;
+        }
+    }
+    assert!(heard > 0.05, "samples heard: {heard}");
+    let pos = h.state().assets.audition.state().position;
+    assert!(pos > 0.0, "{pos}");
+    steps(&mut h, 2);
+    snapshot(&mut h, "08-sfx-hover-playing");
+    // scrub: moving along the waveform of the row being heard moves the play position
+    let wr = rect(&h, "resources.wave.0").unwrap();
+    h.input_mut().events.push(egui::Event::PointerMoved(wr.left_center() + egui::vec2(wr.width() * 0.8, 0.0)));
+    steps(&mut h, 2);
+    let p2 = h.state().assets.audition.state().position;
+    assert!(p2 > 0.3, "scrubbed to 80 % of 0.5 s: {p2}");
+    // leaving the list stops it (fade out)
+    h.input_mut().events.push(egui::Event::PointerMoved(egui::pos2(5.0, 5.0)));
+    steps(&mut h, 2);
+    let _ = out.pull(4800);
+    steps(&mut h, 2);
+    assert!(!h.state().assets.audition.state().playing);
+    // the keyboard: focus the panel, ↓ selects (and listens), F favourites, Enter places it
+    h.state_mut().ui.focused = filmcraft_ui_egui::dock::PanelKind::Resources;
+    h.input_mut().events.push(egui::Event::Key { key: egui::Key::ArrowDown, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+    steps(&mut h, 2);
+    let sel = h.state().assets.selected.clone().expect("selection");
+    assert_eq!(h.state().assets.audition.state().path.as_deref(), Some(sel.as_str()));
+    h.input_mut().events.push(egui::Event::Key { key: egui::Key::F, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+    steps(&mut h, 2);
+    assert!(h.state().assets.library.as_ref().unwrap().favorites.contains(&sel));
+    let n0 = audio_clip_count(&h);
+    h.input_mut().events.push(egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+    steps(&mut h, 2);
+    assert_eq!(audio_clip_count(&h), n0 + 1, "Enter placed the sound; status: {}", h.state().ui.status);
+    assert_eq!(h.state().assets.library.as_ref().unwrap().recents.first(), Some(&sel), "now a recent");
+    // ★ only: one row
+    h.state_mut().assets.filters.favorites_only = true;
+    h.state_mut().assets.filtered = None;
+    steps(&mut h, 2);
+    assert_eq!(h.state().assets.filtered.as_ref().unwrap().1.len(), 1);
+    h.state_mut().assets.filters.favorites_only = false;
+    h.state_mut().assets.filtered = None;
+    // the timeline playing silences the audition and stops the background waveform work
+    h.state_mut().playback.playing = true;
+    steps(&mut h, 2);
+    assert!(!h.state().assets.audition.state().playing && h.state().assets.audition.state().path.is_none());
+    filmcraft_ui_egui::assets::audition(h.state_mut(), &a, 0.0);
+    assert!(h.state().ui.status.contains("timeline"), "{}", h.state().ui.status);
+    h.state_mut().playback.playing = false;
+}
+
+#[test]
+fn listening_reads_the_light_preview_and_the_timeline_gets_the_original() {
+    let mut h = harness();
+    let root = tmp("previews");
+    let sfx = root.join("SFX/01 HITS");
+    std::fs::create_dir_all(&sfx).unwrap();
+    let a = wav(&sfx, "SFX · Hits · boom.wav");
+    let luts = root.join("LUTS");
+    std::fs::create_dir_all(&luts).unwrap();
+    open_resources(&mut h, &luts, root.join("SFX").as_path(), &root);
+    let out = FakeOut::install(&mut h);
+    h.state_mut().assets.tab = Some(filmcraft_ui_egui::assets::index::Kind::Sfx);
+    h.state_mut().assets.filtered = None;
+    wait_for(&mut h, "a sound row", |h| rect(h, "resources.wave.0").is_some());
+    // the row on screen is read once: waveform AND light preview
+    wait_for(&mut h, "waveform + preview", |h| {
+        let w = h.state().assets.peaks.as_ref().unwrap();
+        w.get(&a).is_some() && w.previews().is_some_and(|p| p.get(&a).is_some())
+    });
+    let store = h.state().assets.peaks.as_ref().unwrap().previews().unwrap();
+    let (file, rec) = store.get(&a).unwrap();
+    assert!(file.starts_with(root.join("previews-cache")), "{}", file.display());
+    assert_eq!(rec.kind, Some(filmcraft_ui_egui::assets::peaks::PreviewKind::Sfx));
+    assert_eq!(h.state().assets.peaks.as_ref().unwrap().stats().computed, 1, "one reading for both");
+    steps(&mut h, 2);
+    // hover: the preview is what plays
+    let row = rect(&h, "resources.row.0").unwrap();
+    h.input_mut().events.push(egui::Event::PointerMoved(row.left_center() + egui::vec2(60.0, 0.0)));
+    step(&mut h);
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    steps(&mut h, 2);
+    let mut heard = 0.0f32;
+    for _ in 0..60 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        if let Some(s) = out.pull(2400) {
+            heard = heard.max(s.iter().fold(0.0f32, |m, v| m.max(v.abs())));
+        }
+        if heard > 0.05 {
+            break;
+        }
+    }
+    let st = h.state().assets.audition.state();
+    assert_eq!(st.path.as_deref(), Some(a.as_str()));
+    assert!(st.from_preview, "the light preview is read: {st:?}");
+    assert!(heard > 0.05, "samples heard from the preview: {heard}");
+    // the timeline always gets the original, full quality
+    h.input_mut().events.push(egui::Event::PointerMoved(egui::pos2(5.0, 5.0)));
+    steps(&mut h, 2);
+    h.state_mut().ui.focused = filmcraft_ui_egui::dock::PanelKind::Resources;
+    h.input_mut().events.push(egui::Event::Key { key: egui::Key::ArrowDown, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+    steps(&mut h, 2);
+    let n0 = audio_clip_count(&h);
+    h.input_mut().events.push(egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+    steps(&mut h, 2);
+    assert_eq!(audio_clip_count(&h), n0 + 1, "placed; status: {}", h.state().ui.status);
+    let project = serde_json::to_string(&h.state().session.project).unwrap();
+    assert!(project.contains("boom.wav"), "the original is in the project");
+    assert!(!project.contains(".m4a"), "never the preview");
+    // emptying the cache keeps the waveforms
+    assert!(store.clear() > 0);
+    assert!(store.get(&a).is_none() && h.state().assets.peaks.as_ref().unwrap().get(&a).is_some());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// The y of the new-track zone above the top video track and below the last audio track, and an x
+/// inside the timeline's clips area.
+fn new_track_points(h: &H) -> (f32, f32, f32) {
+    let l = h.state().tl.layout.clone().expect("timeline laid out");
+    let top = l.rows.iter().filter(|r| r.kind == filmcraft_project::TrackKind::Video).map(|r| r.rect.min.y).fold(f32::MAX, f32::min);
+    let bottom = l.rows.iter().filter(|r| r.kind == filmcraft_project::TrackKind::Audio).map(|r| r.rect.max.y).fold(f32::MIN, f32::max);
+    let x = l.content.min.x + 120.0;
+    // 2 pt inside the top video track (its top band), 2 pt inside the last audio track's bottom band
+    (x, top + 2.0, bottom - 2.0)
+}
+
+#[test]
+fn dropping_above_the_top_video_track_or_below_the_last_audio_track_makes_a_new_track() {
+    let mut h = harness();
+    let root = tmp("newtrack");
+    let sfx = root.join("SFX/01 HITS");
+    std::fs::create_dir_all(&sfx).unwrap();
+    wav(&sfx, "SFX · Hits · boom.wav");
+    let luts = root.join("LUTS");
+    std::fs::create_dir_all(&luts).unwrap();
+    open_resources(&mut h, &luts, root.join("SFX").as_path(), &root);
+    h.state_mut().assets.tab = Some(filmcraft_ui_egui::assets::index::Kind::Sfx);
+    h.state_mut().assets.filtered = None;
+    wait_for(&mut h, "a sound row", |h| rect(h, "resources.row.0").is_some());
+    // small tracks: every track (and the room above / below them) is on screen
+    h.state_mut().ui.timeline.audio_track_h = 22.0;
+    h.state_mut().ui.timeline.video_track_h = 22.0;
+    steps(&mut h, 3);
+    let (x, _top, bottom) = new_track_points(&h);
+    let (na, undo0) = {
+        let s = &h.state().session;
+        (s.active_sequence().unwrap().audio_tracks.len(), s.history.undo.len())
+    };
+    // the sound, dragged with the mouse frame by frame below the last audio track
+    let row = rect(&h, "resources.row.0").unwrap();
+    let to = egui::pos2(x, bottom);
+    h.input_mut().events.push(egui::Event::PointerMoved(row.left_center() + egui::vec2(60.0, 0.0)));
+    step(&mut h);
+    let from = row.left_center() + egui::vec2(60.0, 0.0);
+    h.input_mut().events.push(egui::Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    step(&mut h);
+    for i in 1..=12 {
+        h.input_mut().events.push(egui::Event::PointerMoved(from + (to - from) * (i as f32 / 12.0)));
+        step(&mut h);
+    }
+    // while hovering the zone: the hint says a new track, and the insertion line is drawn
+    let hint_target = filmcraft_ui_egui::assets::target_at(h.state(), to).0;
+    assert_eq!(hint_target["newTrack"]["kind"], json!("audio"), "{hint_target}");
+    snapshot(&mut h, "20-new-audio-track-line");
+    h.input_mut().events.push(egui::Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    steps(&mut h, 3);
+    let s = &h.state().session;
+    let q = s.active_sequence().unwrap();
+    assert_eq!(q.audio_tracks.len(), na + 1, "a new audio track; status: {}", h.state().ui.status);
+    assert_eq!(q.audio_tracks[na].items.len(), 1, "the sound is on it");
+    assert_eq!(s.history.undo.len(), undo0 + 1, "one undo step for the track and the sound");
+    // above the top video track: a picture makes a new V track (the hint and target say so)
+    let (x, top, _) = new_track_points(&h);
+    let t = filmcraft_ui_egui::assets::target_at(h.state(), egui::pos2(x, top)).0;
+    assert_eq!(t["newTrack"]["kind"], json!("video"), "{t}");
+    let nv = h.state().session.active_sequence().unwrap().video_tracks.len();
+    assert_eq!(t["newTrack"]["index"], json!(nv));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn the_titles_note_wraps_in_a_narrow_panel_and_blank_previews_are_detected() {
+    // an all-black preview (some packs ship one) is "blank": the tile shows the name instead
+    let black = image::RgbaImage::from_pixel(32, 18, image::Rgba([0, 0, 0, 255]));
+    assert!(filmcraft_ui_egui::panels::resources::is_blank(&black));
+    let clear = image::RgbaImage::from_pixel(32, 18, image::Rgba([255, 255, 255, 0]));
+    assert!(filmcraft_ui_egui::panels::resources::is_blank(&clear));
+    let mut text = black.clone();
+    text.put_pixel(5, 5, image::Rgba([240, 240, 240, 255]));
+    assert!(!filmcraft_ui_egui::panels::resources::is_blank(&text));
+    let mut h = harness();
+    let root = tmp("titles-note");
+    let luts = root.join("LUTS");
+    std::fs::create_dir_all(&luts).unwrap();
+    std::fs::write(root.join("index.json"), json!({"version": 1, "items": []}).to_string()).unwrap();
+    open_resources(&mut h, &luts, &luts, &root);
+    h.state_mut().assets.tab = Some(filmcraft_ui_egui::assets::index::Kind::Titles);
+    steps(&mut h, 4);
+    let note = rect(&h, "resources.titlesNote").expect("titles note");
+    let panel = rect(&h, "panel.Resources").expect("panel");
+    assert!(note.min.x >= panel.min.x && note.max.x <= panel.max.x + 0.5, "note {note:?} inside panel {panel:?}");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A drag by hand at 60 frames a second: press, hold still 0.1 s, move over 0.5 s, hover the
+/// target 0.2 s, release.
+fn hand_drag(h: &mut H, from: egui::Pos2, to: egui::Pos2) {
+    h.input_mut().events.push(egui::Event::PointerMoved(from));
+    steps(h, 3);
+    h.input_mut().events.push(egui::Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    steps(h, 6);
+    for i in 1..=30 {
+        let f = i as f32 / 30.0;
+        h.input_mut().events.push(egui::Event::PointerMoved(from + (to - from) * f));
+        step(h);
+    }
+    steps(h, 12);
+    h.input_mut().events.push(egui::Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    steps(h, 4);
+}
+
+#[test]
+fn titles_luts_and_sounds_dragged_by_hand_at_60_fps_land_on_the_timeline() {
+    use filmcraft_engine::mogrt_fixtures::{Spec, premiere};
+    let mut h = harness_at(1.0 / 60.0);
+    let root = tmp("hand");
+    h.state_mut().session.prefs_path = Some(root.join("data/prefs.json"));
+    let (luts, sfx, titles) = (root.join("LUTS"), root.join("SFX/01 HITS"), root.join("TITLES"));
+    for d in [&luts, &sfx, &titles] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    let warm = cube(&luts, "AG Warm", true);
+    wav(&sfx, "SFX · Hits · boom.wav");
+    let pr = root.join("Lower third PR.mogrt");
+    std::fs::write(
+        &pr,
+        premiere(&Spec { text: "Madson Kurtis", font: "Inter-Bold", second_run_size: None, opacity_keys: false, extra_effect: false }).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(titles.join("index.json"), json!({"version": 1, "items": [{"source": pr.to_string_lossy(), "pack": "Pack", "name": "Premiere title", "app": "ppro", "template": "project.prgraphic", "duration": 5.0}]}).to_string()).unwrap();
+    open_resources(&mut h, &luts, root.join("SFX").as_path(), &titles);
+    let clip = first_v1_clip(&h);
+    // LUT row → the shot
+    wait_for(&mut h, "LUT row", |h| rect(h, "resources.row.0").is_some());
+    let row = rect(&h, "resources.row.0").unwrap();
+    let to = over_clip(&h, clip);
+    hand_drag(&mut h, row.center(), to);
+    assert!(
+        look_of(&h, clip).is_some_and(|l| l.contains("AG Warm") || !l.is_empty()),
+        "look on the shot; status {} drop {:?}",
+        h.state().ui.status,
+        h.state().assets.last_drop
+    );
+    let _ = warm;
+    // title tile (grid) → the shot: an editable title on a track above
+    h.state_mut().assets.tab = Some(filmcraft_ui_egui::assets::index::Kind::Titles);
+    h.state_mut().assets.filtered = None;
+    wait_for(&mut h, "title tile", |h| h.state().auto.elements.iter().any(|e| e.id == "resources.row.0" && e.label == "Premiere title"));
+    let tile = rect(&h, "resources.row.0").unwrap();
+    let above0: usize = h.state().session.active_sequence().unwrap().video_tracks.iter().skip(1).map(|t| t.items.len()).sum();
+    let to = over_clip(&h, clip);
+    hand_drag(&mut h, tile.center(), to);
+    let above1: usize = h.state().session.active_sequence().unwrap().video_tracks.iter().skip(1).map(|t| t.items.len()).sum();
+    assert_eq!(above1, above0 + 1, "title placed above; status {} drop {:?}", h.state().ui.status, h.state().assets.last_drop);
+    // sound row → below the last audio track: a new audio track
+    h.state_mut().assets.tab = Some(filmcraft_ui_egui::assets::index::Kind::Sfx);
+    h.state_mut().assets.filtered = None;
+    h.state_mut().ui.timeline.audio_track_h = 22.0;
+    h.state_mut().ui.timeline.video_track_h = 22.0;
+    wait_for(&mut h, "sound row", |h| rect(h, "resources.wave.0").is_some());
+    let (x, _, bottom) = new_track_points(&h);
+    let na = h.state().session.active_sequence().unwrap().audio_tracks.len();
+    let row = rect(&h, "resources.row.0").unwrap();
+    hand_drag(&mut h, row.left_center() + egui::vec2(50.0, 0.0), egui::pos2(x, bottom));
+    assert_eq!(h.state().session.active_sequence().unwrap().audio_tracks.len(), na + 1, "status {} drop {:?}", h.state().ui.status, h.state().assets.last_drop);
+    let _ = std::fs::remove_dir_all(&root);
+}

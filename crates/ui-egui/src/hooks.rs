@@ -49,6 +49,13 @@ pub struct HostHooks {
     pub pick_files: Option<Box<dyn FnMut(&[&str]) -> Vec<String>>>,
     /// The cursor in physical screen pixels. Where the windowing layer reports no pointer while files are dragged in from the OS (Windows), a drop is placed where this says it landed.
     pub cursor_screen_position: Option<Box<dyn Fn() -> Option<(i32, i32)>>>,
+    /// Files the OS asked the app to open since the last call (macOS open-documents Apple Event: a
+    /// double-click on a `.fcproj`, `open -a FilmCraft`, a drop on the Dock icon). Polled every frame:
+    /// a project is opened, other files are imported (ext-all-v2).
+    pub take_opened_files: Option<Box<dyn FnMut() -> Vec<String>>>,
+    /// The pointer in the window's content (logical points, top-left origin) while files are
+    /// dragged in from the Finder: winit reports the files but not where they are (assets-dnd).
+    pub pointer_in_window: Option<Box<dyn FnMut() -> Option<(f32, f32)>>>,
     pub pick_save: Option<Box<dyn FnMut(&str) -> Option<String>>>,
     pub pick_open_project: Option<Box<dyn FnMut() -> Option<String>>>,
     /// Save dialog with a filter: (filter name, extensions, suggested file name) → path. The

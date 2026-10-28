@@ -29,6 +29,7 @@ macro_rules! tlf {
     };
 }
 
+pub mod assets;
 pub mod automation;
 pub mod brand;
 pub mod calc;
@@ -65,6 +66,18 @@ pub mod theme;
 mod theme_favorites;
 pub mod updates_ui;
 pub mod widgets;
+
+/// What the window calls the document: the saved file's name (its stem, what the Finder shows), else
+/// the project's internal name (a project built by a script may carry a name unrelated to its file).
+pub fn document_title(session: &Session) -> String {
+    session
+        .path
+        .as_deref()
+        .and_then(|p| std::path::Path::new(p).file_stem())
+        .map(|n| n.to_string_lossy().into_owned())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| session.project.name.clone())
+}
 
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
@@ -349,6 +362,12 @@ pub struct FilmcraftApp {
     pub workspaces: dock::WorkspacePrefs,
     /// Workspace names and the current one, as last handed to the native menu.
     menu_workspaces: (Vec<String>, String),
+    /// Extensions menu revision (`ExtensionsState::rev`) last handed to the native menu.
+    menu_extensions: u64,
+    /// The Extensions menu: installed extensions and their manager (docs/extensions.md).
+    pub extensions: panels::extensions::ExtensionsState,
+    /// Window ▸ Resources and resource drops (assets-dnd).
+    pub assets: assets::AssetsState,
 }
 
 pub struct GpuState {

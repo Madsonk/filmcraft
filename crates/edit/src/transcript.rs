@@ -193,6 +193,18 @@ pub fn find_pauses(words: &[SeqWord], min: Tick, keep: Tick, rate: FrameRate) ->
 /// The default filler words and phrases (configurable in preferences and per command).
 pub const DEFAULT_FILLERS: &[&str] = &["um", "uh", "umm", "uhm", "erm", "er", "ah", "hmm", "mm", "mhm"];
 
+/// French hesitations (case, punctuation and repeated letters ignored by the matching: « Euh, », « euhhh »
+/// are written `euh`, `euhh`, `euhhh`). « ben » and « bah » are discourse markers that are real
+/// words too (« ben oui », a first name): they are in the list the user chose to cut, not in the
+/// English default.
+pub const FILLERS_FR: &[&str] =
+    &["euh", "euhh", "euhhh", "heu", "heuh", "heuhh", "hum", "humm", "hmm", "hmmm", "mmh", "mm", "mmm", "hem", "ben", "bah", "beuh"];
+
+/// Words the transcriber writes for a hesitation but that are also real words: cut only when they stand
+/// alone between pauses (decided on the audio by the engine). « eux » (« pour eux ») is a spoken
+/// « euh » that whisper-base often spells so.
+pub const CONDITIONAL_FR: &[&str] = &["eux"];
+
 /// Filler words: word index ranges matching one of `fillers` (each a word or a phrase such as
 /// "you know"; case and punctuation ignored).
 pub fn find_fillers(words: &[SeqWord], fillers: &[String]) -> Vec<std::ops::Range<usize>> {

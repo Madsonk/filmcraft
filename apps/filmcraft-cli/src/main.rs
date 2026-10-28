@@ -31,6 +31,7 @@ macro_rules! out {
 }
 
 mod args;
+mod ext;
 mod probe;
 
 use args::{Args, parse_value};
@@ -75,6 +76,13 @@ SUBCOMMANDS
   commands [filter] [--json]    list commands (id, label, shortcut, params)
   describe <id>                 one command as JSON (menu, shortcut, params, enabled now)
   inspect [project|sequence]    project tree or active sequence as JSON (default: both)
+  assets.buildPreviews --kind sfx|music [--limit N] [--root DIR] [--cache DIR] [--list FILE]
+                                make the light audio previews (and waveforms) of Window ▸ Resources,
+                                one file at a time, resumable (what is made is skipped); for a
+                                night run. Defaults: the library's 02 SFX / 01 MUSIC folders and
+                                /Volumes/Data/FilmCraft-cache. Stops after the current file when
+                                <cache>/previews/STOP exists; Ctrl-C is safe (atomic writes).
+                                --list: these files (one path per line) instead of the folder
   import <file>...              import media into the project
   export <out> [--preset name] [--format f] [--range r] [--start s --end s] [--settings json]
          [--gpu-rendering auto|off]
@@ -97,6 +105,8 @@ SUBCOMMANDS
                                 media info as JSON, with MXF / Ogg / BWF details; with
                                 --image-sequence <media> is the first numbered still of a sequence
   bench-decode <media> [--frames N]
+  extensions <list|install|remove|run|validate|pack> ...
+                                manage and run extensions (see EXTENSIONS below)
   mcp                           MCP server on stdio (headless, or --bridge to the live app)
   help                          this text
   --version                     print the version
@@ -107,7 +117,7 @@ OPTIONS
   --save                        save the project back to --project when done
   --save-as <p.fcproj>          save the project to this path when done
   --bridge <127.0.0.1:PORT>     send commands to the running app (`filmcraft --control PORT`)
-  --data-dir <dir>              FilmCraft data directory for user export presets (headless;
+  --data-dir <dir>              FilmCraft data directory for user export presets and graphics templates (headless;
                                 default: the app's data directory)
   --keep-going                  `run`: report failing lines and continue
   --compact                     one-line JSON output
@@ -131,6 +141,8 @@ fn write_diag(w: &mut dyn std::io::Write, msg: std::fmt::Arguments) {
 fn diag(msg: std::fmt::Arguments) {
     write_diag(&mut std::io::stderr(), msg);
 }
+/// `help` prints this too.
+const HELP_EXT: &str = ext::HELP;
 
 fn usage(msg: impl std::fmt::Display) -> ! {
     diag(format_args!("filmcraft-cli: {msg}\nRun `filmcraft-cli help` for usage."));
@@ -179,6 +191,11 @@ impl Backend {
         // user export presets (and other per-user libraries) from the data directory
         if let Some(dir) = a.opt("--data-dir").map(std::path::PathBuf::from).or_else(filmcraft_engine::autosave::default_data_dir) {
             s.export_presets.set_dir(&dir);
+        }
+        // an explicit data directory also holds the user's graphics templates (`Graphics
+        // Templates/`, where `graphics.template.importMogrt` / `install` write)
+        if let Some(dir) = a.opt("--data-dir") {
+            s.prefs_path = Some(std::path::Path::new(dir).join("preferences.json"));
         }
         if let Some(p) = a.opt("--project") {
             if let Err(e) = s.execute("file.open", json!({"path": p})) {
@@ -296,13 +313,55 @@ async fn main() {
     }
 }
 
+/// `assets.buildPreviews`: the night run of the Resources panel's light previews.
+fn build_previews(a: &Args) {
+    use filmcraft_engine::sound_previews::{BuildOptions, PreviewKind, build};
+    const LIBRARY: &str = "/Volumes/Qnap bureau/6. Garden/Ressources";
+    let kind = match a.opt("--kind") {
+        Some("sfx") => PreviewKind::Sfx,
+        Some("music") => PreviewKind::Music,
+        _ => usage("assets.buildPreviews --kind sfx|music [--limit N] [--root DIR] [--cache DIR]"),
+    };
+    let root = a
+        .opt("--root")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(LIBRARY).join(if kind == PreviewKind::Music { "01 MUSIC" } else { "02 SFX" }));
+    let cache = a.opt("--cache").map(std::path::PathBuf::from).unwrap_or_else(|| "/Volumes/Data/FilmCraft-cache".into());
+    let limit = a.opt("--limit").map(|v| v.parse().unwrap_or_else(|_| usage("--limit N"))).unwrap_or(0);
+    let files = a.opt("--list").map(|l| {
+        std::fs::read_to_string(l)
+            .unwrap_or_else(|e| fail(format!("{l}: {e}")))
+            .lines()
+            .filter(|x| !x.trim().is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    });
+    if files.is_none() && !root.is_dir() {
+        fail(format!("{}: not a folder (is the library mounted?)", root.display()));
+    }
+    let s = Session::default();
+    let stop = cache.join("previews").join("STOP");
+    let o = BuildOptions { kind, root, cache, limit, files };
+    let p = build(&s.media, &*s.services, &o, |p| {
+        outln!(
+            "{}",
+            json!({"made": p.made, "failed": p.failed, "skipped": p.skipped, "total": p.total, "lastMs": p.last_ms, "seconds": (p.seconds * 10.0).round() / 10.0, "last": p.last})
+        );
+        !stop.exists()
+    });
+    outln!(
+        "{}",
+        json!({"done": true, "kind": kind, "made": p.made, "failed": p.failed, "skipped": p.skipped, "total": p.total, "bytes": p.bytes, "seconds": (p.seconds * 10.0).round() / 10.0})
+    );
+}
+
 async fn cli() {
     // `std::env::args` panics on an argument that is not Unicode (a Linux file name in Latin-1)
     let a = Args::parse(std::env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()));
     // `--help` anywhere (`filmcraft-cli --help`, `filmcraft-cli export --help`) prints the reference:
     // the parser takes it as a flag option, so it never reaches the subcommand match.
     if a.flag("--help") {
-        out!("{HELP}");
+        out!("{HELP}\n{HELP_EXT}");
         return;
     }
     // `--version` anywhere and `-V` as the subcommand, also after global options (`--demo --version`, #710).
@@ -314,7 +373,8 @@ async fn cli() {
     register_gpu_frame_renderer();
     let Some(cmd) = a.pos(0) else { usage("missing subcommand") };
     match cmd {
-        "help" | "-h" => out!("{HELP}"),
+        "help" | "-h" => out!("{HELP}\n{HELP_EXT}"),
+        "extensions" => ext::main(&a).await,
         "version" => outln!("filmcraft-cli {}", env!("CARGO_PKG_VERSION")),
         "probe" => cli_probe(&a).await,
         "bench-decode" => cli_bench_decode(&a).await,
@@ -326,6 +386,7 @@ async fn cli() {
         "export" => cli_export(&a).await,
         "render" => cli_render(&a).await,
         "mcp" => cli_mcp(&a).await,
+        "assets.buildPreviews" => build_previews(&a),
         other => usage(format!("unknown subcommand `{other}`")),
     }
 }

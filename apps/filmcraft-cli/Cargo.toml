@@ -16,6 +16,10 @@ path = "src/main.rs"
 default = []
 # Speech-to-text (Text panel ▸ Transcribe) with Whisper on the CPU, and model downloads.
 whisper = ["filmcraft-engine/whisper", "filmcraft-engine/speech-download"]
+# Downloads of the optional neural models (voice clean-up, auto-reframe).
+models = ["filmcraft-engine/model-download"]
+# Optional neural tools (RIFE, Beat This, rush search, super-resolution…): see docs/extensions.md.
+ml = ["filmcraft-engine/ml"]
 
 [dependencies]
 filmcraft-engine = { workspace = true }
@@ -31,6 +35,7 @@ filmcraft-mxf = { workspace = true }
 filmcraft-mpegts = { workspace = true }
 filmcraft-ogg = { workspace = true }
 filmcraft-automation = { workspace = true }
+filmcraft-extensions = { workspace = true }
 serde_json = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 

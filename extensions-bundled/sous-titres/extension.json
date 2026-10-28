@@ -1,0 +1,44 @@
+{
+  "formatVersion": 1,
+  "id": "sous-titres",
+  "name": "Sous-titres",
+  "version": "1.0.0",
+  "category": "captions",
+  "description": "Transcribes the sequence's audio with the built-in Whisper speech recogniser, lays the words out as a caption track, and can write an .srt next to the project. Needs a FilmCraft built with speech-to-text and the speech model installed (Edit > Preferences > Media Analysis & Transcription). The transcription runs on the CPU and can take a while on long sequences.",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Générer les sous-titres",
+      "description": "Transcribe, then create a caption track named Sous-titres (42 characters per line, 2 lines).",
+      "requires": ["sequence"],
+      "action": {
+        "commands": [
+          { "id": "sequence.transcribe", "params": { "language": "${var.language|\"auto\"}" } },
+          { "id": "transcript.createCaptions", "params": { "maxChars": 42, "lines": 2, "name": "Sous-titres" } }
+        ]
+      }
+    },
+    {
+      "label": "Générer et exporter en .srt",
+      "description": "As above, then write <project>.srt next to the saved project.",
+      "requires": ["sequence", "project"],
+      "action": {
+        "commands": [
+          { "id": "sequence.transcribe", "params": { "language": "${var.language|\"auto\"}" } },
+          { "id": "transcript.createCaptions", "params": { "maxChars": 42, "lines": 2, "name": "Sous-titres" } },
+          { "id": "captions.export", "params": { "path": "${project_dir}/${project_name}.srt", "format": "srt", "track": "C1" } }
+        ]
+      }
+    },
+    {
+      "label": "Exporter les sous-titres en .srt",
+      "description": "Write the first caption track of the sequence to <project>.srt.",
+      "requires": ["sequence", "project"],
+      "action": {
+        "commands": [
+          { "id": "captions.export", "params": { "path": "${project_dir}/${project_name}.srt", "format": "srt", "track": "C1" } }
+        ]
+      }
+    }
+  ]
+}

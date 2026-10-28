@@ -45,6 +45,7 @@ pub(crate) use interact::wheel_input;
 use interact::{interact, move_transition_preview, preview_drag};
 #[cfg(test)]
 use layout::new_track_at;
+pub use layout::paint_new_track_line;
 pub(crate) use layout::reveal_playhead;
 use layout::video_row_tops;
 pub use layout::{Layout, Row, max_scroll, scroll_to_reveal, timeline_extent, zoom_about};
@@ -315,7 +316,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let rect = Rect::from_min_max(pos2(content.min.x, top), pos2(content.max.x, top + ah));
         rows.push(Row { track: tr.id, kind: TrackKind::Audio, index: i, rect, lane: app.ui.timeline.track_lanes.contains_key(&tr.id.0) });
     }
-    let layout = Layout { content, ruler, rows: rows.clone(), pps, scroll, split_y };
+    let layout = Layout { content, ruler, rows: rows.clone(), pps, scroll, split_y, video_top: video_area.min.y, audio_bottom: audio_area.max.y };
     app.tl.layout = Some(layout.clone());
 
     // ---- backgrounds
@@ -1051,6 +1052,8 @@ mod new_track_tests {
             pps: 100.0,
             scroll: 0.0,
             split_y: 200.0,
+            video_top: 0.0,
+            audio_bottom: 500.0,
         };
         let at = |y| new_track_at(&seq, &layout, y, 50.0, 50.0);
         assert_eq!(at(40.0), Some((TrackKind::Video, Rect::from_min_max(pos2(0.0, 100.0), pos2(800.0, 150.0)))));
@@ -1091,6 +1094,8 @@ mod new_track_tests {
             pps: 100.0,
             scroll: 0.0,
             split_y: 150.0,
+            video_top: 0.0,
+            audio_bottom: 500.0,
         };
         assert_eq!(new_track_at(&seq, &layout, 10.0, 50.0, 50.0), Some((TrackKind::Video, Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 50.0)))));
         // scrolled to the bottom, V1..V3 fill the area as before

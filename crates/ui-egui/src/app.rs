@@ -31,6 +31,7 @@ impl FilmcraftApp {
         let language = i18n::Language::parse(&session.prefs.general.interface_language).unwrap_or_default();
         let ime_document_epoch = session.document_epoch;
         let ime_active_sequence = session.state.active_sequence;
+        let extensions = panels::extensions::ExtensionsState::new(session.prefs_path.as_ref().and_then(|p| p.parent()).map(|d| d.join("extensions")));
         Self {
             session,
             ui: UiState { language, ..UiState::default() },
@@ -41,6 +42,9 @@ impl FilmcraftApp {
             audio: None,
             scrub: Default::default(),
             hooks: HostHooks::default(),
+            menu_extensions: 0,
+            extensions,
+            assets: Default::default(),
             // Unsaved changes left by a session that died are offered first thing.
             dialog: recovery.then_some(Dialog::Recovery),
             updates_rt: Default::default(),

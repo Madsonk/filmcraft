@@ -45,6 +45,8 @@ const SAMPLES_PER_FRAME: usize = crate::mel::HOP;
 const MAX_TOKENS: usize = 224;
 /// More than the total alignment heads in any published Whisper architecture.
 const MAX_ALIGNMENT_HEADS: usize = 4_096;
+/// Longest initial prompt kept (the decoder holds 448 positions).
+const MAX_PROMPT_TOKENS: usize = 160;
 
 fn merr(e: candle_core::Error) -> SpeechError {
     SpeechError::Model(e.to_string())
@@ -57,6 +59,8 @@ pub struct Whisper {
     alignment_heads: Vec<(usize, usize)>,
     suppress: Vec<u32>,
     begin_suppress: Vec<u32>,
+    /// Single-token spellings of hesitations (" euh", " Heu", " um"…), for the logit bias.
+    hes_tokens: Vec<u32>,
 }
 
 impl Whisper {
@@ -79,7 +83,21 @@ impl Whisper {
             .map(|a| a.iter().filter_map(|x| x.as_u64().map(|v| v as u32)).collect())
             .unwrap_or_else(|| vec![220, tok.eot]);
         let model = Model::load(cfg, weights).map_err(merr)?;
-        Ok(Self { id: id.to_string(), model: Mutex::new(model), tok, alignment_heads, suppress, begin_suppress })
+        let mut hes_tokens: Vec<u32> = Vec::new();
+        for w in crate::hesitation::SPELLINGS {
+            for form in [w.to_string(), capitalised(w)] {
+                let ids = tok.encode(&format!(" {form}"));
+                if let [one] = ids[..] {
+                    hes_tokens.push(one);
+                }
+            }
+        }
+        hes_tokens.sort_unstable();
+        hes_tokens.dedup();
+        if std::env::var_os("FILMCRAFT_SPEECH_TRACE").is_some() {
+            eprintln!("hesitation tokens: {:?}", hes_tokens.iter().map(|&t| (t, tok.decode(&[t]))).collect::<Vec<_>>());
+        }
+        Ok(Self { id: id.to_string(), model: Mutex::new(model), tok, alignment_heads, suppress, begin_suppress, hes_tokens })
     }
 
     pub fn languages(&self) -> Vec<String> {
@@ -107,9 +125,16 @@ impl Whisper {
 
     /// Apply the timestamp rules and suppression to `logits` for the next token after `seq`
     /// (sampled tokens of this window, prompt excluded).
-    fn constrain(&self, logits: &mut [f32], seq: &[u32], max_ts: Option<u32>) {
+    fn constrain(&self, logits: &mut [f32], seq: &[u32], max_ts: Option<u32>, hes_bias: f32) {
         let tb = self.tok.timestamp_begin as usize;
         let ninf = f32::NEG_INFINITY;
+        if hes_bias != 0.0 {
+            for &t in &self.hes_tokens {
+                if let Some(v) = logits.get_mut(t as usize) {
+                    *v += hes_bias;
+                }
+            }
+        }
         for &s in &self.suppress {
             if let Some(v) = logits.get_mut(s as usize) {
                 *v = ninf;
@@ -162,18 +187,18 @@ impl Whisper {
 
     /// Greedy decode of one window. Returns sampled tokens (no prompt, no end-of-text), the mean
     /// log-probability and the no-speech probability.
-    fn decode_window(&self, m: &mut Model, xa: &Tensor, prompt: &[u32]) -> Result<(Vec<u32>, f32, f32), SpeechError> {
+    fn decode_window(&self, m: &mut Model, xa: &Tensor, prompt: &[u32], sot_index: usize, hes_bias: f32) -> Result<(Vec<u32>, f32, f32), SpeechError> {
         m.decoder.reset();
         let mut seq: Vec<u32> = Vec::new();
         let (logits, _) = m.decoder.forward(prompt, xa, true, None).map_err(merr)?;
         // no-speech probability from the start-of-transcript position
-        let first = logits.get(0).and_then(|l| l.get(0)).and_then(|l| l.to_vec1::<f32>()).map_err(merr)?;
+        let first = logits.get(0).and_then(|l| l.get(sot_index)).and_then(|l| l.to_vec1::<f32>()).map_err(merr)?;
         let no_speech = self.tok.no_speech.map(|ns| softmax_at(&first, ns as usize)).unwrap_or(0.0);
         let mut cur = Model::last_logits(&logits).map_err(merr)?;
         let mut sum_lp = 0f32;
         for _ in 0..MAX_TOKENS.min(m.cfg.max_target_positions / 2) {
             let lp = log_softmax(&cur);
-            self.constrain(&mut cur, &seq, Some(50));
+            self.constrain(&mut cur, &seq, Some(50), hes_bias);
             let next = argmax(&cur);
             sum_lp += lp[next as usize];
             if next == self.tok.eot {
@@ -217,6 +242,11 @@ fn alignment_heads(cfg: &Config, generation: &serde_json::Value) -> Result<Vec<(
         return Err(bad("alignment-head fallback is too large"));
     }
     Ok((first_layer..cfg.decoder_layers).flat_map(|layer| (0..cfg.decoder_attention_heads).map(move |head| (layer, head))).collect())
+}
+
+fn capitalised(w: &str) -> String {
+    let mut c = w.chars();
+    c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
 }
 
 fn softmax_at(x: &[f32], i: usize) -> f32 {
@@ -304,7 +334,32 @@ impl Transcriber for Whisper {
                 prompt.push(self.tok.language_token(lang).unwrap_or(self.tok.sot + 1));
                 prompt.push(self.tok.transcribe);
             }
-            let (toks, avg_lp, no_speech) = self.decode_window(&mut m, &xa, &prompt)?;
+            // initial prompt: `<|startofprev|>` + the text, before `<|startoftranscript|>`
+            let mut prefix: Vec<u32> = Vec::new();
+            let prompt_text = opts
+                .prompt
+                .clone()
+                .filter(|p| !p.trim().is_empty())
+                .or_else(|| opts.hesitations.then(|| crate::hesitation::default_prompt(language.as_deref()).to_string()));
+            if let (Some(text), Some(sop)) = (&prompt_text, self.tok.start_of_prev) {
+                let mut ids = self.tok.encode(&format!(" {}", text.trim()));
+                if ids.len() > MAX_PROMPT_TOKENS {
+                    ids.drain(..ids.len() - MAX_PROMPT_TOKENS);
+                }
+                prefix.push(sop);
+                prefix.extend(ids);
+            }
+            // hesitation mode: favour the single-token spellings by 2 (measured: +prompt alone 26/27, +bias 2 27/27, 4 adds false hits)
+            let hes_bias = if opts.hesitation_bias > 0.0 {
+                opts.hesitation_bias
+            } else if opts.hesitations {
+                crate::hesitation::DEFAULT_BIAS
+            } else {
+                0.0
+            };
+            let mut full = prefix.clone();
+            full.extend_from_slice(&prompt);
+            let (toks, avg_lp, no_speech) = self.decode_window(&mut m, &xa, &full, prefix.len(), hes_bias)?;
             if trace {
                 eprintln!("decode {} tokens {:.3}s", toks.len(), clock.elapsed().as_secs_f64());
             }

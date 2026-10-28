@@ -1,0 +1,30 @@
+{
+  "formatVersion": 1,
+  "id": "rife-slowmo",
+  "name": "Ralenti et images par seconde (RIFE)",
+  "version": "1.0.0",
+  "category": "picture",
+  "models": ["rife-v4"],
+  "description": "Creates a new media file from the selected clip with images invented by the RIFE v4 network (optional model rife-v4, 12 MB, MIT): a clean slow motion (x2, x4, x8) or a new frame rate (24 to 60 i/s). The original is not touched; the result (ProRes 422 LT) is imported into the project. Slow motion drops the audio. Variables: --var fps=60, --var slow=4, --var preset=prores_hq|h264.",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Ralenti x2",
+      "description": "Twice as slow, same frame rate, in-between frames computed by RIFE.",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [ { "id": "clip.interpolate", "params": { "slow": 2, "preset": "${var.preset|\"prores_lt\"}", "wait": "${blocking}" } } ] }
+    },
+    {
+      "label": "Ralenti x4",
+      "description": "Four times as slow, same frame rate.",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [ { "id": "clip.interpolate", "params": { "slow": 4, "preset": "${var.preset|\"prores_lt\"}", "wait": "${blocking}" } } ] }
+    },
+    {
+      "label": "Passer à 60 i/s",
+      "description": "Same speed, 60 images per second (--var fps=50 for another rate).",
+      "requires": ["sequence", "selection"],
+      "action": { "commands": [ { "id": "clip.interpolate", "params": { "fps": "${var.fps|60}", "preset": "${var.preset|\"prores_lt\"}", "wait": "${blocking}" } } ] }
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "formatVersion": 1,
+  "id": "storyboard-maker",
+  "name": "Storyboard Maker",
+  "version": "1.0.0",
+  "category": "export",
+  "description": "One still per shot (clips of the first video track that has clips) or per marker of the active sequence, then a contact sheet with titles and timecodes (PNG and PDF). Stills come from the Program monitor and are written next to the saved project, in <project>-storyboard/. It reads the saved .fcproj, so save first. The sheet needs Python 3 with Pillow (pip3 install pillow); the stills do not. Programs run with your user's permissions.",
+  "author": "FilmCraft",
+  "entries": [
+    {
+      "label": "Exporter une image par plan",
+      "description": "A still half a second into each clip of the first video track (or its middle for a shorter clip).",
+      "requires": [
+        "sequence",
+        "project"
+      ],
+      "action": {
+        "exec": {
+          "program": "scripts/storyboard.sh",
+          "args": [
+            "frames",
+            "clips"
+          ],
+          "timeoutSeconds": 120
+        }
+      }
+    },
+    {
+      "label": "Exporter une image par marqueur",
+      "description": "A still at each sequence marker, titled with the marker's name and comment.",
+      "requires": [
+        "sequence",
+        "project"
+      ],
+      "action": {
+        "exec": {
+          "program": "scripts/storyboard.sh",
+          "args": [
+            "frames",
+            "markers"
+          ],
+          "timeoutSeconds": 120
+        }
+      }
+    },
+    {
+      "label": "Assembler la planche (PNG + PDF)",
+      "description": "Contact sheet of the stills exported last, 3 columns (--var columns=4), with titles and timecodes. Writes <project>-storyboard.png and .pdf next to the project.",
+      "requires": [
+        "project"
+      ],
+      "action": {
+        "exec": {
+          "program": "scripts/storyboard.sh",
+          "args": [
+            "sheet"
+          ],
+          "timeoutSeconds": 120
+        }
+      }
+    }
+  ]
+}

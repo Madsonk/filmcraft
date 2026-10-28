@@ -7,8 +7,19 @@ license.workspace = true
 default-run = "filmcraft"
 build = "build.rs"
 
-[lints]
-workspace = true
+# The workspace lints, except that `unsafe_code` is `deny` instead of `forbid`: one module,
+# `open_files` (macOS open-documents Apple Event, docs/adr/0002-macos-open-documents.md), opts in with
+# `#[allow(unsafe_code)]`, and every `unsafe` block carries a `// SAFETY:` comment.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+too_many_arguments = "allow"
+needless_range_loop = "allow"
+type_complexity = "allow"
+undocumented_unsafe_blocks = "deny"
 
 [features]
 default = []
@@ -16,6 +27,10 @@ default = []
 whisper = ["filmcraft-engine/whisper", "filmcraft-engine/speech-download"]
 # Natural Text to Speech voices (Kokoro-82M on the CPU, downloaded on first use).
 neural-voices = ["filmcraft-engine/neural-voices"]
+# Downloads of the optional neural models (voice clean-up, auto-reframe).
+models = ["filmcraft-engine/model-download"]
+# Optional neural tools (RIFE, Beat This, rush search, super-resolution…): see docs/extensions.md.
+ml = ["filmcraft-engine/ml"]
 
 [dependencies]
 filmcraft-engine = { workspace = true }
@@ -49,7 +64,7 @@ pollster = "1"
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = "0.21"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSProcessInfo", "NSString", "NSArray"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow", "NSView"] }
 objc2 = "0.6"
 # Same winit as eframe: macOS event-loop options (no app activation when driven by an agent).
 winit = { version = "0.30", default-features = false }

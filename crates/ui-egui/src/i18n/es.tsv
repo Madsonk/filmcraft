@@ -3628,3 +3628,180 @@
 	No matching text.	Ningún texto coincide.
 	H.265 (HEVC) needs a hardware encoder (NVENC on NVIDIA GPUs, VideoToolbox on macOS); none was found on this machine, and FilmCraft has no software H.265 encoder yet. Choose H.264 or ProRes instead.	H.265 (HEVC) necesita un codificador por hardware (NVENC en GPU NVIDIA, VideoToolbox en macOS); no se encontró ninguno en este equipo y FilmCraft aún no tiene un codificador H.265 por software. Elija H.264 o ProRes.
 	AV1 needs a hardware encoder; none was found on this machine, and FilmCraft has no software AV1 encoder yet.	AV1 necesita un codificador por hardware; no se encontró ninguno en este equipo y FilmCraft aún no tiene un codificador AV1 por software.
+# FilmCraft ext-all: extensions menu, neural tools and Whisper catalogue names
+	Create Animated Word Captions…	Crear subtítulos animados palabra por palabra…
+	Extensions	Extensiones
+	Gérer les extensions…	Administrar extensiones…
+	Installer une extension…	Instalar una extensión…
+	Recharger les extensions	Recargar las extensiones
+	Auto Reframe…	Reencuadre automático…
+	Clean Voice…	Limpiar la voz…
+	Cut on Beats…	Cortar en los beats…
+	L1 Optimal Path	Trayectoria óptima L1
+	Remove Silences…	Quitar silencios…
+	Upscale Video 2x…	Ampliar el vídeo 2x…
+	Whisper large-v3-turbo (most accurate, 1.6 GB)	Whisper large-v3-turbo (el más preciso, 1,6 GB)
+	Whisper small (accurate)	Whisper small (preciso)
+	Opened {path}	Abierto {path}
+	Gestion	Gestión
+	Autres	Otros
+	Montage	Montaje
+	Sous-titres et langue	Subtítulos e idioma
+	Image et IA	Imagen e IA
+	Index rushes	Indexar brutos
+	Match Shot Colour…	Igualar color entre planos…
+	Match Shot Colour	Igualar color entre planos
+	Reference clip (the look to reach)	Plano de referencia (el aspecto a conseguir)
+	Use selected clip	Usar el clip seleccionado
+	Clip to match	Plano a igualar
+	Mean and spread (Reinhard), recommended	Media y dispersión (Reinhard), recomendado
+	Linear transport 3×3 (Monge–Kantorovich)	Transporte lineal 3×3 (Monge–Kantorovich)
+	Histogram per channel	Histograma por canal
+	Apply to the clip (Lumetri Creative Look)	Aplicar al plano (Look creativo de Lumetri)
+	Measured after each clip's Input LUT and Basic Correction: convert log or flat footage to Rec.709 first.	Medido tras la LUT de entrada y la corrección básica de cada plano: convierta antes el material log o plano a Rec.709.
+	The LUT joins the project's LUT library; Edit ▸ Undo removes it.	La LUT se añade a la biblioteca de LUT del proyecto; Edición ▸ Deshacer la quita.
+	Choose two different clips.	Elija dos planos distintos.
+	(choose a clip)	(elegir un plano)
+	Shot match: mean colour distance {before} → {after} (LUT “{name}”)	Igualar color: distancia media {before} → {after} (LUT “{name}”)
+	Film Look	Aspecto de película
+	35mm Clean	35 mm limpio
+	35mm Gritty	35 mm granulado
+	16mm Documentary	16 mm documental
+	Super 8 Memory	Recuerdo Super 8
+	Large Format 65	Gran formato 65
+	Vintage 70s Print	Copia años 70
+	Night Neon	Neón nocturno
+	Grain	Grano
+	Halation	Halación
+	Bloom	Resplandor (bloom)
+	Stock Colour	Color de la emulsión
+	Gate Weave & Flicker	Inestabilidad y parpadeo
+	Dust & Scratches	Polvo y rayas
+	Film Grain	Grano de película
+	Roughness	Aspereza
+	Shadows Response	Resp. sombras
+	Midtones Response	Resp. medios tonos
+	Highlights Response	Resp. altas luces
+	Colour Grain	Grano de color
+	Animated	Animado
+	Wide Spread	Dispersión amplia
+	Halation Color	Color de la halación
+	Colour Strength	Fuerza del color
+	Halation Only	Solo halación
+	Scatter	Dispersión
+	Bloom Color	Color del resplandor
+	Anamorphic Streak	Destello anamórf.
+	Streak Length	Longitud destello
+	Streak Color	Color del destello
+	Bloom Only	Solo resplandor
+	Diffusion Filter	Filtro de difusión
+	Highlight Bias	Prioridad altas luces
+	Warmth	Calidez
+	Black Lift	Elevación de negros
+	Film Stock	Emulsión de película
+	Stock	Emulsión
+	Neutral	Neutro
+	Warm Print	Copia cálida
+	Cool Teal	Verde azulado frío
+	Cross Process	Proceso cruzado
+	Tungsten Night	Noche tungsteno
+	Vintage 70s	Años 70
+	Silver B&W	B/N plata
+	Highlight Roll-off	Suavizado altas luces
+	Weave	Inestabilidad
+	Breathing	Respiración
+	Dust	Polvo
+	Dust Size	Tamaño del polvo
+	Dark Dust Share	Polvo oscuro
+	Hairs	Pelos
+	Scratches	Rayas
+	Lens Character	Carácter del objetivo
+	Chromatic Aberration	Aberración cromática
+	Resources	Recursos
+	A LUT goes on a video clip, not on a sound	Una LUT va en un plano de vídeo, no en un sonido
+	Add to the LUT library	Añadir a la biblioteca de LUT
+	Before	Antes
+	Choose the folder…	Elegir la carpeta…
+	Hover a LUT to preview it	Pase sobre una LUT para previsualizarla
+	LUTs	LUT
+	Listening is not available in this build	La escucha no está disponible en esta versión
+	No folder chosen: click the folder icon.	Ninguna carpeta elegida: haga clic en el icono de carpeta.
+	On a free audio track at this time	En una pista de audio libre en este instante
+	On a free video track at this time	En una pista de vídeo libre en este instante
+	Reading the LUT…	Leyendo la LUT…
+	Search by name or folder	Buscar por nombre o carpeta
+	Select a video clip (or put the playhead on one) to preview LUTs on it.	Seleccione un plano de vídeo (o ponga el cabezal sobre uno) para previsualizar las LUT.
+	Select a video clip first: the LUT becomes its Creative Look.	Seleccione primero un plano de vídeo: la LUT pasa a ser su Look creativo.
+	Sound Effects	Efectos de sonido
+	Update the index (only changed folders are read again)	Actualizar el índice (solo se releen las carpetas modificadas)
+	preview only	solo vista previa
+	Could not play {path}	No se pudo reproducir {path}
+	Creative Look applied ({n})	Look creativo aplicado ({n})
+	Creative Look on {clip}	Look creativo en {clip}
+	Folder: {path} (click to change)	Carpeta: {path} (clic para cambiar)
+	Import into {bin}	Importar en {bin}
+	Index error: {error}	Error del índice: {error}
+	{n} LUT(s) added to the LUT library	{n} LUT añadida(s) a la biblioteca de LUT
+	{n} file(s) imported	{n} archivo(s) importado(s)
+	{n} file(s) refused: {why}	{n} archivo(s) rechazado(s): {why}
+	{n} of {total}	{n} de {total}
+	{n} of {total} · indexing in the background ({dirs} folders read)…	{n} de {total} · indexando en segundo plano ({dirs} carpetas leídas)…
+	{n} resource(s) placed on the timeline	{n} recurso(s) colocado(s) en la línea de tiempo
+	Weave & Flicker	Temblor
+	Titles made in Premiere become editable titles (text, colours, fonts) when dropped. After Effects titles are “preview only”: a reference, not the title.	Los títulos hechos en Premiere se convierten en títulos editables (texto, colores, fuentes) al soltarlos. Los títulos de After Effects son “solo vista previa”: una referencia, no el título.
+	editable	editable
+	After Effects title: only its preview is dropped, as a reference (FilmCraft can't convert it)	Título de After Effects: solo se coloca su vista previa, como referencia (FilmCraft no puede convertirlo)
+	Converting {done} of {total}…	Convirtiendo {done} de {total}…
+	Convert all shown ({n})	Convertir todos los mostrados ({n})
+	{done} converted, {failed} not converted ({error})	{done} convertidos, {failed} sin convertir ({error})
+	{done} converted into Graphics Templates	{done} convertidos en Plantillas de gráficos
+	Could not start the conversion	No se pudo iniciar la conversión
+	No data folder for graphics templates	No hay carpeta de datos para las plantillas de gráficos
+	After Effects title: preview only, FilmCraft can't convert it	Título de After Effects: solo vista previa, FilmCraft no puede convertirlo
+	Editable title on a free video track at this time	Título editable en una pista de vídeo libre en este instante
+	Convert into an editable title (Graphics Templates)	Convertir en un título editable (Plantillas de gráficos)
+	This title was made in After Effects: FilmCraft can't convert it (preview only). Titles made in Premiere become editable titles.	Este título se hizo en After Effects: FilmCraft no puede convertirlo (solo vista previa). Los títulos hechos en Premiere se convierten en títulos editables.
+	{n} title(s) converted into Graphics Templates	{n} título(s) convertido(s) en plantillas de gráficos
+	missing fonts replaced by Inter: {fonts}	fuentes ausentes sustituidas por Inter: {fonts}
+	some effects of the original title were left out (see the template's description)	algunos efectos del título original no se han conservado (ver la descripción de la plantilla)
+	0.5–2 s	0,5–2 s
+	2–10 s	2–10 s
+	< 0.5 s	< 0,5 s
+	> 10 s	> 10 s
+	Also finds the relative major / minor	Encuentra también el relativo mayor / menor
+	BPM	BPM
+	Family: {v}	Familia: {v}
+	Favourites only	Solo favoritos
+	Grid / list	Cuadrícula / lista
+	Key: {v}	Tonalidad: {v}
+	Length: {v}	Duración: {v}
+	Listen on hover	Escuchar al pasar el ratón
+	Listening is paused while the timeline plays	La escucha se pausa mientras se reproduce la línea de tiempo
+	Loops	Bucles
+	No audio output	No hay salida de audio
+	Recently used	Usados recientemente
+	Relevance	Relevancia
+	Sort: {v}	Orden: {v}
+	Tempo	Tempo
+	ambience / texture	ambiente / textura
+	dense ambience	ambiente denso
+	loading waveforms…	cargando formas de onda…
+	music	música
+	one-shot / impact	impacto / one-shot
+	pad / continuous noise	colchón / ruido continuo
+	tonal, no rhythm (pad, drone)	tonal sin ritmo (colchón, drone)
+	waveforms: {known} known	formas de onda: {known} conocidas
+	waveforms: {known} known, {queued} to read	formas de onda: {known} conocidas, {queued} por leer
+	not a readable sound	no es un sonido legible
+	previews: {made}/{total}	vistas previas: {made}/{total}
+	Right-click: empty the preview cache	Clic derecho: vaciar la caché de vistas previas
+	Empty the preview cache ({mb} MB)	Vaciar la caché de vistas previas ({mb} MB)
+	Preview cache emptied	Caché de vistas previas vaciada
+	Reset this curve	Restablecer esta curva
+	In {x} → Out {y}	Entrada {x} → Salida {y}
+	Hue {x}° · {y}	Tono {x}° · {y}
+	{x} % · {y}	{x} % · {y}
+	On a new video track {track}	En una nueva pista de vídeo {track}
+	On a new audio track {track}	En una nueva pista de audio {track}
+	On a free track at this time	En una pista libre en este instante
+	no preview	sin vista previa

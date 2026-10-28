@@ -364,3 +364,60 @@ fn lumetri_rows_keep_their_width_when_the_clip_name_is_long() {
     let long = d.element("lumetri.param.hdr_white").expect("hdr_white row");
     assert_eq!(short, long, "a long clip name must not move or widen the control rows");
 }
+
+#[test]
+fn match_shot_colour_dialog_from_the_clip_menu() {
+    let mut d = Driver::demo();
+    // the entry is in the Clip menu
+    let menu = d.ok("ui.menu.list", json!({}));
+    assert!(menu.as_array().unwrap().iter().any(|m| m["id"] == "color.matchShots" && m["path"][0] == "Clip"), "{menu}");
+    let seq = d.exec("sequence.inspect", json!({}));
+    let items = seq["video"][0]["items"].as_array().unwrap().clone();
+    let (reference, target) = (items[0]["clip"].as_u64().unwrap(), items.last().unwrap()["clip"].as_u64().unwrap());
+    // a warm, darker second camera
+    d.exec("effects.apply", json!({"clips": [target], "effect": "lumetri"}));
+    for (param, value) in [("temperature", json!(70.0)), ("exposure", json!(-0.5))] {
+        d.exec("effects.setParam", json!({"clip": target, "effect": "lumetri", "param": param, "value": value}));
+    }
+    // nothing selected: the dialog opens empty and OK refuses to run
+    d.exec("timeline.select", json!({"clips": []}));
+    let r = d.ok("ui.menu.invoke", json!({"id": "color.matchShots"}));
+    assert_eq!(r["dialog"], "matchShots");
+    d.frames(3);
+    for id in
+        ["colorDialog.match.reference", "colorDialog.match.target", "colorDialog.match.method.mkl", "colorDialog.match.strength", "colorDialog.match.apply"]
+    {
+        assert!(d.ids("colorDialog.match").iter().any(|i| i == id), "{id} missing: {:?}", d.ids("colorDialog.match"));
+    }
+    d.click("colorDialog.ok");
+    assert!(d.ids("colorDialog.match").iter().any(|i| i == "colorDialog.match.reference"), "the dialog stays open");
+    // pick the clips from the timeline selection with the two buttons
+    d.exec("timeline.select", json!({"clips": [reference]}));
+    d.click("colorDialog.match.referenceFromSelection");
+    d.exec("timeline.select", json!({"clips": [target]}));
+    d.click("colorDialog.match.targetFromSelection");
+    d.click("colorDialog.match.method.mkl");
+    d.snapshot("color-match-shots-dialog", Some("colorDialog.match"));
+    d.click("colorDialog.ok");
+    d.frames(3);
+    let e = lumetri(&mut d, target);
+    let look = e["params"]["look_lut"]["value"].to_string();
+    assert!(look.contains("lib:"), "{e}");
+    let status = d.harness.state().ui.status.clone();
+    assert!(status.contains("→") && status.contains("mkl"), "{status}");
+    let luts = d.exec("lut.list", json!({}));
+    assert_eq!(luts["library"].as_array().unwrap().len(), 1, "{luts}");
+    // one undo step takes both the look and the library entry away
+    d.exec("edit.undo", json!({}));
+    let luts = d.exec("lut.list", json!({}));
+    assert_eq!(luts["library"].as_array().unwrap().len(), 0, "{luts}");
+    // with two clips selected, the dialog starts on them (first = reference)
+    d.exec("timeline.select", json!({"clips": [reference, target]}));
+    d.ok("ui.menu.invoke", json!({"id": "color.matchShots"}));
+    d.frames(2);
+    match d.harness.state().ui.color_dialog.clone() {
+        Some(filmcraft_ui_egui::state::ColorDialog::MatchShots { reference: r, target: t, .. }) => assert_eq!((r, t), (reference, target)),
+        other => panic!("{other:?}"),
+    }
+    d.click("colorDialog.cancel");
+}
