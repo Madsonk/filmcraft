@@ -308,13 +308,15 @@ impl Driver {
 
     /// The tab group holding `p`, as its panels.
     fn group_of(&mut self, p: PanelKind) -> Vec<PanelKind> {
-        fn find(n: &filmcraft_ui_egui::dock::DockNode, p: PanelKind) -> Option<Vec<PanelKind>> {
+        use craft_ui::docking::Node;
+        fn find(n: &Node<PanelKind>, p: PanelKind) -> Option<Vec<PanelKind>> {
             match n {
-                filmcraft_ui_egui::dock::DockNode::Split { a, b, .. } => find(a, p).or_else(|| find(b, p)),
-                filmcraft_ui_egui::dock::DockNode::Tabs { panels, .. } => panels.contains(&p).then(|| panels.clone()),
+                Node::Split { first, second, .. } => find(first, p).or_else(|| find(second, p)),
+                Node::Tabs { panels, .. } => panels.contains(&p).then(|| panels.clone()),
+                _ => None,
             }
         }
-        find(&self.app().ui.dock, p).unwrap_or_default()
+        self.app().ui.dock.root.as_ref().and_then(|r| find(r, p)).unwrap_or_default()
     }
 }
 

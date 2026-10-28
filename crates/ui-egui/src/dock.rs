@@ -850,7 +850,7 @@ mod tests {
             "floating": [{"root": {"Split": {"axis": "Vertical", "size": {"FixedFirst": 100.0},
                 "first": {"Tabs": {"panels": ["Info"], "active": 0}}, "second": {"Tabs": {"panels": ["Effects"], "active": 0}}}},
                 "rect": [10.0, 20.0, 300.0, 304.0]}]}, "hidden": []});
-        let prefs = WorkspacePrefs { saved: vec![SavedWorkspace { name: "Mine".into(), workspace, ..Default::default() }], current: "Mine".into() };
+        let prefs = WorkspacePrefs { saved: vec![SavedWorkspace { name: "Mine".into(), workspace, ..Default::default() }], current: "Mine".into(), live: None };
         let loaded = saved_docking(&prefs, "Mine");
         assert!(loaded.is_docked(PanelKind::Tools) && loaded.is_visible(PanelKind::Info) && loaded.is_visible(PanelKind::Effects), "{loaded:?}");
         let root = loaded.root.as_ref().unwrap();
@@ -897,7 +897,7 @@ mod tests {
         assert_eq!(*size, SplitSize::FixedFirst(300.0));
         assert_eq!(saved_docking(&prefs, "Broken"), workspace("Broken"));
         let saved = SavedWorkspace { name: "Mine".into(), workspace: serde_json::to_value(Workspace::new(mine.clone())).unwrap(), ..Default::default() };
-        let prefs = WorkspacePrefs { saved: vec![saved], current: "Mine".into() };
+        let prefs = WorkspacePrefs { saved: vec![saved], current: "Mine".into(), live: None };
         let text = serde_json::to_string(&prefs).unwrap();
         assert!(!text.contains("\"layout\":{\"Split\""), "{text}");
         let back: WorkspacePrefs = serde_json::from_str(&text).unwrap();
@@ -940,7 +940,7 @@ mod tests {
             saved: Vec<OldSaved>,
         }
         let read = |layout: &Layout| {
-            let prefs = WorkspacePrefs { saved: vec![SavedWorkspace::new("Mine", layout).unwrap()], current: "Mine".into() };
+            let prefs = WorkspacePrefs { saved: vec![SavedWorkspace::new("Mine", layout).unwrap()], current: "Mine".into(), live: None };
             let text = serde_json::to_string(&prefs).unwrap();
             assert_eq!(saved_docking(&serde_json::from_str(&text).unwrap(), "Mine"), *layout, "{text}");
             let old: OldPrefs = serde_json::from_str(&text).unwrap();
