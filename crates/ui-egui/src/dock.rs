@@ -894,7 +894,7 @@ pub fn draw_group_chrome_details(ui: &mut egui::Ui, g: &Group, seqs: &SeqTabs, t
         let mut x = strip.min.x + 12.0;
         // sequence tabs as drawn (for dragging one past its neighbours), and the one being dragged
         let mut seq_rects: Vec<(u64, Rect)> = Vec::new();
-        let mut tab_rights: Vec<f32> = Vec::new();
+        let tab_rights: Vec<f32> = Vec::new();
         let mut dragged: Option<u64> = None;
         for (i, tab) in tabs.iter().enumerate().take(last + 1).skip(first) {
             let p = &tab.panel;
