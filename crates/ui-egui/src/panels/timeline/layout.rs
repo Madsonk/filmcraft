@@ -93,7 +93,6 @@ impl Layout {
     }
 }
 
-
 /// #483: where a drop at `y` adds a track: the empty space above the top video track (a video
 /// track) or below the last audio track (an audio track), never over a track, the caption tracks
 /// or the Mix row. Gives the kind and the band the new track would take (`vh` / `ah` high).
