@@ -22,7 +22,10 @@
 use filmcraft_color::{linear_to_srgb, srgb_to_linear};
 
 use super::lights::{add_image, blurred, tint};
-use super::*;
+use super::{
+    Affine, EffectInstance, FxCtx, Image, IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator, ParallelSlice,
+    ParallelSliceMut, Vec2, add_light, bv, chv, cv, fv, hash_u, hash01, highlights, lin, luma, noise1, place, smoothstep,
+};
 use crate::effects::gaussian;
 
 // ------------------------------------------------------------------ shared helpers
