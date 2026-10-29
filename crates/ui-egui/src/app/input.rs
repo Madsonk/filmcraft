@@ -36,9 +36,12 @@ impl FilmcraftApp {
     /// timeline, queue the new items for the Timeline drawn in that viewport.
     fn import_dropped(&mut self, ctx: &egui::Context, dropped: &[egui::DroppedFileHandle], pointer: Option<(egui::Pos2, egui::ViewportId)>) {
         let paths: Vec<String> = dropped.iter().map(|f| f.path()).filter(|p| p.exists()).map(|p| p.to_string_lossy().to_string()).collect();
-        // Resources (a LUT, a sound, a title) act where they land (Resources panel, assets::drop_files);
+        // Resources (a LUT, a sound, a title; pictures and videos stay upstream's) act where they land (Resources panel, assets::drop_files);
         // the other files go the way upstream does.
-        let (assets, paths): (Vec<String>, Vec<String>) = paths.into_iter().partition(|p| filmcraft_engine::assets::AssetKind::of(p) != filmcraft_engine::assets::AssetKind::Other);
+        let (assets, paths): (Vec<String>, Vec<String>) = paths.into_iter().partition(|p| {
+            use filmcraft_engine::assets::AssetKind;
+            matches!(AssetKind::of(p), AssetKind::Lut | AssetKind::Sound | AssetKind::Mogrt)
+        });
         if !assets.is_empty() {
             let pos = crate::assets::os_pointer(self, ctx).or(pointer.map(|(p, _)| p)).or_else(|| ctx.input(|i| i.pointer.latest_pos()));
             crate::assets::drop_files(self, assets, pos);

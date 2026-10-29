@@ -7,8 +7,9 @@ impl FilmcraftApp {
         // A paste image payload belongs to the paste event in this pass only.
         self.pasted_image = None;
         let workspaces = (dock::names(&self.workspaces), self.ui.workspace.clone());
-        if self.bindings_rev != self.session.shortcuts.revision || workspaces != self.menu_workspaces {
+        if self.bindings_rev != self.session.shortcuts.revision || workspaces != self.menu_workspaces || self.menu_extensions != self.extensions.rev {
             self.menu_workspaces = workspaces;
+            self.menu_extensions = self.extensions.rev;
             self.bindings = menus::bindings(self);
             self.bindings_rev = self.session.shortcuts.revision;
         }
@@ -24,6 +25,10 @@ impl FilmcraftApp {
         // out, so it still reports the previous pass, and it is true for any focused widget, which
         // would leave the editor without its single-key tool shortcuts while a slider has focus.
         let text_focused = ctx.text_edit_focused();
+        // Window ▸ Resources has the keyboard when focused: ↑↓ Space Enter Esc F / (ressources-v2)
+        if self.ui.focused == PanelKind::Resources {
+            panels::resources::keyboard(self, ctx);
+        }
         // Esc cancels a dynamic trim in progress
         if self.session.trim_play.dynamic.is_some() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
             let _ = self.session.execute("trim.cancelDynamic", json!({}));
