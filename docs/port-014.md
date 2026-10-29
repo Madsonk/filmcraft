@@ -19,6 +19,34 @@ first, keep from ours only what it adds); this page lists what 0.14.0 changed an
 | egui 0.37 | merge conflicts in `Cargo.toml`/UI | upstream's versions kept |
 | Workspace tests moved to the new dock model | `workspaces_ui.rs` used old tree types | `group_of` now walks `craft_ui::docking::Node` |
 
+## Function-by-function comparison, fork on 0.13.0 → fork on 0.14.0 (proof: `git diff fc-port-013 HEAD --numstat -- <path>`)
+
+Fork-only modules are **byte-identical** between the 0.13.0 port and this branch (0 lines added, 0 removed): crates `extensions`, `ml`, `nn`,
+`mlsearch`, `mlrestore`, `mlfetch`, `modelstore`, `voice`, `reframe`, `narration`; `extensions-bundled/`; engine `assets`, `sound_previews`,
+`mogrt_import`, `shot_match`, `dub`, `word_captions`, `voice_clean`, `auto_reframe`, `beats`, `captions_translate`; `ui-egui/src/assets/`,
+`panels/resources.rs`, `panels/extensions.rs`; `apps/filmcraft/src/open_files.rs`; `apps/filmcraft-cli/src/ext.rs`. Nothing dropped there.
+
+Shared files where upstream also moved (the delta is checked against upstream's own 0.13→0.14 delta, so our additions are intact):
+
+| File(s) | Port vs v0.14.0 (ours only) | Upstream 0.13→0.14 |
+|---|---|---|
+| `render/src/vfx` (Film Look, `filmlook.rs`, `l1path.rs`) | +1572 / −7 (all additions, plus 8 lines of hooks in `lights.rs`/`temporal.rs`) | +63 / −554 |
+| `color/src/lut.rs` (`resampled`, `premiere_parity`, `PREMIERE_SIZE`) | +68 / −0 | +17 / −1 |
+| `speech/src/whisper` (initial prompt, turbo, BPE `encode`) | +156 / −5 | +15 / −412 |
+| `ui-egui/src/i18n/fr.tsv` (our 180 keys appended) | +180 / −0 | +45 / −3 |
+
+App shell (`ui-egui`, replaced by upstream's `app/*` split): the hooks are re-wired by hand, see the first table; each one has a test that passed
+(`assets_ui` drops/keyboard, `extensions_ui`, `workspaces_ui` layout kept after a restart).
+
+## `hevc_probe`: not a flake, an upstream test-layout bug (fixed here)
+
+`crates/platform/tests/it/hevc_probe.rs` asserts `!hevc_probed()` at its start and says "one test in this file on purpose". In 0.14.0 upstream
+moved it into the single `it` binary, where the other tests (`hardware_encode`…) ask `hevc_available()` first. Proof (compiled `it` binary,
+this machine): the test alone passes 5 times out of 5; the full `it` binary fails 3 times out of 3 (`nothing has asked yet`) and also with
+`--test-threads=1`. The file is identical to v0.14.0 (`git diff v0.14.0 HEAD -- crates/platform/tests/it/hevc_probe.rs` empty before the fix), so it is
+upstream's. Fix: the test is moved to its own binary `crates/platform/tests/hevc_probe.rs` (same convention as `nvenc_hevc_warm.rs`), `mod hevc_probe;` removed from `tests/it/main.rs`.
+Result of the rerun: see the verification list.
+
 ## Verification (29 Oct 2026, aarch64)
 
 - `cargo test --workspace --no-fail-fast` after the last commit (762404c7): journal `/Volumes/Data/work/fc-port-014-test3.full.log`, EXIT 101,

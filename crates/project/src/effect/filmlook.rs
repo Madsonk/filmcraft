@@ -6,7 +6,7 @@
 //! top-level bin (outside "Video Effects") and the catalogue test that pins Premiere's list is
 //! unaffected. Pixel implementations live in `filmcraft_render::vfx::filmlook`.
 
-use super::*;
+use super::{EffectDef, ParamDef, b, ch, col, f, fs, video};
 
 /// The Effects panel bin of the film-character effects.
 pub(super) const FILM: &[&str] = &["Film Look"];
