@@ -14,13 +14,33 @@ impl FilmcraftApp {
         }
     }
 
+    /// Keep the layout changed by hand (docking) so the next launch reopens it.
+    pub fn keep_live_layout(&mut self) {
+        let Ok(live) = dock::SavedWorkspace::new(&self.ui.workspace, &self.ui.dock) else { return };
+        let mut next = self.workspaces.clone();
+        next.live = Some(live);
+        if let Err(e) = self.set_workspaces(next) {
+            self.ui.status = e;
+        }
+    }
+
+    /// The layout the app was left with (panels docked by hand) when it is of workspace `name`.
+    pub(super) fn live_layout(&self, name: &str) -> Option<dock::Layout> {
+        let live = self.workspaces.live.clone().filter(|l| l.name == name)?;
+        let only = dock::WorkspacePrefs { saved: vec![live], current: name.to_string(), live: None };
+        Some(dock::saved_docking(&only, name))
+    }
+
+    /// Switch to `name` with its saved layout (Window ▸ Workspaces, Reset to Saved Layout): a
+    /// layout changed by hand is dropped.
     pub fn set_workspace(&mut self, name: &str) {
         self.ui.workspace = name.to_string();
         self.ui.dock = dock::saved_docking(&self.workspaces, name);
         self.pending_panel_raise = None;
         self.ui.keys.maximized = None;
-        if self.workspaces.current != name {
+        if self.workspaces.current != name || self.workspaces.live.is_some() {
             let mut next = self.workspaces.clone();
+            next.live = None;
             next.current = name.to_string();
             if let Err(e) = self.set_workspaces(next) {
                 self.ui.status = e;

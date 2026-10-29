@@ -134,7 +134,14 @@ impl FilmcraftApp {
             // reopen the workspace in use when the app last closed
             self.workspace_restored = true;
             if let Some(w) = dock::find(&self.workspaces, &self.workspaces.current) {
-                self.set_workspace(&w);
+                // the layout as it was left (panels docked by hand), else the workspace's saved one
+                match self.live_layout(&w) {
+                    Some(layout) => {
+                        self.ui.workspace = w;
+                        self.ui.dock = layout;
+                    }
+                    None => self.set_workspace(&w),
+                }
             }
         }
         self.applied_prefs = Some(p);

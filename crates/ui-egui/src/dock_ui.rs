@@ -178,6 +178,9 @@ impl FilmcraftApp {
         if relocating || self.ui.keys.maximized.is_some_and(|panel| !self.ui.dock.is_docked(panel)) {
             self.ui.keys.maximized = None;
         }
+        if relocating {
+            self.keep_live_layout();
+        }
         Ok(())
     }
 

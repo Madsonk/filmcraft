@@ -16,7 +16,7 @@ impl FilmcraftApp {
         let dropped = ctx.input(|i| i.raw.dropped_files.clone());
         if !dropped.is_empty() {
             let pointer = self.drop_pointer(ctx, egui::ViewportId::ROOT, None);
-            self.import_dropped(&dropped, pointer.map(|p| (p, egui::ViewportId::ROOT)));
+            self.import_dropped(ctx, &dropped, pointer.map(|p| (p, egui::ViewportId::ROOT)));
         }
         for files in std::mem::take(&mut self.window_files) {
             // Only the Timeline places files at the pointer; elsewhere they go to the bin.
@@ -27,15 +27,22 @@ impl FilmcraftApp {
                 self.file_drag_hover = pointer.map(|p| (files.hovered.len(), p, files.viewport));
             }
             if !files.dropped.is_empty() {
-                self.import_dropped(&files.dropped, pointer.map(|p| (p, files.viewport)));
+                self.import_dropped(ctx, &files.dropped, pointer.map(|p| (p, files.viewport)));
             }
         }
     }
 
     /// Import the dropped files that exist; with a pointer and Timeline ▸ drop imports to the
     /// timeline, queue the new items for the Timeline drawn in that viewport.
-    fn import_dropped(&mut self, dropped: &[egui::DroppedFileHandle], pointer: Option<(egui::Pos2, egui::ViewportId)>) {
+    fn import_dropped(&mut self, ctx: &egui::Context, dropped: &[egui::DroppedFileHandle], pointer: Option<(egui::Pos2, egui::ViewportId)>) {
         let paths: Vec<String> = dropped.iter().map(|f| f.path()).filter(|p| p.exists()).map(|p| p.to_string_lossy().to_string()).collect();
+        // Resources (a LUT, a sound, a title) act where they land (Resources panel, assets::drop_files);
+        // the other files go the way upstream does.
+        let (assets, paths): (Vec<String>, Vec<String>) = paths.into_iter().partition(|p| filmcraft_engine::assets::AssetKind::of(p) != filmcraft_engine::assets::AssetKind::Other);
+        if !assets.is_empty() {
+            let pos = crate::assets::os_pointer(self, ctx).or(pointer.map(|(p, _)| p)).or_else(|| ctx.input(|i| i.pointer.latest_pos()));
+            crate::assets::drop_files(self, assets, pos);
+        }
         if paths.is_empty() {
             return;
         }
@@ -135,5 +142,28 @@ mod screen_px_tests {
             let p = screen_px_to_ui((10, 20), ppp, egui::pos2(0.0, 0.0));
             assert!(p.x.is_finite() && p.y.is_finite());
         }
+    }
+}
+
+impl FilmcraftApp {
+    /// Files the OS asked us to open (see `HostHooks::take_opened_files`): the last `.fcproj` is
+    /// opened (through the menu path, so unsaved changes are asked about), the rest is imported.
+    pub(super) fn handle_opened_files(&mut self, ctx: &egui::Context) {
+        let Some(take) = self.hooks.take_opened_files.as_mut() else { return };
+        let files = take();
+        if files.is_empty() {
+            return;
+        }
+        let (projects, media): (Vec<String>, Vec<String>) = files.into_iter().partition(|f| f.to_lowercase().ends_with(".fcproj"));
+        if let Some(p) = projects.last() {
+            match crate::menus::invoke(self, ctx, "file.open", json!({"path": p})) {
+                Ok(_) => self.ui.status = crate::tlf!("Opened {path}", path = p),
+                Err(e) => self.ui.status = e,
+            }
+        }
+        if !media.is_empty() {
+            let _ = self.session.execute("file.import", json!({"paths": media, "bin": self.import_bin().0}));
+        }
+        ctx.request_repaint();
     }
 }
