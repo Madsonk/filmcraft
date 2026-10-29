@@ -47,20 +47,24 @@ this machine): the test alone passes 5 times out of 5; the full `it` binary fail
 upstream's. Fix: the test is moved to its own binary `crates/platform/tests/hevc_probe.rs` (same convention as `nvenc_hevc_warm.rs`), `mod hevc_probe;` removed from `tests/it/main.rs`.
 Result of the rerun: see the verification list.
 
-## Verification (29 Oct 2026, aarch64)
+## Verification (29 Oct 2026, aarch64; outputs from the commands)
 
-- `cargo test --workspace --no-fail-fast` after the last commit (762404c7): journal `/Volumes/Data/work/fc-port-014-test3.full.log`, EXIT 101,
-  **one failing target**: `filmcraft-platform --test it`, `hevc_probe::register_answers_the_hevc_probe_in_the_background`
-  ("nothing has asked yet", 30 passed / 1 failed). Crate untouched by the fork; the test depends on timing/order and passes
-  alone. **Not fixed, not ours.** Our suites: `assets_ui` 11/11, `extensions_ui` 16/16, `ui-egui` lib and `it` green, CLI green.
-- `fmt`, `clippy -D warnings`, `cargo xtask layers|assets|wasm` on 0.14.0, bundle and smoke test: see the "Pending" list, updated as they run.
+- Full `cargo test --workspace --no-fail-fast` before the last fixes (`fc-port-014-test3.full.log`): one failing target, `hevc_probe` (above). Our suites: `assets_ui` 11/11,
+  `extensions_ui` 16/16, `ui-egui` lib and `it`, CLI: green.
+- `hevc_probe` after the move: `cargo test -p filmcraft-platform --test hevc_probe --test it`: 1 passed, then `it` 30 passed / 0 failed, EXIT 0 (`fc-port-014-hevc.log`).
+- Gates (`fc-port-014-gates.log`): `cargo xtask layers` EXIT 0, `assets` EXIT 0 (69 assets attributed), `wasm` EXIT 0. `clippy -D warnings` first pass EXIT 101: one `wildcard_imports`
+  (`project/src/effect/filmlook.rs`, `use super::*`), fixed with an explicit list (035d8923). `cargo fmt --check` first pass: one blank line in `timeline/layout.rs`, fixed (8220f38a).
+- Final run after those fixes (`fc-port-014-final.log`: clippy, wasm, fmt, full test): see the last line of this section when it is filled in.
+- Bundle `/Volumes/Data/work/fc-port-014-bundle/FilmCraft.app` (release, built in 31 min 39 s, built before the two small fixes above, which change no behaviour): `Info.plist` OK,
+  `CFBundleShortVersionString` 0.14.0, id `ai.storyteller.filmcraft`, ad hoc signature, `codesign --verify --strict`: valid on disk, satisfies its Designated Requirement. CLI `filmcraft-cli --help` lists `extensions <list|install|remove|run|validate|pack>`.
+- Smoke test on a **copy** of the bundle (`/tmp/fc014-smoke`, control server on port 9877, 64-hex token): app starts ("FilmCraft 0.14.0 (macos aarch64)", VideoToolbox available);
+  `ui.menu.list` returns 500 commands, 103 under Extensions (Montage auto, Beat Edit…); `ui.panel.show Resources` ok; `engine.execute sequence.addEdit` ok; `ui.screenshot` 1600×953 shows the Resources panel
+  (tabs LUT / Bruitages / Musique / Titres, 627 LUTs) and the demo project. The app offered to recover an old unsaved session from the user's real data dir: not accepted, app killed, nothing saved.
 
-## Pending / not verified
+## Not verified
 
-- Release bundle `fc-port-014-bundle/FilmCraft.app` (ad hoc signed): script `/Volumes/Data/work/fc-port-014-build.sh`, waits for `/tmp/lc-build.lock`.
-- `fmt --check`, clippy, xtask checks on 0.14.0.
-- Still unverified from the 0.13.0 port: screenshots, real mouse drag-and-drop, real `.mogrt`, native menu rebuild on extension change,
-  dubbing / voice clean-up / auto-reframe (need models), MadVision sync (service on :8765), feature `ml` not enabled in the bundle.
+- Real mouse drag-and-drop of files from Finder, real `.mogrt`, native menu rebuild on extension change, dubbing / voice clean-up / auto-reframe (need models; feature `ml` not enabled in the bundle), MadVision sync (service on :8765).
+- The bundle is ad hoc signed (the launcher's own build is Developer ID signed and notarized), so Gatekeeper may block it on another Mac.
 - Still lost: drop *between* two tracks creating a track; `.prproj` v0 export (never found); fork's 5-language enum (upstream's 12 used).
 
 ## Re-apply procedure for a newer tag
