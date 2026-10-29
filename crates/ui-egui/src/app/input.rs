@@ -157,7 +157,7 @@ impl FilmcraftApp {
         let (projects, media): (Vec<String>, Vec<String>) = files.into_iter().partition(|f| f.to_lowercase().ends_with(".fcproj"));
         if let Some(p) = projects.last() {
             match crate::menus::invoke(self, ctx, "file.open", json!({"path": p})) {
-                Ok(_) => self.ui.status = crate::tlf!("Opened {path}", path = p),
+                Ok(_) => self.ui.status = tlf!("Opened {path}", path = p),
                 Err(e) => self.ui.status = e,
             }
         }
