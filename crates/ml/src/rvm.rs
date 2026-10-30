@@ -49,7 +49,7 @@ impl Cv {
     }
 
     /// `conv` (no bias) followed by the batch norm `bn` (running statistics), folded.
-    fn bn(w: &W, conv: &str, bn: &str, eps: f64, stride: usize, pad: usize, dil: usize, groups: usize) -> Result<Self> {
+    fn bn(w: &W, conv: &str, bn: &str, eps: f64, (stride, pad, dil, groups): (usize, usize, usize, usize)) -> Result<Self> {
         let k = t(w, &format!("{conv}.weight"))?;
         let co = k.dim(0)?;
         let (g, be, m, v) =
@@ -128,14 +128,14 @@ impl Block {
         let p = format!("backbone.features.{idx}.block");
         let mut n = 0;
         let expand = if cfg.exp != cin {
-            let e = Cv::bn(w, &format!("{p}.{n}.0"), &format!("{p}.{n}.1"), EPS, 1, 0, 1, 1)?;
+            let e = Cv::bn(w, &format!("{p}.{n}.0"), &format!("{p}.{n}.1"), EPS, (1, 0, 1, 1))?;
             n += 1;
             Some(e)
         } else {
             None
         };
         let pad = (cfg.k - 1) / 2 * cfg.dil;
-        let dw = Cv::bn(w, &format!("{p}.{n}.0"), &format!("{p}.{n}.1"), EPS, cfg.stride, pad, cfg.dil, cfg.exp)?;
+        let dw = Cv::bn(w, &format!("{p}.{n}.0"), &format!("{p}.{n}.1"), EPS, (cfg.stride, pad, cfg.dil, cfg.exp))?;
         n += 1;
         let se = if cfg.se {
             let s = (Cv::plain(w, &format!("{p}.{n}.fc1"), 1, 0, 1)?, Cv::plain(w, &format!("{p}.{n}.fc2"), 1, 0, 1)?);
@@ -144,7 +144,7 @@ impl Block {
         } else {
             None
         };
-        let project = Cv::bn(w, &format!("{p}.{n}.0"), &format!("{p}.{n}.1"), EPS, 1, 0, 1, 1)?;
+        let project = Cv::bn(w, &format!("{p}.{n}.0"), &format!("{p}.{n}.1"), EPS, (1, 0, 1, 1))?;
         Ok(Self { expand, dw, se, project, hs: cfg.hs, residual: cfg.stride == 1 && cin == cfg.out })
     }
 
@@ -228,29 +228,29 @@ impl Rvm {
         for (k, v) in raw {
             w.insert(k, Tensor::from_vec(v.data, v.shape, &dev)?);
         }
-        let stem = Cv::bn(&w, "backbone.features.0.0", "backbone.features.0.1", 1e-3, 2, 1, 1, 1)?;
+        let stem = Cv::bn(&w, "backbone.features.0.0", "backbone.features.0.1", 1e-3, (2, 1, 1, 1))?;
         let mut blocks = Vec::new();
         let mut cin = 16;
         for (i, cfg) in BLOCKS.iter().enumerate() {
             blocks.push(Block::load(&w, i + 1, *cfg, cin)?);
             cin = cfg.out;
         }
-        let last = Cv::bn(&w, "backbone.features.16.0", "backbone.features.16.1", 1e-3, 1, 0, 1, 1)?;
-        let (aspp1, aspp2) = (Cv::bn(&w, "aspp.aspp1.0", "aspp.aspp1.1", 1e-5, 1, 0, 1, 1)?, Cv::plain(&w, "aspp.aspp2.1", 1, 0, 1)?);
+        let last = Cv::bn(&w, "backbone.features.16.0", "backbone.features.16.1", 1e-3, (1, 0, 1, 1))?;
+        let (aspp1, aspp2) = (Cv::bn(&w, "aspp.aspp1.0", "aspp.aspp1.1", 1e-5, (1, 0, 1, 1))?, Cv::plain(&w, "aspp.aspp2.1", 1, 0, 1)?);
         let up = [3, 2, 1].map(|i| -> Result<(Cv, Gru)> {
             Ok((
-                Cv::bn(&w, &format!("decoder.decode{i}.conv.0"), &format!("decoder.decode{i}.conv.1"), 1e-5, 1, 1, 1, 1)?,
+                Cv::bn(&w, &format!("decoder.decode{i}.conv.0"), &format!("decoder.decode{i}.conv.1"), 1e-5, (1, 1, 1, 1))?,
                 Gru::load(&w, &format!("decoder.decode{i}"))?,
             ))
         });
         let [u3, u2, u1] = up;
         let out0 = (
-            Cv::bn(&w, "decoder.decode0.conv.0", "decoder.decode0.conv.1", 1e-5, 1, 1, 1, 1)?,
-            Cv::bn(&w, "decoder.decode0.conv.3", "decoder.decode0.conv.4", 1e-5, 1, 1, 1, 1)?,
+            Cv::bn(&w, "decoder.decode0.conv.0", "decoder.decode0.conv.1", 1e-5, (1, 1, 1, 1))?,
+            Cv::bn(&w, "decoder.decode0.conv.3", "decoder.decode0.conv.4", 1e-5, (1, 1, 1, 1))?,
         );
         let ref_conv = [
-            Cv::bn(&w, "refiner.conv.0", "refiner.conv.1", 1e-5, 1, 0, 1, 1)?,
-            Cv::bn(&w, "refiner.conv.3", "refiner.conv.4", 1e-5, 1, 0, 1, 1)?,
+            Cv::bn(&w, "refiner.conv.0", "refiner.conv.1", 1e-5, (1, 0, 1, 1))?,
+            Cv::bn(&w, "refiner.conv.3", "refiner.conv.4", 1e-5, (1, 0, 1, 1))?,
             Cv::plain(&w, "refiner.conv.6", 1, 0, 1)?,
         ];
         Ok(Self {
