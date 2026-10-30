@@ -592,6 +592,8 @@ fn refusing_a_shipped_program_extension_is_remembered_and_install_still_possible
 /// A recogniser that takes its time and reports progress, like Whisper on a long recording.
 struct Slow {
     inner: filmcraft_speech::FixedTranscriber,
+    /// 40 ms each; a test that cancels needs many so a loaded machine cannot let the run finish first.
+    steps: u32,
 }
 
 impl filmcraft_speech::Transcriber for Slow {
@@ -604,9 +606,9 @@ impl filmcraft_speech::Transcriber for Slow {
         o: &filmcraft_speech::Options,
         progress: filmcraft_speech::ProgressFn,
     ) -> Result<filmcraft_project::Transcript, filmcraft_speech::SpeechError> {
-        for i in 0..20 {
+        for i in 0..self.steps {
             std::thread::sleep(std::time::Duration::from_millis(40));
-            if !progress(i as f32 / 20.0, "Transcribing") {
+            if !progress(i as f32 / self.steps as f32, "Transcribing") {
                 return Err(filmcraft_speech::SpeechError::Cancelled);
             }
         }
@@ -614,7 +616,7 @@ impl filmcraft_speech::Transcriber for Slow {
     }
 }
 
-fn install_slow_transcriber(d: &mut Driver) {
+fn install_slow_transcriber(d: &mut Driver, steps: u32) {
     use filmcraft_project::{Transcript, Word};
     use filmcraft_time::Tick;
     let s = &mut d.app().session;
@@ -625,7 +627,7 @@ fn install_slow_transcriber(d: &mut Driver) {
         t.words.push(Word::new(text, sin + Tick::from_seconds_f64(x), sin + Tick::from_seconds_f64(y)));
     }
     t.normalize();
-    s.transcriber = Some(std::sync::Arc::new(Slow { inner: filmcraft_speech::FixedTranscriber { transcript: t, id: "slow".into() } }));
+    s.transcriber = Some(std::sync::Arc::new(Slow { inner: filmcraft_speech::FixedTranscriber { transcript: t, id: "slow".into() }, steps }));
 }
 
 #[test]
@@ -640,7 +642,7 @@ fn a_transcription_runs_in_the_background_with_progress_and_the_window_keeps_pai
             {"id": "transcript.createCaptions", "params": {}}]}}]),
     );
     let mut d = Driver::new(&root);
-    install_slow_transcriber(&mut d);
+    install_slow_transcriber(&mut d, 20);
     let words_before = d.app().session.project.transcripts.len();
     // start it like the menu does (background), without waiting
     let (req, reply) = ControlRequest::new("engine.execute", json!({"command": "ext:talk:0", "params": {}}));
@@ -694,7 +696,7 @@ fn cancelling_a_background_transcription_stops_the_entry_and_keeps_the_project_u
             {"id": "sequence.transcribe", "params": {"language": "en"}}, {"id": "markers.add", "params": {"name": "after"}}]}}]),
     );
     let mut d = Driver::new(&root);
-    install_slow_transcriber(&mut d);
+    install_slow_transcriber(&mut d, 400);
     let transcripts = d.app().session.project.transcripts.len();
     d.call_now("extensions.run", json!({"extension": "talk", "entry": 0, "background": true}));
     for _ in 0..400 {
