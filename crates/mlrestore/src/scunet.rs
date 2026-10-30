@@ -72,7 +72,7 @@ struct Conv {
 }
 
 impl Conv {
-    fn load(w: &pt::Weights, name: &str, inp: usize, out: usize, k: usize, stride: usize, pad: usize, bias: bool, dev: &Device) -> Result<Self> {
+    fn load(w: &pt::Weights, name: &str, inp: usize, out: usize, (k, stride, pad): (usize, usize, usize), bias: bool, dev: &Device) -> Result<Self> {
         Ok(Self {
             w: t(w, &format!("{name}.weight"), &[out, inp, k, k], dev)?,
             b: if bias { Some(t(w, &format!("{name}.bias"), &[out], dev)?) } else { None },
@@ -240,10 +240,10 @@ impl ConvTransBlock {
         Ok(Self {
             conv_dim: cd,
             trans_dim: td,
-            conv1_1: Conv::load(w, &format!("{name}.conv1_1"), c, c, 1, 1, 0, true, dev)?,
-            conv1_2: Conv::load(w, &format!("{name}.conv1_2"), c, c, 1, 1, 0, true, dev)?,
-            rc1: Conv::load(w, &format!("{name}.conv_block.0"), cd, cd, 3, 1, 1, false, dev)?,
-            rc2: Conv::load(w, &format!("{name}.conv_block.2"), cd, cd, 3, 1, 1, false, dev)?,
+            conv1_1: Conv::load(w, &format!("{name}.conv1_1"), c, c, (1, 1, 0), true, dev)?,
+            conv1_2: Conv::load(w, &format!("{name}.conv1_2"), c, c, (1, 1, 0), true, dev)?,
+            rc1: Conv::load(w, &format!("{name}.conv_block.0"), cd, cd, (3, 1, 1), false, dev)?,
+            rc2: Conv::load(w, &format!("{name}.conv_block.2"), cd, cd, (3, 1, 1), false, dev)?,
             trans: SwinBlock {
                 ln1: LayerNorm::load(w, &format!("{tb}.ln1"), td, dev)?,
                 msa: Msa {
@@ -309,18 +309,18 @@ impl ScUnet {
         let d = DIM;
         let down = |i: usize, half: usize, cin: usize, cout: usize| -> Result<(Stage, Conv)> {
             let p = format!("m_down{i}");
-            Ok((Stage::load(w, &p, 0, half, dev)?, Conv::load(w, &format!("{p}.{BLOCKS}"), cin, cout, 2, 2, 0, false, dev)?))
+            Ok((Stage::load(w, &p, 0, half, dev)?, Conv::load(w, &format!("{p}.{BLOCKS}"), cin, cout, (2, 2, 0), false, dev)?))
         };
         let up = |i: usize, half: usize, cin: usize, cout: usize| -> Result<(Up, Stage)> {
             let p = format!("m_up{i}");
             Ok((Up { w: t(w, &format!("{p}.0.weight"), &[cin, cout, 2, 2], dev)? }, Stage::load(w, &p, 1, half, dev)?))
         };
         Ok(Self {
-            head: Conv::load(w, "m_head.0", 3, d, 3, 1, 1, false, dev)?,
+            head: Conv::load(w, "m_head.0", 3, d, (3, 1, 1), false, dev)?,
             down: [down(1, d / 2, d, 2 * d)?, down(2, d, 2 * d, 4 * d)?, down(3, 2 * d, 4 * d, 8 * d)?],
             body: Stage::load(w, "m_body", 0, 4 * d, dev)?,
             up: [up(3, 2 * d, 8 * d, 4 * d)?, up(2, d, 4 * d, 2 * d)?, up(1, d / 2, 2 * d, d)?],
-            tail: Conv::load(w, "m_tail.0", d, 3, 3, 1, 1, false, dev)?,
+            tail: Conv::load(w, "m_tail.0", d, 3, (3, 1, 1), false, dev)?,
             masks: Mutex::new(HashMap::new()),
             device: dev.clone(),
         })

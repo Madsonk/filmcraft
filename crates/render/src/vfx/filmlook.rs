@@ -972,6 +972,7 @@ mod tests {
     use filmcraft_time::Tick;
 
     use super::*;
+    use crate::vfx::dec;
 
     const IDS: &[&str] = &["film_look", "film_grain", "halation", "bloom", "diffusion", "film_stock", "gate_weave", "film_damage", "lens_character"];
 
