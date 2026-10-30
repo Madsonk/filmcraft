@@ -557,7 +557,7 @@ pub fn os_pointer(app: &mut FilmcraftApp, ctx: &egui::Context) -> Option<Pos2> {
 }
 
 fn hint(ctx: &egui::Context, t: &Tokens, p: Pos2, label: &str, what: &str) {
-    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("asset-drag-hint")));
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("asset-drag-hint")));
     let name = Path::new(label).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| label.to_string());
     let text = format!("{name}\n{what}");
     let galley = painter.layout(text, Tokens::ui(11.5), Color32::WHITE, 420.0);

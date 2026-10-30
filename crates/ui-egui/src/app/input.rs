@@ -129,25 +129,6 @@ fn screen_px_to_ui(px: (i32, i32), pixels_per_point: f32, content_min: egui::Pos
     egui::pos2(px.0 as f32 / ppp - content_min.x, px.1 as f32 / ppp - content_min.y)
 }
 
-#[cfg(test)]
-mod screen_px_tests {
-    use super::screen_px_to_ui;
-
-    #[test]
-    fn maps_screen_pixels_into_the_window() {
-        let p = screen_px_to_ui((1300, 900), 2.0, egui::pos2(100.0, 50.0));
-        assert_eq!((p.x, p.y), (550.0, 400.0));
-    }
-
-    #[test]
-    fn a_hostile_scale_does_not_divide_by_zero() {
-        for ppp in [0.0, -1.0, f32::NAN, f32::INFINITY] {
-            let p = screen_px_to_ui((10, 20), ppp, egui::pos2(0.0, 0.0));
-            assert!(p.x.is_finite() && p.y.is_finite());
-        }
-    }
-}
-
 impl FilmcraftApp {
     /// Files the OS asked us to open (see `HostHooks::take_opened_files`): the last `.fcproj` is
     /// opened (through the menu path, so unsaved changes are asked about), the rest is imported.
@@ -168,5 +149,24 @@ impl FilmcraftApp {
             let _ = self.session.execute("file.import", json!({"paths": media, "bin": self.import_bin().0}));
         }
         ctx.request_repaint();
+    }
+}
+
+#[cfg(test)]
+mod screen_px_tests {
+    use super::screen_px_to_ui;
+
+    #[test]
+    fn maps_screen_pixels_into_the_window() {
+        let p = screen_px_to_ui((1300, 900), 2.0, egui::pos2(100.0, 50.0));
+        assert_eq!((p.x, p.y), (550.0, 400.0));
+    }
+
+    #[test]
+    fn a_hostile_scale_does_not_divide_by_zero() {
+        for ppp in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            let p = screen_px_to_ui((10, 20), ppp, egui::pos2(0.0, 0.0));
+            assert!(p.x.is_finite() && p.y.is_finite());
+        }
     }
 }

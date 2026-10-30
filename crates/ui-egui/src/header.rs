@@ -151,7 +151,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             p.with_clip_rect(Rect::from_min_max(pos2(left, rect.min.y), pos2(right, rect.max.y))).galley(tr.min, galley, t.tab_text_active);
             app.auto.add("header.title", tr, &title);
             if elided {
-                ui.interact(tr, egui::Id::new("hdr-title"), Sense::hover()).on_hover_text(title.clone());
+                ui.interact(tr, egui::Id::unique("hdr-title"), Sense::hover()).on_hover_text(title.clone());
             }
         }
 

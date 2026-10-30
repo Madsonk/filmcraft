@@ -20,6 +20,7 @@ fn v(e: &EffectInstance, k: &str) -> ParamValue {
 }
 
 #[test]
+#[allow(clippy::cognitive_complexity)] // one end-to-end scenario: import a title, check layers, look, animation
 fn a_premiere_title_becomes_editable_layers_with_its_look_and_animation() {
     let c = convert(&premiere(&spec()).unwrap(), "Test.mogrt").unwrap();
     let t = &c.template;

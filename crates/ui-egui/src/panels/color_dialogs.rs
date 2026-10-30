@@ -80,7 +80,7 @@ pub fn open_match(app: &mut FilmcraftApp) {
 
 fn clip_combo(app: &mut FilmcraftApp, ui: &mut egui::Ui, id: &str, clips: &[(u64, String)], value: &mut u64) {
     let current = clips.iter().find(|c| c.0 == *value).map(|c| c.1.clone()).unwrap_or_else(|| tl!("(choose a clip)").to_string());
-    let r = egui::ComboBox::from_id_salt(id).width(360.0).selected_text(current).show_ui(ui, |ui| {
+    let r = craft_ui::ComboBox::from_id_salt(id).width(360.0).selected_text(current).show_ui(ui, |ui| {
         for (c, label) in clips {
             let o = ui.selectable_value(value, *c, label);
             app.auto.add(&format!("{id}.{c}"), o.rect, label);
@@ -180,7 +180,7 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
         }
         ColorDialog::MatchShots { clips, reference, target, method, strength, apply: apply_look } => {
             egui::Window::new(tl!("Match Shot Colour"))
-                .id(egui::Id::new("Match Shot Colour"))
+                .id(egui::Id::unique("Match Shot Colour"))
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(false)

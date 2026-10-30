@@ -141,7 +141,7 @@ pub fn draw_wave(p: &egui::Painter, r: Rect, peaks: Option<&crate::assets::peaks
 
 fn toggle_button(app: &mut FilmcraftApp, ui: &mut egui::Ui, r: Rect, id: &str, label: &str, tip: &str, on: bool) -> bool {
     let t = app.tokens;
-    let resp = ui.interact(r, egui::Id::new(("res-btn", id)), Sense::click()).on_hover_text(tip);
+    let resp = ui.interact(r, egui::Id::unique(("res-btn", id)), Sense::click()).on_hover_text(tip);
     app.auto.add(&format!("resources.{id}"), r, tip);
     ui.painter().rect_filled(
         r,
@@ -158,6 +158,7 @@ fn toggle_button(app: &mut FilmcraftApp, ui: &mut egui::Ui, r: Rect, id: &str, l
     resp.clicked()
 }
 
+#[allow(clippy::cognitive_complexity)] // one panel's immediate-mode layout: list, tabs, filters, drag, audition
 pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let t = app.tokens;
     let ctx = ui.ctx().clone();
@@ -171,7 +172,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let label = tab_label(k);
         let w = label.chars().count() as f32 * 6.6 + 18.0;
         let r = Rect::from_min_size(pos2(x, y), vec2(w, 22.0));
-        let resp = ui.interact(r, egui::Id::new(("res-tab", k.id())), Sense::click());
+        let resp = ui.interact(r, egui::Id::unique(("res-tab", k.id())), Sense::click());
         app.auto.add(&format!("resources.tab.{}", k.id()), r, &label);
         let active = k == tab;
         ui.painter().rect_filled(
@@ -198,7 +199,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let rr = Rect::from_min_size(pos2(rect.max.x - 28.0, y), vec2(24.0, 22.0));
     let root = app.assets.settings.root(tab).to_string();
     let folder_tip = if root.is_empty() { tl!("Choose the folder…").to_string() } else { tlf!("Folder: {path} (click to change)", path = root) };
-    let f = ui.interact(fr, egui::Id::new("res-folder"), Sense::click()).on_hover_text(&folder_tip);
+    let f = ui.interact(fr, egui::Id::unique("res-folder"), Sense::click()).on_hover_text(&folder_tip);
     app.auto.add("resources.folder", fr, &folder_tip);
     icons::paint(ui.painter(), fr.shrink(5.0), Icon::Folder, if f.hovered() { t.icon_active } else { t.icon });
     if f.clicked()
@@ -210,7 +211,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         app.assets.filtered = None;
     }
     let refresh_tip = tl!("Update the index (only changed folders are read again)");
-    let rf = ui.interact(rr, egui::Id::new("res-refresh"), Sense::click()).on_hover_text(refresh_tip);
+    let rf = ui.interact(rr, egui::Id::unique("res-refresh"), Sense::click()).on_hover_text(refresh_tip);
     app.auto.add("resources.refresh", rr, refresh_tip);
     icons::paint(ui.painter(), rr.shrink(5.0), Icon::Reset, if rf.hovered() { t.icon_active } else { t.icon });
     if rf.clicked() {
@@ -224,7 +225,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let mut q = app.assets.query.clone();
     let resp = ui.put(
         sr,
-        egui::TextEdit::singleline(&mut q).id(egui::Id::new("res-search")).hint_text(tl!("Search by name or folder")).font(egui::FontId::proportional(11.5)),
+        egui::TextEdit::singleline(&mut q).id(egui::Id::unique("res-search")).hint_text(tl!("Search by name or folder")).font(egui::FontId::proportional(11.5)),
     );
     app.auto.add("resources.search", sr, "Search");
     if resp.changed() {
@@ -287,7 +288,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         // index publication (same query) keeps the position
         let same_query = app.assets.filtered.as_ref().is_some_and(|(k, _)| k.0 == key.0 && k.2 == key.2);
         if !same_query {
-            ctx.data_mut(|d| d.insert_temp(egui::Id::new("res-scroll-top"), true));
+            ctx.data_mut(|d| d.insert_temp(egui::Id::unique("res-scroll-top"), true));
         }
         app.assets.filtered = Some((key, rows));
     }
@@ -326,7 +327,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     if let Some((store, bytes)) = previews {
         // right-click on the status line: empty the preview cache (the waveforms are kept)
         let r = ui
-            .interact(status_r, egui::Id::new("res-status"), Sense::click())
+            .interact(status_r, egui::Id::unique("res-status"), Sense::click())
             .on_hover_text(format!("{state}\n{}", tl!("Right-click: empty the preview cache")));
         r.context_menu(|ui| {
             let label = tlf!("Empty the preview cache ({mb} MB)", mb = format!("{:.1}", bytes as f64 / 1e6));
@@ -373,7 +374,7 @@ fn filter_bar(app: &mut FilmcraftApp, ui: &mut egui::Ui, snap: &index::Snapshot,
     let before = f.clone();
     let any = tl!("All");
     let fam_text = f.family.as_deref().map(family_label).unwrap_or_else(|| tlf!("Family: {v}", v = any));
-    let fam = egui::ComboBox::from_id_salt(("res-fam", tab.id())).selected_text(fam_text).width(110.0).show_ui(&mut child, |ui| {
+    let fam = craft_ui::ComboBox::from_id_salt(("res-fam", tab.id())).selected_text(fam_text).width(110.0).show_ui(&mut child, |ui| {
         ui.selectable_value(&mut f.family, None, any);
         for fam in filters::families(&snap.entries) {
             let l = family_label(&fam);
@@ -381,7 +382,7 @@ fn filter_bar(app: &mut FilmcraftApp, ui: &mut egui::Ui, snap: &index::Snapshot,
         }
     });
     let dur_text = f.duration.map(duration_label).unwrap_or_else(|| tlf!("Length: {v}", v = any));
-    let dur = egui::ComboBox::from_id_salt(("res-dur", tab.id())).selected_text(dur_text).width(80.0).show_ui(&mut child, |ui| {
+    let dur = craft_ui::ComboBox::from_id_salt(("res-dur", tab.id())).selected_text(dur_text).width(80.0).show_ui(&mut child, |ui| {
         ui.selectable_value(&mut f.duration, None, any);
         for i in 0..DURATIONS.len() {
             ui.selectable_value(&mut f.duration, Some(i), duration_label(i));
@@ -400,7 +401,7 @@ fn filter_bar(app: &mut FilmcraftApp, ui: &mut egui::Ui, snap: &index::Snapshot,
         f.bpm_max = (hi > 0.0).then_some(hi);
         rects.push(("bpm", a.rect.union(b.rect)));
         let key_text = f.key.clone().unwrap_or_else(|| tlf!("Key: {v}", v = any));
-        let key = egui::ComboBox::from_id_salt(("res-key", tab.id())).selected_text(key_text).width(90.0).show_ui(&mut child, |ui| {
+        let key = craft_ui::ComboBox::from_id_salt(("res-key", tab.id())).selected_text(key_text).width(90.0).show_ui(&mut child, |ui| {
             ui.selectable_value(&mut f.key, None, any);
             for k in filters::keys(&snap.entries).into_iter().take(24) {
                 let l = k.clone();
@@ -412,12 +413,14 @@ fn filter_bar(app: &mut FilmcraftApp, ui: &mut egui::Ui, snap: &index::Snapshot,
     let lp = child.checkbox(&mut f.loops_only, tl!("Loops"));
     rects.push(("loops", lp.rect));
     let sort = &mut app.assets.sort;
-    let st =
-        egui::ComboBox::from_id_salt(("res-sort", tab.id())).selected_text(tlf!("Sort: {v}", v = sort_label(*sort))).width(100.0).show_ui(&mut child, |ui| {
+    let st = craft_ui::ComboBox::from_id_salt(("res-sort", tab.id())).selected_text(tlf!("Sort: {v}", v = sort_label(*sort))).width(100.0).show_ui(
+        &mut child,
+        |ui| {
             for s in Sort::ALL {
                 ui.selectable_value(sort, s, sort_label(s));
             }
-        });
+        },
+    );
     rects.push(("sort", st.response.rect));
     for (id, r) in rects {
         app.auto.add(&format!("resources.filter.{id}"), r, id);
@@ -445,15 +448,15 @@ fn rows_list(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, sna
     let mut visible_paths = Vec::new();
     let mut scroll = egui::ScrollArea::vertical().id_salt(("res-scroll", tab.id())).auto_shrink([false, false]);
     if let Some(sel) = app.assets.selected.clone()
-        && ctx.data(|d| d.get_temp::<bool>(egui::Id::new("res-scroll-to"))).unwrap_or(false)
+        && ctx.data(|d| d.get_temp::<bool>(egui::Id::unique("res-scroll-to"))).unwrap_or(false)
         && let Some(n) = rows.iter().position(|&i| snap.entries[i].path == sel)
     {
-        ctx.data_mut(|d| d.insert_temp(egui::Id::new("res-scroll-to"), false));
+        ctx.data_mut(|d| d.insert_temp(egui::Id::unique("res-scroll-to"), false));
         let off = (n as f32 * row_h - list.height() / 2.0).max(0.0);
         scroll = scroll.vertical_scroll_offset(off);
     }
-    if ctx.data(|d| d.get_temp::<bool>(egui::Id::new("res-scroll-top"))).unwrap_or(false) {
-        ctx.data_mut(|d| d.insert_temp(egui::Id::new("res-scroll-top"), false));
+    if ctx.data(|d| d.get_temp::<bool>(egui::Id::unique("res-scroll-top"))).unwrap_or(false) {
+        ctx.data_mut(|d| d.insert_temp(egui::Id::unique("res-scroll-top"), false));
         scroll = scroll.vertical_scroll_offset(0.0);
     }
     let selected = app.assets.selected.clone();
@@ -461,7 +464,7 @@ fn rows_list(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, sna
         for n in range {
             let e = &snap.entries[rows[n]];
             let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::hover());
-            let resp = ui.interact(r, egui::Id::new(("res-row", tab.id(), n)), Sense::click_and_drag());
+            let resp = ui.interact(r, egui::Id::unique(("res-row", tab.id(), n)), Sense::click_and_drag());
             app.auto.add(&format!("resources.row.{n}"), r, &e.name);
             if n % 2 == 1 {
                 ui.painter().rect_filled(r, 0.0, t.row_alt);
@@ -481,7 +484,7 @@ fn rows_list(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, sna
             // ★
             let star_r = Rect::from_min_size(pos2(x, r.center().y - 8.0), vec2(16.0, 16.0));
             let fav = favorites.contains(&e.path);
-            let star = ui.interact(star_r, egui::Id::new(("res-star", tab.id(), n)), Sense::click());
+            let star = ui.interact(star_r, egui::Id::unique(("res-star", tab.id(), n)), Sense::click());
             app.auto.add(&format!("resources.star.{n}"), star_r, "Favourite");
             ui.painter().text(star_r.center(), Align2::CENTER_CENTER, if fav { "★" } else { "☆" }, Tokens::ui(12.0), if fav { t.accent } else { t.text_faint });
             if star.clicked() {
@@ -490,7 +493,7 @@ fn rows_list(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, sna
             x += 18.0;
             if sound {
                 let pr = Rect::from_min_size(pos2(x, r.center().y - 8.0), vec2(16.0, 16.0));
-                let play = ui.interact(pr, egui::Id::new(("res-play", tab.id(), n)), Sense::click());
+                let play = ui.interact(pr, egui::Id::unique(("res-play", tab.id(), n)), Sense::click());
                 app.auto.add(&format!("resources.play.{n}"), pr, "Play");
                 let on = audition.path.as_deref() == Some(e.path.as_str()) && audition.playing;
                 icons::paint(ui.painter(), pr.shrink(2.0), if on { Icon::Pause } else { Icon::Play }, if play.hovered() || on { t.accent } else { t.icon });
@@ -671,7 +674,7 @@ fn titles_grid(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, s
                 let Some(&i) = rows.get(n) else { break };
                 let e = &snap.entries[i];
                 let r = Rect::from_min_size(pos2(lr.min.x + 4.0 + c as f32 * (TILE_W + 6.0), lr.min.y + 3.0), vec2(TILE_W, TILE_H));
-                let resp = ui.interact(r, egui::Id::new(("res-tile", n)), Sense::click_and_drag());
+                let resp = ui.interact(r, egui::Id::unique(("res-tile", n)), Sense::click_and_drag());
                 app.auto.add(&format!("resources.row.{n}"), r, &e.name);
                 let sel = selected.as_deref() == Some(e.path.as_str());
                 ui.painter().rect_filled(
@@ -860,7 +863,7 @@ pub fn keyboard(app: &mut FilmcraftApp, ctx: &egui::Context) {
         };
         if let Some(p) = paths.get(n).cloned() {
             app.assets.selected = Some(p.clone());
-            ctx.data_mut(|d| d.insert_temp(egui::Id::new("res-scroll-to"), true));
+            ctx.data_mut(|d| d.insert_temp(egui::Id::unique("res-scroll-to"), true));
             if hover_on(app, tab) {
                 assets_mod::audition(app, &p, start_frac(tab));
             }
@@ -885,7 +888,7 @@ pub fn keyboard(app: &mut FilmcraftApp, ctx: &egui::Context) {
         }
     }
     if slash {
-        ctx.memory_mut(|m| m.request_focus(egui::Id::new("res-search")));
+        ctx.memory_mut(|m| m.request_focus(egui::Id::unique("res-search")));
     }
 }
 
@@ -923,7 +926,7 @@ fn convert_all_row(app: &mut FilmcraftApp, ui: &mut egui::Ui, snap: &index::Snap
         Some(j) if j.running => tlf!("Converting {done} of {total}…", done = j.done, total = j.total),
         _ => tlf!("Convert all shown ({n})", n = todo.len()),
     };
-    let resp = ui.interact(r, egui::Id::new("res-convert-all"), Sense::click());
+    let resp = ui.interact(r, egui::Id::unique("res-convert-all"), Sense::click());
     app.auto.add("resources.convertAll", r, &label);
     let enabled = !running && !todo.is_empty();
     ui.painter().rect_filled(

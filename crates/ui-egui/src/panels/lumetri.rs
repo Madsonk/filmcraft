@@ -151,7 +151,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 ("curve_green", Color32::from_rgb(80, 200, 90)),
                 ("curve_blue", Color32::from_rgb(80, 130, 250)),
             ][ch];
-            let (area, reset) = curve_editor(ui, &e, id, false, col, &t, &mut actions, clip, idx);
+            let (area, reset) = curve_editor(ui, &e, id, false, col, &t, &mut actions, (clip, idx));
             app.auto.add("lumetri.curve.rgb", area, "RGB curve");
             app.auto.add("lumetri.curve.rgb.reset", reset, "Reset this curve");
             if hdr {
@@ -167,7 +167,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 ("sat_vs_sat", tl!("Sat vs Sat")),
             ] {
                 ui.label(egui::RichText::new(label).color(t.text_dim));
-                let (area, reset) = curve_editor(ui, &e, id, true, Color32::WHITE, &t, &mut actions, clip, idx);
+                let (area, reset) = curve_editor(ui, &e, id, true, Color32::WHITE, &t, &mut actions, (clip, idx));
                 app.auto.add(&format!("lumetri.curve.{id}"), area, label);
                 app.auto.add(&format!("lumetri.curve.{id}.reset"), reset, "Reset this curve");
             }
@@ -492,8 +492,7 @@ fn curve_editor(
     col: Color32,
     t: &Tokens,
     actions: &mut Actions,
-    clip: ClipId,
-    idx: usize,
+    (clip, idx): (ClipId, usize),
 ) -> (Rect, Rect) {
     let pts: Vec<[f32; 2]> = e.param(id).and_then(|p| p.value.as_curve().map(|c| c.to_vec())).unwrap_or_default();
     // the hue curves wrap around (red at both ends); luma / saturation curves do not
@@ -502,7 +501,7 @@ fn curve_editor(
     // ↺ reset, right-aligned above the curve (only when it was changed)
     let reset_rect = Rect::from_min_size(pos2(ui.max_rect().max.x - 22.0, ui.cursor().min.y - 20.0), vec2(18.0, 18.0));
     if !identity {
-        let r = ui.interact(reset_rect, egui::Id::new(("curve-reset", clip.0, id)), Sense::click()).on_hover_text(tl!("Reset this curve"));
+        let r = ui.interact(reset_rect, egui::Id::unique(("curve-reset", clip.0, id)), Sense::click()).on_hover_text(tl!("Reset this curve"));
         ui.painter().text(reset_rect.center(), Align2::CENTER_CENTER, "↺", Tokens::ui(13.0), if r.hovered() { t.hot_text } else { t.text_dim });
         if r.clicked() {
             let v: Vec<Value> = if hue { Vec::new() } else { vec![json!([0.0, 0.0]), json!([1.0, 1.0])] };
@@ -513,7 +512,7 @@ fn curve_editor(
     let (area, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
     // a double-click: the second click of a pair on this curve (read from the pointer state, so
     // a pair whose clicks land a few points apart still counts)
-    let click_key = egui::Id::new(("curve-last-click", clip.0, id));
+    let click_key = egui::Id::unique(("curve-last-click", clip.0, id));
     let mut double = resp.double_clicked();
     if resp.clicked()
         && let Some(pos) = resp.interact_pointer_pos()
