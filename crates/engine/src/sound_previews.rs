@@ -302,7 +302,7 @@ impl PreviewStore {
 
     /// Encode `mono` (samples at [`PREVIEW_RATE`]) as the preview of `path`: written to a
     /// temporary file, renamed, then recorded.
-    fn write(&self, path: &str, size: u64, mtime: i64, mono: &[f32], start: f64, duration: f64, kind: PreviewKind) -> Result<PreviewRec, String> {
+    fn write(&self, path: &str, size: u64, mtime: i64, mono: &[f32], (start, duration): (f64, f64), kind: PreviewKind) -> Result<PreviewRec, String> {
         let mut enc = filmcraft_aac::Encoder::new(filmcraft_aac::EncoderConfig::cbr(PREVIEW_RATE, 1, PREVIEW_BPS)).map_err(|e| e.to_string())?;
         let mut aus = enc.encode(&[mono]);
         aus.extend(enc.flush());
@@ -402,7 +402,7 @@ pub fn analyse(media: &MediaPool, services: &dyn Services, path: &str, previews:
                     mono[n - 1 - i] *= g;
                 }
             }
-            Some(store.write(path, size, mtime, &mono, w0 as f64 / sr as f64, duration, kind)?)
+            Some(store.write(path, size, mtime, &mono, (w0 as f64 / sr as f64, duration), kind)?)
         }
         _ => None,
     };
