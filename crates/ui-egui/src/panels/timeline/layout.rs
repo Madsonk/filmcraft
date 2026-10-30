@@ -39,7 +39,7 @@ impl Layout {
 
 /// The insertion line of a new track (drops): accent line across the tracks with end ticks.
 pub fn paint_new_track_line(ctx: &egui::Context, t: &crate::theme::Tokens, l: &Layout, y: f32) {
-    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("tl-new-track-line")));
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("tl-new-track-line")));
     let (x0, x1) = (l.content.min.x, l.content.max.x);
     painter.line_segment([pos2(x0, y), pos2(x1, y)], Stroke::new(3.0, t.accent));
     for x in [x0 + 1.5, x1 - 1.5] {

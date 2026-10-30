@@ -151,7 +151,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 ("curve_green", Color32::from_rgb(80, 200, 90)),
                 ("curve_blue", Color32::from_rgb(80, 130, 250)),
             ][ch];
-            let (area, reset) = curve_editor(ui, &e, id, false, col, &t, &mut actions, (clip, idx));
+            let (area, reset) = curve_editor(ui, &e, (id, false), col, &t, &mut actions, (clip, idx));
             app.auto.add("lumetri.curve.rgb", area, "RGB curve");
             app.auto.add("lumetri.curve.rgb.reset", reset, "Reset this curve");
             if hdr {
@@ -167,7 +167,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 ("sat_vs_sat", tl!("Sat vs Sat")),
             ] {
                 ui.label(egui::RichText::new(label).color(t.text_dim));
-                let (area, reset) = curve_editor(ui, &e, id, true, Color32::WHITE, &t, &mut actions, (clip, idx));
+                let (area, reset) = curve_editor(ui, &e, (id, true), Color32::WHITE, &t, &mut actions, (clip, idx));
                 app.auto.add(&format!("lumetri.curve.{id}"), area, label);
                 app.auto.add(&format!("lumetri.curve.{id}.reset"), reset, "Reset this curve");
             }
@@ -487,8 +487,7 @@ const _: () = assert!(CURVE_GRAB >= 12.0, "points are easy to grab");
 fn curve_editor(
     ui: &mut egui::Ui,
     e: &EffectInstance,
-    id: &str,
-    hue: bool,
+    (id, hue): (&str, bool),
     col: Color32,
     t: &Tokens,
     actions: &mut Actions,

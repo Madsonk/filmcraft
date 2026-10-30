@@ -460,6 +460,7 @@ fn rows_list(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, sna
         scroll = scroll.vertical_scroll_offset(0.0);
     }
     let selected = app.assets.selected.clone();
+    #[allow(clippy::cognitive_complexity)] // the row list: icon, name, meta, drag, audition per kind
     scroll.show_rows(&mut child, row_h, rows.len(), |ui, range| {
         for n in range {
             let e = &snap.entries[rows[n]];
