@@ -25,7 +25,7 @@
 //! musician's count, and which of the two kick beats of a bar is the first when nothing else
 //! (a chord change, a bass note, a crash) marks the bar start.
 
-use crate::remix::{RemixError, beat_features, cos, local_max, onset_envelope, onset_frame, trimmed_beats};
+use crate::remix::{RemixError, beat_features, cos_sim, local_max, onset_envelope, onset_frame, trimmed_beats};
 
 /// Slowest tempo considered without a hint (BPM).
 pub const TEMPO_MIN: f64 = 65.0;
@@ -402,7 +402,7 @@ fn bar_start(mono: &[f32], sr: u32, env: &[f32], frames: &[usize], beats: &[i64]
         })
         .collect();
     let accent: Vec<f64> = frames.iter().take(m).map(|&t| local_max(env, t, 1) as f64).collect();
-    let change: Vec<f64> = (0..m).map(|i| if i == 0 { 0.0 } else { 1.0 - cos(&chroma[i - 1], &chroma[i]) as f64 }).collect();
+    let change: Vec<f64> = (0..m).map(|i| if i == 0 { 0.0 } else { 1.0 - cos_sim(&chroma[i - 1], &chroma[i]) as f64 }).collect();
     let z = |v: &[f64]| -> Vec<f64> {
         let mean = v.iter().sum::<f64>() / v.len().max(1) as f64;
         let sd = (v.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / v.len().max(1) as f64).sqrt().max(1e-9);

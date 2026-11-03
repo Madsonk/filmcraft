@@ -65,6 +65,7 @@ impl Lut3d {
 
     /// Sample a colour transform on a `size³` grid over 0..1.
     pub fn from_fn(size: usize, f: impl Fn([f32; 3]) -> [f32; 3]) -> Self {
+        let size = size.max(2);
         let n = (size - 1) as f32;
         let mut data = Vec::with_capacity(size * size * size);
         for b in 0..size {
@@ -208,6 +209,7 @@ impl Lut {
     }
 
     pub fn parse_cube(text: &str) -> Result<Lut, String> {
+        let text = text.strip_prefix('\u{feff}').unwrap_or(text);
         let mut size1 = 0usize;
         let mut size3 = 0usize;
         let mut title = String::new();
@@ -561,6 +563,16 @@ mod tests {
     }
 
     #[test]
+    fn zero_size_lut_construction_does_not_panic() {
+        let from_fn = std::panic::catch_unwind(|| Lut3d::from_fn(0, |c| c));
+        let identity = std::panic::catch_unwind(|| Lut3d::identity(0));
+        assert!(from_fn.is_ok());
+        assert!(identity.is_ok());
+        assert_eq!(from_fn.unwrap().size, 2);
+        assert_eq!(identity.unwrap().size, 2);
+    }
+
+    #[test]
     fn tetrahedral_matches_brute_force() {
         let mut s = 12345u64;
         let mut rnd = || {
@@ -749,5 +761,13 @@ mod tests {
         // the .cube text round-trips at 64³
         let back = Lut::parse_cube(&p.to_cube()).unwrap();
         assert_eq!(back.cube.unwrap().size, 64);
+    }
+
+    #[test]
+    fn parse_cube_strips_utf8_bom() {
+        let rows = "0 0 0\n".repeat(8);
+        let a = Lut::parse_cube(&format!("\u{feff}TITLE \"x\"\nLUT_3D_SIZE 2\n{rows}")).unwrap();
+        assert_eq!(a.title, "x");
+        assert!(Lut::parse_cube(&format!("\u{feff}# c\nLUT_3D_SIZE 2\n{rows}")).is_ok());
     }
 }
