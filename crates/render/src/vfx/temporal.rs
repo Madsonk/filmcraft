@@ -439,7 +439,11 @@ impl CorrectedCache {
         if let Some(c) = self.0.lock().ok().and_then(|m| m.get(&key).cloned()) {
             return c;
         }
-        let c = Arc::new(Corrected { corr: corrections(path, smooth_frames, no_motion, preserve_scale, l1_margin), _path: path.clone(), worst: Mutex::new(Vec::new()) });
+        let c = Arc::new(Corrected {
+            corr: corrections(path, smooth_frames, no_motion, preserve_scale, l1_margin),
+            _path: path.clone(),
+            worst: Mutex::new(Vec::new()),
+        });
         if let Ok(mut m) = self.0.lock() {
             // a keyframed Smoothness makes a new key for every frame: don't keep them all
             if m.len() >= 16 {

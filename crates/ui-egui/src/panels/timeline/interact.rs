@@ -1417,7 +1417,7 @@ mod marquee_tests {
     fn layout(v_scroll: f32, a_scroll: f32) -> Layout {
         let content = Rect::from_min_max(pos2(0.0, 0.0), pos2(1000.0, 600.0));
         let ruler = Rect::from_min_max(pos2(0.0, 0.0), pos2(1000.0, 20.0));
-        Layout { content, ruler, rows: Vec::new(), pps: 100.0, scroll: 0.0, split_y: 300.0, v_scroll, a_scroll }
+        Layout { content, ruler, rows: Vec::new(), pps: 100.0, scroll: 0.0, split_y: 300.0, video_top: 0.0, audio_bottom: 600.0, v_scroll, a_scroll }
     }
 
     /// Review of #3583: a video corner scrolled down past the divider, with the pointer still over the

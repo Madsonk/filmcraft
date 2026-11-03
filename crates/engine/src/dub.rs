@@ -43,9 +43,9 @@ fn place_dub(s: &mut Session, p: &Value) -> Result<Value> {
         Ok(mut v) => {
             // everything above is one undo step
             if s.history.undo.len() > undo_before + 1 {
-                let base = s.history.undo[undo_before].1.clone();
+                let (_, base, extra) = s.history.undo[undo_before].clone();
                 s.history.undo.truncate(undo_before);
-                s.history.undo.push(("Place Dubbed Audio".to_string(), base));
+                s.history.undo.push(("Place Dubbed Audio".to_string(), base, extra));
                 s.history.merge_key = None;
             }
             if let Some(n) = str_p(p, "note").filter(|n| !n.trim().is_empty()) {

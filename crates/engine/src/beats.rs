@@ -263,7 +263,18 @@ fn mark_beats(s: &mut Session, p: &Value) -> Result<Value> {
                     continue;
                 }
                 let id = MarkerId(ctx.alloc());
-                q.markers.push(Marker { id, start: t, duration: Tick::ZERO, name: label, comment: String::new(), kind: MarkerKind::Comment, color });
+                q.markers.push(Marker {
+                    id,
+                    start: t,
+                    duration: Tick::ZERO,
+                    name: label,
+                    comment: String::new(),
+                    kind: MarkerKind::Comment,
+                    color,
+                    url: String::new(),
+                    author: String::new(),
+                    custom_color: None,
+                });
                 n += 1;
             }
             q.markers.sort_by_key(|m| m.start);

@@ -653,6 +653,8 @@ mod tests {
             split_y: 300.0,
             video_top: 100.0,
             audio_bottom: 500.0,
+            v_scroll: 0.0,
+            a_scroll: 0.0,
         };
         // above V2 (empty headroom and the top band of V2): a new V3
         assert_eq!(l.new_track_zone(pos2(50.0, 120.0)).map(|z| (z.0, z.1)), Some((TrackKind::Video, 2)));

@@ -337,7 +337,8 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         rows.push(Row { track: tr.id, kind: TrackKind::Audio, index: i, rect, lane: app.ui.timeline.track_lanes.contains_key(&tr.id.0) });
     }
     let (v_scroll, a_scroll) = (app.ui.timeline.v_scroll, app.ui.timeline.a_scroll);
-    let layout = Layout { content, ruler, rows: rows.clone(), pps, scroll, split_y, video_top: video_area.min.y, audio_bottom: audio_area.max.y, v_scroll, a_scroll };
+    let layout =
+        Layout { content, ruler, rows: rows.clone(), pps, scroll, split_y, video_top: video_area.min.y, audio_bottom: audio_area.max.y, v_scroll, a_scroll };
     app.tl.layout = Some(layout.clone());
 
     // ---- backgrounds
@@ -985,6 +986,8 @@ mod waveform_drag_anchor_tests {
             pps: 100.0,
             scroll: 0.0,
             split_y: 0.0,
+            video_top: 0.0,
+            audio_bottom: 400.0,
             v_scroll: 0.0,
             a_scroll: 0.0,
         }
@@ -1209,6 +1212,8 @@ mod new_track_tests {
             pps: 100.0,
             scroll: 0.0,
             split_y,
+            video_top: 100.0,
+            audio_bottom: 500.0,
             v_scroll: 0.0,
             a_scroll: 0.0,
         };

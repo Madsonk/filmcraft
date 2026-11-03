@@ -1382,6 +1382,7 @@ mod autosave_tests;
 mod avi_import_tests;
 #[cfg(test)]
 mod beats_tests;
+#[cfg(test)]
 mod clip_mismatch_tests;
 #[cfg(test)]
 mod clip_ops_tests;
