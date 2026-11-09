@@ -58,7 +58,6 @@ web-time = "1"
 # .mogrt titles made in Premiere → .fcgt (titles-native): the ZIP, the gzipped project XML
 zip = { version = "7", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
-roxmltree = { workspace = true }
 rayon = { workspace = true, optional = true }
 filmcraft-ml = { path = "../ml", optional = true }
 filmcraft-mlsearch = { path = "../mlsearch", optional = true }
