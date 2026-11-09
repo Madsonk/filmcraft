@@ -459,7 +459,7 @@
 	Replace	Remplacer
 	Yes	Oui
 	No	Non
-	Add media to your project. Drop files anywhere in the window, or choose a source below.	Ajoutez des médias à votre projet. Déposez des fichiers n'importe où dans la fenêtre ou choisissez une source ci-dessous.
+	Add media to your project. Drop files or folders anywhere in the window, or choose a source below.	Ajoutez des médias à votre projet. Déposez des fichiers ou des dossiers n'importe où dans la fenêtre ou choisissez une source ci-dessous.
 	Browse files…	Parcourir les fichiers…
 	Movies, audio and stills from disk	Films, audio et images fixes depuis le disque
 	Demo footage	Rushes de démonstration
@@ -3450,6 +3450,7 @@
 	Clip Speed / Duration	Vitesse/durée du clip
 	Speed:	Vitesse :
 	Reverse Speed	Vitesse inversée
+	Maintain Audio Pitch	Conserver la hauteur du son
 	Ripple Edit, Shifting Trailing Clips	Montage avec décalage, déplacement des clips suivants
 	About	À propos
 	Contributors	Contributeurs
@@ -3726,182 +3727,15 @@
 	Invalid duration: {error}	Durée non valide : {error}
 # Control server: the bind-failure notice (port collisions; #3318 may show it too).
 
+# Export: H.264 High 10 and all-intra (#1221).
+	High 10	High 10
+	10-bit color	Couleur 10 bits
+	All Intra	Tout intra
+	Every frame a keyframe (edit-friendly, larger files)	Chaque image est une image clé (facile à monter, fichiers plus gros)
+	H.264 High 10 Master	H.264 High 10 Master
+	H.264 High 10 Intra	H.264 High 10 Intra
+	H.264 High 10 (10-bit 4:2:0) at the sequence's size, constant quality CRF 16, AAC 320 kbps; a 10-bit master	H.264 High 10 (10 bits 4:2:0) à la taille de la séquence, qualité constante CRF 16, AAC 320 kbps ; un master 10 bits
+	H.264 High 10 Intra (10-bit 4:2:0, every frame a keyframe), CRF 12, AAC 320 kbps; an edit-friendly intermediate	H.264 High 10 Intra (10 bits 4:2:0, chaque image est une image clé), CRF 12, AAC 320 kbps ; un intermédiaire facile à monter
+
+# fork additions
 # FilmCraft-Ext (Madson fork): extensions, neural tools, Film Look, Resources panel
-	Create a subclip for each detected cut point	Créer un sous-plan pour chaque point de coupe détecté
-	Generate clip markers at each detected cut point	Générer des marqueurs de plan à chaque point de coupe détecté
-	Create Animated Word Captions…	Créer des sous-titres animés mot par mot…
-	Extensions	Extensions
-	Gérer les extensions…	Gérer les extensions…
-	Installer une extension…	Installer une extension…
-	Recharger les extensions	Recharger les extensions
-	Auto Reframe…	Recadrage automatique…
-	Clean Voice…	Nettoyer la voix…
-	Cut on Beats…	Couper sur les temps…
-	L1 Optimal Path	Trajectoire optimale L1
-	Remove Silences…	Supprimer les silences…
-	Upscale Video 2x…	Agrandir la vidéo 2x…
-	Whisper large-v3-turbo (most accurate, 1.6 GB)	Whisper large-v3-turbo (le plus précis, 1,6 Go)
-	Whisper small (accurate)	Whisper small (précis)
-	Opened {path}	Ouvert : {path}
-	Gestion	Gestion
-	Autres	Autres
-	Montage	Montage
-	Sous-titres et langue	Sous-titres et langue
-	Image et IA	Image et IA
-	Index rushes	Indexation des rushes
-	Match Shot Colour…	Calage couleur entre plans…
-	Match Shot Colour	Calage couleur entre plans
-	Reference clip (the look to reach)	Plan de référence (l'aspect à atteindre)
-	Use selected clip	Prendre le clip sélectionné
-	Clip to match	Plan à caler
-	Mean and spread (Reinhard), recommended	Moyenne et dispersion (Reinhard), recommandé
-	Linear transport 3×3 (Monge–Kantorovich)	Transport linéaire 3×3 (Monge–Kantorovich)
-	Histogram per channel	Histogramme par canal
-	Apply to the clip (Lumetri Creative Look)	Appliquer au plan (Look créatif Lumetri)
-	Measured after each clip's Input LUT and Basic Correction: convert log or flat footage to Rec.709 first.	Mesuré après la LUT d'entrée et la correction de base de chaque plan : convertissez d'abord les rushs log ou plats en Rec.709.
-	The LUT joins the project's LUT library; Edit ▸ Undo removes it.	La LUT rejoint la bibliothèque de LUT du projet ; Édition ▸ Annuler la retire.
-	Choose two different clips.	Choisissez deux plans différents.
-	(choose a clip)	(choisir un plan)
-	Shot match: mean colour distance {before} → {after} (LUT “{name}”)	Calage couleur : écart moyen {before} → {after} (LUT « {name} »)
-	Film Look	Rendu pellicule
-	35mm Clean	35 mm net
-	35mm Gritty	35 mm granuleux
-	16mm Documentary	16 mm documentaire
-	Super 8 Memory	Souvenir Super 8
-	Large Format 65	Grand format 65
-	Vintage 70s Print	Tirage années 70
-	Night Neon	Néons de nuit
-	Grain	Grain
-	Halation	Halation
-	Bloom	Éclat (bloom)
-	Stock Colour	Couleur de l'émulsion
-	Gate Weave & Flicker	Instabilité et scintillement
-	Dust & Scratches	Poussières et rayures
-	Film Grain	Grain de pellicule
-	Roughness	Rugosité
-	Shadows Response	Réponse des ombres
-	Midtones Response	Réponse tons moyens
-	Highlights Response	Réponse hautes lum.
-	Colour Grain	Grain coloré
-	Animated	Animé
-	Wide Spread	Diffusion large
-	Halation Color	Couleur de l'halation
-	Colour Strength	Force de la couleur
-	Halation Only	Halation seule
-	Scatter	Dispersion
-	Bloom Color	Couleur de l'éclat
-	Anamorphic Streak	Traînée anamorph.
-	Streak Length	Longueur traînée
-	Streak Color	Couleur de la traînée
-	Bloom Only	Éclat seul
-	Diffusion Filter	Filtre de diffusion
-	Highlight Bias	Priorité hautes lum.
-	Warmth	Chaleur
-	Black Lift	Relèvement des noirs
-	Film Stock	Émulsion de pellicule
-	Stock	Émulsion
-	Neutral	Neutre
-	Warm Print	Tirage chaud
-	Cool Teal	Bleu-vert froid
-	Cross Process	Traitement croisé
-	Tungsten Night	Nuit tungstène
-	Vintage 70s	Années 70
-	Silver B&W	N&B argentique
-	Highlight Roll-off	Douceur hautes lum.
-	Weave	Instabilité
-	Breathing	Respiration
-	Dust	Poussières
-	Dust Size	Taille des poussières
-	Dark Dust Share	Poussières sombres
-	Hairs	Cheveux
-	Scratches	Rayures
-	Lens Character	Caractère d'objectif
-	Chromatic Aberration	Aberration chromatique
-	Resources	Ressources
-	A LUT goes on a video clip, not on a sound	Une LUT se pose sur un plan vidéo, pas sur un son
-	Add to the LUT library	Ajouter à la bibliothèque de LUT
-	Before	Avant
-	Choose the folder…	Choisir le dossier…
-	Hover a LUT to preview it	Survolez une LUT pour l'aperçu
-	LUTs	LUT
-	Listening is not available in this build	L'écoute n'est pas disponible dans cette version
-	No folder chosen: click the folder icon.	Aucun dossier choisi : cliquez sur l'icône de dossier.
-	On a free audio track at this time	Sur une piste audio libre à cet instant
-	On a free video track at this time	Sur une piste vidéo libre à cet instant
-	Reading the LUT…	Lecture de la LUT…
-	Search by name or folder	Rechercher par nom ou dossier
-	Select a video clip (or put the playhead on one) to preview LUTs on it.	Sélectionnez un plan vidéo (ou placez la tête de lecture dessus) pour y prévisualiser les LUT.
-	Select a video clip first: the LUT becomes its Creative Look.	Sélectionnez d'abord un plan vidéo : la LUT devient son Look créatif.
-	Sound Effects	Bruitages
-	Update the index (only changed folders are read again)	Mettre à jour l'index (seuls les dossiers modifiés sont relus)
-	preview only	aperçu seul
-	Could not play {path}	Impossible de lire {path}
-	Creative Look applied ({n})	Look créatif appliqué ({n})
-	Creative Look on {clip}	Look créatif sur {clip}
-	Folder: {path} (click to change)	Dossier : {path} (cliquer pour changer)
-	Import into {bin}	Importer dans {bin}
-	Index error: {error}	Erreur d'index : {error}
-	{n} LUT(s) added to the LUT library	{n} LUT ajoutée(s) à la bibliothèque de LUT
-	{n} file(s) imported	{n} fichier(s) importé(s)
-	{n} file(s) refused: {why}	{n} fichier(s) refusé(s) : {why}
-	{n} of {total}	{n} sur {total}
-	{n} of {total} · indexing in the background ({dirs} folders read)…	{n} sur {total} · indexation en tâche de fond ({dirs} dossiers lus)…
-	{n} resource(s) placed on the timeline	{n} ressource(s) posée(s) sur la timeline
-	Weave & Flicker	Tremblement
-	Titles made in Premiere become editable titles (text, colours, fonts) when dropped. After Effects titles are “preview only”: a reference, not the title.	Les titres faits dans Premiere deviennent des titres modifiables (texte, couleurs, polices) quand on les dépose. Les titres After Effects sont « aperçu seul » : un repère, pas le titre.
-	editable	modifiable
-	After Effects title: only its preview is dropped, as a reference (FilmCraft can't convert it)	Titre After Effects : seul son aperçu est posé, comme repère (FilmCraft ne peut pas le convertir)
-	Converting {done} of {total}…	Conversion {done} sur {total}…
-	Convert all shown ({n})	Convertir tous les titres affichés ({n})
-	{done} converted, {failed} not converted ({error})	{done} convertis, {failed} non convertis ({error})
-	{done} converted into Graphics Templates	{done} convertis dans Modèles d'animations graphiques
-	Could not start the conversion	Impossible de lancer la conversion
-	No data folder for graphics templates	Aucun dossier de données pour les modèles graphiques
-	After Effects title: preview only, FilmCraft can't convert it	Titre After Effects : aperçu seul, FilmCraft ne peut pas le convertir
-	Editable title on a free video track at this time	Titre modifiable sur une piste vidéo libre à cet instant
-	Convert into an editable title (Graphics Templates)	Convertir en titre modifiable (Modèles graphiques)
-	This title was made in After Effects: FilmCraft can't convert it (preview only). Titles made in Premiere become editable titles.	Ce titre a été fait dans After Effects : FilmCraft ne peut pas le convertir (aperçu seul). Les titres faits dans Premiere deviennent des titres modifiables.
-	{n} title(s) converted into Graphics Templates	{n} titre(s) converti(s) dans les modèles graphiques
-	missing fonts replaced by Inter: {fonts}	polices absentes remplacées par Inter : {fonts}
-	some effects of the original title were left out (see the template's description)	certains effets du titre d'origine n'ont pas été repris (voir la description du modèle)
-	0.5–2 s	0,5–2 s
-	2–10 s	2–10 s
-	< 0.5 s	< 0,5 s
-	> 10 s	> 10 s
-	Also finds the relative major / minor	Trouve aussi le relatif majeur / mineur
-	BPM	BPM
-	Family: {v}	Famille : {v}
-	Favourites only	Favoris seulement
-	Grid / list	Grille / liste
-	Key: {v}	Tonalité : {v}
-	Length: {v}	Durée : {v}
-	Listen on hover	Écoute au survol
-	Listening is paused while the timeline plays	L'écoute se tait pendant la lecture de la timeline
-	Loops	Boucles
-	No audio output	Aucune sortie audio
-	Recently used	Utilisés récemment
-	Relevance	Pertinence
-	Sort: {v}	Tri : {v}
-	Tempo	Tempo
-	ambience / texture	ambiance / texture
-	dense ambience	ambiance dense
-	loading waveforms…	chargement des formes d'onde…
-	music	musique
-	one-shot / impact	impact / one-shot
-	pad / continuous noise	nappe / bruit continu
-	tonal, no rhythm (pad, drone)	tonal sans rythme (nappe, drone)
-	waveforms: {known} known	formes d'onde : {known} connues
-	waveforms: {known} known, {queued} to read	formes d'onde : {known} connues, {queued} à lire
-	not a readable sound	pas un son lisible
-	previews: {made}/{total}	aperçus : {made}/{total}
-	Right-click: empty the preview cache	Clic droit : vider le cache des aperçus
-	Empty the preview cache ({mb} MB)	Vider le cache des aperçus ({mb} Mo)
-	Preview cache emptied	Cache des aperçus vidé
-	Reset this curve	Réinitialiser cette courbe
-	In {x} → Out {y}	Entrée {x} → Sortie {y}
-	Hue {x}° · {y}	Teinte {x}° · {y}
-	{x} % · {y}	{x} % · {y}
-	On a new video track {track}	Sur une nouvelle piste vidéo {track}
-	On a new audio track {track}	Sur une nouvelle piste audio {track}
-	On a free track at this time	Sur une piste libre à cet instant
-	no preview	aperçu vide
