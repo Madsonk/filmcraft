@@ -459,5 +459,6 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
         enabled: has_video_clip,
         run: auto_reframe,
         journal: true,
+        named: crate::commands::NamedKeys::NONE,
     }]
 }

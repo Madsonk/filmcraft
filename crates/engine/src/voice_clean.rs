@@ -387,6 +387,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             enabled: has_audio_clip,
             run: denoise_voice,
             journal: true,
+            named: crate::commands::NamedKeys::NONE,
         },
         CommandSpec {
             id: "models.list",
@@ -397,6 +398,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             enabled: always,
             run: models_list,
             journal: false,
+            named: crate::commands::NamedKeys::NONE,
         },
         CommandSpec {
             id: "models.install",
@@ -407,6 +409,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             enabled: always,
             run: models_install,
             journal: false,
+            named: crate::commands::NamedKeys::NONE,
         },
     ]
 }

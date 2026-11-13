@@ -571,6 +571,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             enabled: crate::commands::always,
             run: interpolate,
             journal: true,
+            named: crate::commands::NamedKeys::NONE,
         },
         CommandSpec {
             id: "clip.matte",
@@ -581,6 +582,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             enabled: crate::commands::always,
             run: matte,
             journal: true,
+            named: crate::commands::NamedKeys::NONE,
         },
         CommandSpec {
             id: "clip.upscale",
@@ -591,6 +593,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             enabled: crate::commands::always,
             run: upscale,
             journal: true,
+            named: crate::commands::NamedKeys::NONE,
         },
     ]
 }

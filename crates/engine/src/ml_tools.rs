@@ -364,7 +364,17 @@ fn install(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub(crate) fn commands() -> Vec<CommandSpec> {
     vec![
-        CommandSpec { id: "ml.models", label: "Neural models…", menu: &[], shortcut: None, params: r#"{}"#, enabled: always, run: models, journal: false },
+        CommandSpec {
+            id: "ml.models",
+            label: "Neural models…",
+            menu: &[],
+            shortcut: None,
+            params: r#"{}"#,
+            enabled: always,
+            run: models,
+            journal: false,
+            named: crate::commands::NamedKeys::NONE,
+        },
         CommandSpec {
             id: "ml.install",
             label: "Install a neural model…",
@@ -374,6 +384,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             enabled: always,
             run: install,
             journal: false,
+            named: crate::commands::NamedKeys::NONE,
         },
     ]
 }

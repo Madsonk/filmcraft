@@ -379,6 +379,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             enabled: has_beat_source,
             run: mark_beats,
             journal: true,
+            named: crate::commands::NamedKeys::NONE,
         },
         CommandSpec {
             id: "sequence.cutOnBeats",
@@ -389,6 +390,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             enabled: has_beat_source,
             run: cut_on_beats,
             journal: true,
+            named: crate::commands::NamedKeys::NONE,
         },
     ]
 }

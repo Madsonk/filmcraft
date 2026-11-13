@@ -29,6 +29,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
         enabled: has_seq,
         run: place_dub,
         journal: true,
+        named: crate::commands::NamedKeys::NONE,
     }]
 }
 

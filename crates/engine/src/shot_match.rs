@@ -46,6 +46,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
         enabled: has_seq,
         run: match_shots,
         journal: true,
+        named: crate::commands::NamedKeys::NONE,
     }]
 }
 

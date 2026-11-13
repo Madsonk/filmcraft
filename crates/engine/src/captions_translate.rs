@@ -25,6 +25,7 @@ pub fn commands() -> Vec<CommandSpec> {
         enabled: has_captions,
         run: translate,
         journal: true,
+        named: crate::commands::NamedKeys::NONE,
     }]
 }
 

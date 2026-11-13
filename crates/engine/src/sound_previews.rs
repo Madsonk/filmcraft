@@ -303,7 +303,7 @@ impl PreviewStore {
     /// Encode `mono` (samples at [`PREVIEW_RATE`]) as the preview of `path`: written to a
     /// temporary file, renamed, then recorded.
     fn write(&self, path: &str, size: u64, mtime: i64, mono: &[f32], (start, duration): (f64, f64), kind: PreviewKind) -> Result<PreviewRec, String> {
-        let mut enc = filmcraft_aac::Encoder::new(filmcraft_aac::EncoderConfig::cbr(PREVIEW_RATE, 1, PREVIEW_BPS)).map_err(|e| e.to_string())?;
+        let mut enc = craft_audio::aac::Encoder::new(craft_audio::aac::EncoderConfig::cbr(PREVIEW_RATE, 1, PREVIEW_BPS)).map_err(|e| e.to_string())?;
         let mut aus = enc.encode(&[mono]);
         aus.extend(enc.flush());
         let mut track = filmcraft_isobmff::TrackConfig::new(filmcraft_isobmff::SampleEntry::aac(enc.audio_specific_config(), 1, PREVIEW_RATE), PREVIEW_RATE);
@@ -327,8 +327,11 @@ impl PreviewStore {
             .map_err(|e| e.to_string())?;
         let t = mux.add_track(track).map_err(|e| e.to_string())?;
         for au in &aus {
-            mux.write_sample(t, filmcraft_isobmff::WriteSample { data: au, duration: filmcraft_aac::FRAME_LEN as u32, composition_offset: 0, is_sync: true })
-                .map_err(|e| e.to_string())?;
+            mux.write_sample(
+                t,
+                filmcraft_isobmff::WriteSample { data: au, duration: craft_audio::aac::FRAME_LEN as u32, composition_offset: 0, is_sync: true },
+            )
+            .map_err(|e| e.to_string())?;
         }
         let mut w = mux.finish().map_err(|e| e.to_string())?;
         w.flush().map_err(|e| e.to_string())?;

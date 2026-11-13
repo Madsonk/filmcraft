@@ -37,6 +37,7 @@ pub fn commands() -> Vec<CommandSpec> {
         enabled: crate::transcript::has_transcript,
         run: create,
         journal: true,
+        named: crate::commands::NamedKeys::NONE,
     }]
 }
 

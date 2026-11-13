@@ -185,5 +185,6 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
         enabled: crate::commands::always,
         run: separate,
         journal: true,
+        named: crate::commands::NamedKeys::NONE,
     }]
 }

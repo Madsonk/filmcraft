@@ -74,6 +74,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
         enabled: always,
         run: place,
         journal: true,
+        named: crate::commands::NamedKeys::NONE,
     }]
 }
 

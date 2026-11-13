@@ -325,6 +325,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             enabled: crate::commands::always,
             run: index,
             journal: false,
+            named: crate::commands::NamedKeys::NONE,
         },
         CommandSpec {
             id: "media.rushSearch",
@@ -335,6 +336,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             enabled: crate::commands::always,
             run: search,
             journal: false,
+            named: crate::commands::NamedKeys::NONE,
         },
     ]
 }

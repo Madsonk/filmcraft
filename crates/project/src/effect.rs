@@ -973,6 +973,8 @@ mod tests {
         assert_eq!(film.len(), 9, "{film:?}");
         // rendered on the CPU (no shader): the Effects panel must not show the GPU badge
         assert!(effect_defs().iter().filter(|e| e.category.first() == Some(&"Film Look")).all(|e| !e.accelerated));
+    }
+
     #[test]
     fn descriptive_names_preserve_legacy_lookup_and_project_ids() {
         for (id, old, label) in [
