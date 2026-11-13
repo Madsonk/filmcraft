@@ -132,6 +132,7 @@ fn the_bundled_extensions_are_valid_and_complete() {
             "autoedit",
             "beat-edit",
             "copy-pasta",
+            "derush-safe-fr",
             "doublage-voix",
             "export-en-un-clic",
             "lut-premiere",

@@ -1,0 +1,76 @@
+{
+  "formatVersion": 1,
+  "id": "derush-safe-fr",
+  "name": "Dérush safe (FR)",
+  "version": "1.0.0",
+  "category": "editing",
+  "description": "Dérush prudent pour parole française : transcrit (Whisper turbo, hésitations conservées dans la transcription) puis retire les silences. Ne supprime PAS les hésitations automatiquement (évite de couper de la vraie parole quand les timestamps Whisper sont contigus) — à traiter ensuite avec safe_hesitations.py (coupes calées sur l'énergie) avant suppression manuelle/revue.",
+  "author": "Madson (vault tooling)",
+  "entries": [
+    {
+      "label": "Transcrire + couper les silences (sans retirer les euh)",
+      "description": "Transcription FR turbo avec hésitations écrites, puis silences >= 0.5 s (0.1 s gardé). Étape 'euh' volontairement omise : vérifier avec safe_hesitations.py.",
+      "requires": ["sequence"],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.transcribe",
+            "params": {
+              "language": "fr",
+              "model": "whisper-large-v3-turbo",
+              "hesitations": true
+            }
+          },
+          {
+            "id": "sequence.removeSilence",
+            "params": {
+              "minSeconds": "${var.min_silence|0.5}",
+              "keepSeconds": "${var.keep|0.1}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Transcrire + silences serré (sans retirer les euh)",
+      "description": "Comme ci-dessus, silences >= 0.25 s (0.05 s gardé). Pour rush dense ; revoir les coupes.",
+      "requires": ["sequence"],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.transcribe",
+            "params": {
+              "language": "fr",
+              "model": "whisper-large-v3-turbo",
+              "hesitations": true
+            }
+          },
+          {
+            "id": "sequence.removeSilence",
+            "params": {
+              "minSeconds": 0.25,
+              "keepSeconds": 0.05
+            }
+          }
+        ]
+      }
+    },
+    {
+      "label": "Transcrire seulement (turbo, hésitations)",
+      "description": "Transcription FR turbo avec hésitations, sans aucune coupe. Point de départ pour analyse safe_hesitations.py.",
+      "requires": ["sequence"],
+      "action": {
+        "commands": [
+          {
+            "id": "sequence.transcribe",
+            "params": {
+              "language": "fr",
+              "model": "whisper-large-v3-turbo",
+              "hesitations": true
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
