@@ -12,6 +12,9 @@
 pub const UPDATE_APP: craft_update::app::App = craft_update::app::App {
     icon_png: Some(include_bytes!("../../../assets/app-icon/hicolor/128x128/apps/ai.storyteller.filmcraft.png")),
     accent: Some([0x8b, 0x5c, 0xf6]),
+    // The fork updates from its own releases: pointing at storytold/filmcraft would offer the
+    // official build and replace this one, losing every fork feature (madson port, 2026-11-13).
+    repo: "Madsonk/filmcraft",
     ..craft_update::suite::FILMCRAFT
 };
 
